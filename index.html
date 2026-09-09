@@ -505,8 +505,27 @@
           </table>
         </div>
 
+        <div class="section-title">Resultados — Quebra mensal</div>
+        <div class="card">
+          <h3>2026 vs 2025</h3>
+          <div class="rchart" id="quebra-chart"></div>
+          <div class="rchart-labels" id="quebra-chart-labels"></div>
+          <div class="rchart-legend">
+            <span><i style="background:#DCD5C4;"></i>2025</span>
+            <span><i style="background:var(--red);"></i>2026</span>
+          </div>
+          <table class="results-table" id="quebra-table">
+            <thead><tr><th>Mês</th><th>2025</th><th>2026</th><th>Variação</th></tr></thead>
+            <tbody id="quebra-table-body"></tbody>
+          </table>
+        </div>
+
         <div class="section-title">Custos da Loja</div>
         <div class="card costs-list" id="custos-container"></div>
+
+        <div id="plano-acao-gestores-wrap"></div>
+        <div id="feedback-gestores-wrap"></div>
+        <div id="avaliacao-gestores-wrap"></div>
       </div>
 
     </div>
@@ -1070,8 +1089,12 @@ async function renderDashboard(){
     renderAudits();
     renderCustos();
     renderResultadosVendas();
+    renderResultadosQuebra();
     renderAniversariosHoje();
     renderMarkdownsPendentes();
+    blocoPlanoAcaoGestores().then(html => document.getElementById('plano-acao-gestores-wrap').innerHTML = html);
+    blocoFeedbackSecao(null).then(html => document.getElementById('feedback-gestores-wrap').innerHTML = html);
+    blocoAvaliacaoClienteSecao(null).then(html => document.getElementById('avaliacao-gestores-wrap').innerHTML = html);
   } else {
     chefeOnly1.classList.add('hidden');
     chefeOnly2.classList.add('hidden');
@@ -1131,27 +1154,40 @@ async function enviarParabens(p){
 
 async function renderMarkdownsPendentes(){
   const wrap = document.getElementById('markdowns-wrap');
-  const pendentes = await sb('loja_markdowns_pendentes?tratado=eq.false&select=*&order=validade.asc&limit=100');
-  if(!pendentes.length){
+  const [todos, pendentes] = await Promise.all([
+    sb('loja_markdowns_pendentes?select=id,tratado'),
+    sb('loja_markdowns_pendentes?tratado=eq.false&select=*&order=validade.asc&limit=200')
+  ]);
+  if(!todos.length){
     wrap.innerHTML = '';
     return;
   }
-  let html = `<div class="repor-banner"><b>🏷️ ${pendentes.length} markdown(s) por tratar</b>Produtos com ação de markdown/retirada por fazer, que geram quebra se não forem tratados.</div>`;
-  html += `<div class="card" style="padding:4px 12px;max-height:280px;overflow-y:auto;">`;
-  pendentes.slice(0,15).forEach(p=>{
-    const val = p.validade ? new Date(p.validade+'T00:00:00').toLocaleDateString('pt-PT') : '—';
-    html += `<div class="person-row" style="cursor:default;">
-      <div class="p-info">
-        <div class="p-name" style="font-size:12.5px;">${p.descricao}</div>
-        <div class="p-cargo">${p.acao} · Válido até ${val}</div>
-      </div>
-      <button class="econ-btn filled" onclick="marcarMarkdownTratado(${p.id})">✓ Tratado</button>
-    </div>`;
-  });
-  html += `</div>`;
-  if(pendentes.length > 15){
-    html += `<div style="font-size:12px;color:var(--ink-soft);margin:6px 2px 14px;">+ ${pendentes.length - 15} outros por tratar</div>`;
+  const total = todos.length;
+  const pct = total ? Math.round(pendentes.length/total*100) : 0;
+
+  let html = `<div class="section-title">🏷️ Markdown Não Realizado</div>`;
+  html += `<div class="econ-secao" style="margin-bottom:16px;">
+    <div class="econ-secao-header" onclick="toggleSecao(this)">
+      <span>${pct}% por tratar <span class="count">· ${pendentes.length} de ${total}</span></span>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="econ-secao-body" style="max-height:320px;overflow-y:auto;">`;
+
+  if(!pendentes.length){
+    html += `<div style="padding:10px 14px;font-size:13px;color:var(--ink-soft);">Sem markdowns por tratar.</div>`;
+  } else {
+    pendentes.forEach(p=>{
+      const val = p.validade ? new Date(p.validade+'T00:00:00').toLocaleDateString('pt-PT') : '—';
+      html += `<div class="person-row" style="cursor:default;padding-left:14px;padding-right:14px;">
+        <div class="p-info">
+          <div class="p-name" style="font-size:12.5px;">${p.descricao}</div>
+          <div class="p-cargo">${p.secao_codigo ? p.secao_codigo+' · ' : ''}${p.acao} · Válido até ${val}</div>
+        </div>
+        <button class="econ-btn filled" onclick="marcarMarkdownTratado(${p.id})">✓ Tratado</button>
+      </div>`;
+    });
   }
+  html += `</div></div>`;
   wrap.innerHTML = html;
 }
 
@@ -1253,6 +1289,85 @@ async function renderResultadosVendas(){
     tr.innerHTML = `<td>${MES_ABREV[m]}</td><td>${fmt(y25)}</td><td>${fmt(y26)}</td><td>${varHtml}</td>`;
     tbody.appendChild(tr);
   });
+}
+
+async function renderResultadosQuebra(){
+  const rows = await sb('loja_custos_mensais?select=ano,mes,quebra&order=ano.asc');
+  const porMes = {};
+  ORDEM_MESES.forEach(m => porMes[m] = {y25:null, y26:null});
+  rows.forEach(r=>{
+    if(!porMes[r.mes]) return;
+    if(r.ano === 2025) porMes[r.mes].y25 = r.quebra === null ? null : Number(r.quebra);
+    if(r.ano === 2026) porMes[r.mes].y26 = r.quebra === null ? null : Number(r.quebra);
+  });
+
+  const todosValores = ORDEM_MESES.flatMap(m => [porMes[m].y25, porMes[m].y26]).filter(v => v !== null && v > 0);
+  const max = todosValores.length ? Math.max(...todosValores) : 1;
+
+  const chart = document.getElementById('quebra-chart');
+  const labels = document.getElementById('quebra-chart-labels');
+  chart.innerHTML = '';
+  labels.innerHTML = '';
+
+  ORDEM_MESES.forEach(m=>{
+    const v25 = porMes[m].y25 || 0;
+    const v26 = porMes[m].y26 || 0;
+    const bars = document.createElement('div');
+    bars.className = 'bars';
+    bars.innerHTML = `
+      <div class="bar y25" style="height:${(v25/max*100).toFixed(1)}%"></div>
+      <div class="bar" style="height:${(v26/max*100).toFixed(1)}%;background:var(--red);"></div>
+    `;
+    chart.appendChild(bars);
+    const lbl = document.createElement('span');
+    lbl.textContent = MES_ABREV[m];
+    labels.appendChild(lbl);
+  });
+
+  const fmt = (v) => v === null || v === undefined || v === 0 ? '—' : Number(v).toLocaleString('pt-PT', {maximumFractionDigits:0}) + ' €';
+  const tbody = document.getElementById('quebra-table-body');
+  tbody.innerHTML = '';
+  ORDEM_MESES.forEach(m=>{
+    const {y25, y26} = porMes[m];
+    let varHtml = '—';
+    if(y25 && y26){
+      const p = ((y26 - y25) / y25) * 100;
+      // para quebra, subir é mau (var-bad) e descer é bom (var-good) — inverso das vendas
+      const cls = p <= 0 ? 'var-good' : 'var-bad';
+      varHtml = `<span class="${cls}">${p>0?'+':''}${p.toFixed(0)}%</span>`;
+    }
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${MES_ABREV[m]}</td><td>${fmt(y25)}</td><td>${fmt(y26)}</td><td>${varHtml}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function blocoPlanoAcaoGestores(){
+  const itens = await sb('loja_plano_acao?select=*&order=area.asc');
+  let html = `<div class="section-title">🎯 Planos de Ação — Todas as Secções <span class="count">· ${itens.length}</span></div>`;
+  if(!itens.length){
+    html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem planos de ação registados.</div></div>`;
+    return html;
+  }
+  const grupos = {};
+  itens.forEach(p=>{
+    if(!grupos[p.area]) grupos[p.area] = [];
+    grupos[p.area].push(p);
+  });
+  html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
+  Object.keys(grupos).sort().forEach(area=>{
+    html += `<div style="padding:8px 0 2px;font-size:12px;font-weight:700;color:var(--navy);">${area}</div>`;
+    grupos[area].forEach(p=>{
+      const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
+      html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${p.acao}</div>
+        <span class="pa-estado ${cls}">${p.estado}</span>
+      </div>`;
+    });
+  });
+  html += `</div>`;
+  return html;
 }
 
 function renderTasks(){
@@ -1549,6 +1664,14 @@ async function toggleRastreabilidadeNaSecao(catalogoId, secao, label, jaVerifica
   }
 }
 
+const SECAO_PARA_PLANO_ACAO = {
+  'Talho': 'Talho',
+  'Linha de atendimento': 'Pronto a Comer',
+  'Padaria/Pastelaria': 'Padaria',
+  'Frente de Loja': 'Frente de Loja',
+  'Custos Comuns': 'Livre Serviço'
+};
+
 const SECAO_PARA_AUDITORIA = {
   'Talho': ['talho'],
   'Peixaria': ['peixaria'],
@@ -1559,24 +1682,44 @@ const SECAO_PARA_AUDITORIA = {
   'Frente de Loja': ['frente loja']
 };
 
+const AUDITORIA_BADGE_COLOR = {
+  HACCP: 'var(--red)',
+  SHT: 'var(--amber)',
+  Controlo: 'var(--navy)'
+};
+
 async function blocoNotasAuditoria(secao, label){
   const padroes = SECAO_PARA_AUDITORIA[secao];
   if(!padroes) return '';
 
-  const todas = await sb(`loja_nao_conformidades?select=*,loja_auditoria_detalhe(tipo,data_auditoria)&resolvida=eq.false`);
+  const [todas, auditorias] = await Promise.all([
+    sb(`loja_nao_conformidades?select=*,loja_auditoria_detalhe(tipo,data_auditoria)&resolvida=eq.false`),
+    sb('loja_auditorias?select=nome,percentagem')
+  ]);
   const filtradas = todas.filter(nc => {
     const secaoLower = (nc.secao || '').toLowerCase();
-    const tipo = nc.loja_auditoria_detalhe ? nc.loja_auditoria_detalhe.tipo : null;
-    if(tipo !== 'HACCP' && tipo !== 'SHT') return false;
     return padroes.some(p => secaoLower.includes(p));
   });
 
-  if(!filtradas.length) return '';
+  const tiposEnvolvidos = [...new Set(filtradas.map(nc => nc.loja_auditoria_detalhe ? nc.loja_auditoria_detalhe.tipo : null).filter(Boolean))];
+  const scoresHtml = tiposEnvolvidos.map(t=>{
+    const a = auditorias.find(x=>x.nome === t);
+    if(!a || a.percentagem === null || a.percentagem === undefined) return '';
+    return `<div class="vs-box"><div class="vs-label">${t}</div><div class="vs-value">${a.percentagem}%</div></div>`;
+  }).join('');
 
-  let html = `<div class="section-title">📋 Notas de Auditoria (HACCP / SHT) <span class="count">· ${filtradas.length}</span></div><div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
+  let html = `<div class="section-title">📋 Auditorias da Secção <span class="count">· ${filtradas.length} ponto(s) a melhorar</span></div>`;
+  if(scoresHtml){
+    html += `<div class="vs-detail-grid" style="margin-bottom:10px;">${scoresHtml}</div>`;
+  }
+  if(!filtradas.length){
+    html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem não conformidades em aberto para esta secção.</div></div>`;
+    return html;
+  }
+  html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   filtradas.forEach(nc=>{
     const tipo = nc.loja_auditoria_detalhe ? nc.loja_auditoria_detalhe.tipo : '';
-    const badgeCor = tipo === 'HACCP' ? 'var(--red)' : 'var(--amber)';
+    const badgeCor = AUDITORIA_BADGE_COLOR[tipo] || 'var(--ink-soft)';
     html += `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
       <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
         <div style="font-size:13px;font-weight:600;color:var(--ink);">${nc.requisito || ''}</div>
@@ -1695,6 +1838,135 @@ async function registarPalete(){
   }
 }
 
+async function blocoMarkdownsSecao(secao, label){
+  const todos = await sb(`loja_markdowns_pendentes?secao_codigo=eq.${encodeURIComponent(secao)}&select=id,tratado`);
+  const total = todos.length;
+  const naoTratados = todos.filter(t=>!t.tratado).length;
+  const pct = total ? Math.round(naoTratados/total*100) : 0;
+
+  let html = `<div class="section-title">🏷️ Markdown Não Realizado</div>`;
+  html += `<div class="econ-secao" style="margin-bottom:16px;">
+    <div class="econ-secao-header" onclick="toggleSecao(this)">
+      <span>${pct}% por tratar <span class="count">· ${naoTratados} de ${total}</span></span>
+      <span class="chevron">▶</span>
+    </div>
+    <div class="econ-secao-body">`;
+
+  if(!naoTratados){
+    html += `<div style="padding:10px 14px;font-size:13px;color:var(--ink-soft);">Sem markdowns por tratar nesta secção.</div>`;
+  } else {
+    const pendentes = await sb(`loja_markdowns_pendentes?secao_codigo=eq.${encodeURIComponent(secao)}&tratado=eq.false&select=*&order=validade.asc`);
+    pendentes.forEach(p=>{
+      const val = p.validade ? new Date(p.validade+'T00:00:00').toLocaleDateString('pt-PT') : '—';
+      html += `<div class="person-row" style="cursor:default;padding-left:14px;padding-right:14px;">
+        <div class="p-info">
+          <div class="p-name" style="font-size:12.5px;">${p.descricao}</div>
+          <div class="p-cargo">${p.acao} · Válido até ${val}</div>
+        </div>
+        <button class="econ-btn filled" onclick="marcarMarkdownTratado(${p.id})">✓ Tratado</button>
+      </div>`;
+    });
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+async function blocoPlanoAcaoSecao(secao, label){
+  const area = SECAO_PARA_PLANO_ACAO[secao];
+  if(!area) return '';
+  const itens = await sb(`loja_plano_acao?area=eq.${encodeURIComponent(area)}&select=*&order=id.asc`);
+  if(!itens.length) return '';
+  let html = `<div class="section-title">🎯 Plano de Ação <span class="count">· ${itens.length}</span></div><div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
+  itens.forEach(p=>{
+    const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
+    html += `<div style="padding:9px 0;border-bottom:1px solid var(--line);">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4;">${p.acao}</div>
+      <span class="pa-estado ${cls}">${p.estado}</span>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+async function blocoFeedbackSecao(secao, label){
+  const query = secao ? `loja_momentos_feedback?secao=eq.${encodeURIComponent(secao)}&select=*&order=criado_em.desc&limit=20` : `loja_momentos_feedback?select=*&order=criado_em.desc&limit=30`;
+  const itens = await sb(query);
+  let html = `<div class="section-title">💬 Momentos de Feedback <span class="count">· ${itens.length}</span></div>`;
+  html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
+  html += `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
+    <button class="btn-primary" style="margin-top:0;" onclick="adicionarFeedback('${(secao||'').replace(/'/g,"\\'")}')">+ Registar momento de feedback</button>
+  </div>`;
+  if(!itens.length){
+    html += `<div style="font-size:13px;color:var(--ink-soft);padding:8px 0;">Ainda sem registos.</div>`;
+  } else {
+    itens.forEach(f=>{
+      const data = new Date(f.criado_em).toLocaleDateString('pt-PT');
+      html += `<div style="padding:9px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:13px;color:var(--ink);line-height:1.4;">${f.texto}</div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:3px;">${f.secao ? f.secao+' · ' : ''}${data}${f.criado_por ? ' · '+f.criado_por : ''}</div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function adicionarFeedback(secao){
+  const texto = prompt('Momento de feedback:');
+  if(!texto || !texto.trim()) return;
+  try{
+    await sb('loja_momentos_feedback', {method:"POST", body: JSON.stringify({
+      secao: secao || null, texto: texto.trim(), criado_por: currentUser ? currentUser.name : null
+    })});
+    showToast();
+    if(secao) renderSecaoDetail(secao, secao); else renderDashboard();
+  }catch(e){
+    console.error('Erro ao guardar', e);
+  }
+}
+
+async function blocoAvaliacaoClienteSecao(secao, label){
+  const query = secao ? `loja_avaliacoes_cliente?secao=eq.${encodeURIComponent(secao)}&select=*&order=criado_em.desc&limit=20` : `loja_avaliacoes_cliente?select=*&order=criado_em.desc&limit=30`;
+  const itens = await sb(query);
+  let html = `<div class="section-title">⭐ Avaliação do Cliente <span class="count">· ${itens.length}</span></div>`;
+  html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
+  html += `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
+    <button class="btn-primary" style="margin-top:0;" onclick="adicionarAvaliacaoCliente('${(secao||'').replace(/'/g,"\\'")}')">+ Registar avaliação</button>
+  </div>`;
+  if(!itens.length){
+    html += `<div style="font-size:13px;color:var(--ink-soft);padding:8px 0;">Ainda sem avaliações registadas.</div>`;
+  } else {
+    itens.forEach(a=>{
+      const data = new Date(a.criado_em).toLocaleDateString('pt-PT');
+      const estrelas = a.nota ? '⭐'.repeat(Math.round(a.nota)) : '';
+      html += `<div style="padding:9px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:13px;color:var(--ink);">${estrelas} ${a.nota ? '('+a.nota+'/5)' : ''}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${a.comentario || ''}</div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:3px;">${a.secao ? a.secao+' · ' : ''}${data}</div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function adicionarAvaliacaoCliente(secao){
+  const notaStr = prompt('Nota do cliente (1 a 5):');
+  if(notaStr === null) return;
+  const nota = parseFloat(notaStr.replace(',','.'));
+  const comentario = prompt('Comentário do cliente (opcional):') || '';
+  try{
+    await sb('loja_avaliacoes_cliente', {method:"POST", body: JSON.stringify({
+      secao: secao || null, nota: isNaN(nota) ? null : nota, comentario: comentario.trim() || null, criado_por: currentUser ? currentUser.name : null
+    })});
+    showToast();
+    if(secao) renderSecaoDetail(secao, secao); else renderDashboard();
+  }catch(e){
+    console.error('Erro ao guardar', e);
+  }
+}
+
 async function renderSecaoDetail(secao, label){
   document.getElementById('colab-title').textContent = label;
   const content = document.getElementById('colab-content');
@@ -1718,8 +1990,12 @@ async function renderSecaoDetail(secao, label){
     html += await blocoRastreabilidadeSecao(secao, label);
   }
 
+  html += await blocoMarkdownsSecao(secao, label);
   html += await blocoPlanogramasSecao(secao, label);
+  html += await blocoPlanoAcaoSecao(secao, label);
   html += await blocoNotasAuditoria(secao, label);
+  html += await blocoFeedbackSecao(secao, label);
+  html += await blocoAvaliacaoClienteSecao(secao, label);
 
   if(isChefe()){
     const vendasRows = await sb(`loja_vendas_secao?secao=eq.${encodeURIComponent(secao)}&select=*`);
@@ -1941,322 +2217,4 @@ function renderPlanogramasContent(){
   const feitos = planoItems.filter(p=>p.implementado);
 
   let html = `<div class="plano-summary">
-    <div class="box"><div class="n" style="color:var(--amber);">${pendentes.length}</div><div class="l">Por implementar</div></div>
-    <div class="box"><div class="n" style="color:var(--green);">${feitos.length}</div><div class="l">Implementados</div></div>
-  </div>`;
-
-  const ordenados = [...pendentes, ...feitos];
-  ordenados.forEach(p=>{
-    const data = p.inicio_implementacao ? new Date(p.inicio_implementacao + 'T00:00:00').toLocaleDateString('pt-PT') : '—';
-    const feitoInfo = p.implementado
-      ? ` · Feito por: ${p.implementado_por || '—'}${p.implementado_por_numero ? ' ('+p.implementado_por_numero+')' : ''} em ${p.implementado_em ? new Date(p.implementado_em).toLocaleDateString('pt-PT') : '—'}`
-      : '';
-    html += `<div class="plano-item ${p.implementado ? 'done' : ''}">
-      <div class="p-check ${p.implementado ? 'checked' : ''}" onclick="toggleImplementado(${p.id}, ${!p.implementado})">${p.implementado ? '✓' : ''}</div>
-      <div class="p-body">
-        <div class="p-cat">${p.categoria}</div>
-        <div class="p-meta">Cod ${p.catlay} · Perfil ${p.perfil || '—'} · ${p.num_modulos || '—'} módulos · Início: ${data}${feitoInfo}</div>
-      </div>
-      <span class="plano-badge ${p.implementado ? 'done' : 'pending'}">${p.implementado ? 'Feito' : 'Pendente'}</span>
-    </div>`;
-  });
-
-  content.innerHTML = html;
-}
-
-async function toggleImplementado(id, novoEstado){
-  if(!novoEstado){
-    // desmarcar: sem perguntas
-    try{
-      const body = {implementado: false, implementado_por: null, implementado_por_numero: null, implementado_em: null};
-      await sb(`loja_planogramas?id=eq.${id}`, {method:"PATCH", body: JSON.stringify(body)});
-      const item = planoItems.find(p=>p.id===id);
-      Object.assign(item, body);
-      showToast();
-      renderPlanogramasContent();
-    }catch(e){
-      console.error('Erro ao guardar', e);
-    }
-    return;
-  }
-
-  const numero = prompt('Número de colaborador de quem fez o planograma:');
-  if(!numero || !numero.trim()) return;
-
-  let nomeColaborador = numero.trim();
-  try{
-    const rows = await sb(`loja_colaboradores?numero_pessoal=eq.${encodeURIComponent(numero.trim())}&select=nome`);
-    if(rows && rows.length){
-      nomeColaborador = rows[0].nome;
-    } else {
-      const continuar = confirm(`Número "${numero}" não encontrado na lista de colaboradores. Guardar mesmo assim?`);
-      if(!continuar) return;
-    }
-  }catch(e){
-    console.error('Erro na procura', e);
-  }
-
-  const hoje = new Date().toLocaleDateString('pt-PT');
-  const dataStr = prompt('Data de realização (DD/MM/AAAA):', hoje);
-  if(!dataStr || !dataStr.trim()) return;
-
-  let dataISO;
-  const partes = dataStr.trim().split('/');
-  if(partes.length === 3){
-    dataISO = `${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}T12:00:00`;
-  } else {
-    dataISO = new Date().toISOString();
-  }
-
-  try{
-    const body = {
-      implementado: true,
-      implementado_por: nomeColaborador,
-      implementado_por_numero: numero.trim(),
-      implementado_em: dataISO
-    };
-    await sb(`loja_planogramas?id=eq.${id}`, {method:"PATCH", body: JSON.stringify(body)});
-    const item = planoItems.find(p=>p.id===id);
-    Object.assign(item, body);
-    showToast();
-    renderPlanogramasContent();
-  }catch(e){
-    console.error('Erro ao guardar', e);
-  }
-}
-
-/* ---------- MELHORIA CONTÍNUA ---------- */
-async function renderMelhoriaContinua(){
-  const content = document.getElementById('melhoria-content');
-  content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
-
-  const categorias = [
-    {nome:'SHT', label:'SHT'},
-    {nome:'RH', label:'RH'},
-    {nome:'Marketing', label:'Marketing'},
-    {nome:'Controlo', label:'Controlo Operacional'}
-  ];
-  const auditorias = await sb('loja_auditorias?select=nome,percentagem');
-  const evolucao = await sb('loja_melhoria_evolucao?select=*&order=id.asc');
-  const plano = await sb('loja_plano_acao?select=*&order=area.asc');
-
-  let html = '<div class="mc-grid">';
-  categorias.forEach(cat=>{
-    const found = auditorias.find(a=>a.nome === cat.nome);
-    const pct = found ? found.percentagem : null;
-    const semRelatorio = (cat.nome === 'SHT' || cat.nome === 'Controlo');
-    html += `<div class="mc-card" ${semRelatorio ? '' : `onclick="abrirDetalheAuditoria('${cat.nome}')"`} style="${semRelatorio ? 'cursor:default;' : ''}">
-      <div class="mc-name">${cat.label}</div>
-      <div class="mc-pct ${pct===null?'nodata':''}">${pct===null ? 'Sem dados' : pct+'%'}</div>
-    </div>`;
-  });
-  html += '</div>';
-
-  if(evolucao.length){
-    html += `<div class="mc-chart-wrap"><div class="chart-title">Evolução do Score Semanal — 2026</div>${buildSparkline(evolucao)}</div>`;
-  }
-
-  const grupos = {};
-  plano.forEach(p=>{
-    if(!grupos[p.area]) grupos[p.area] = [];
-    grupos[p.area].push(p);
-  });
-
-  html += `<div class="section-title">Plano de Ação</div>`;
-  Object.keys(grupos).sort().forEach(area=>{
-    html += `<div class="plano-acao-group"><div class="pa-titulo">${area}</div>`;
-    grupos[area].forEach(p=>{
-      const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
-      html += `<div class="pa-item">
-        <div class="pa-ponto">${p.ponto}</div>
-        <div class="pa-acao">${p.acao}</div>
-        <span class="pa-estado ${cls}">${p.estado}</span>
-      </div>`;
-    });
-    html += `</div>`;
-  });
-
-  content.innerHTML = html;
-}
-
-function buildSparkline(rows){
-  const w = 320, h = 90, pad = 8;
-  const scores = rows.map(r=>r.score);
-  const max = 1, min = Math.min(...scores, 0.5);
-  const stepX = (w - pad*2) / (rows.length - 1);
-  const points = scores.map((s,i)=>{
-    const x = pad + i*stepX;
-    const y = h - pad - ((s - min)/(max - min)) * (h - pad*2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const last = scores[scores.length-1];
-  const lastColor = last >= 0.85 ? 'var(--green)' : (last >= 0.7 ? 'var(--amber)' : 'var(--red)');
-  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:${h}px;">
-    <polyline points="${points}" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${pad + (scores.length-1)*stepX}" cy="${(h - pad - ((last - min)/(max - min)) * (h - pad*2)).toFixed(1)}" r="4" fill="${lastColor}"/>
-  </svg>
-  <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-soft);margin-top:4px;">
-    <span>${rows[0].mes}</span><span>Atual: ${(last*100).toFixed(0)}%</span>
-  </div>`;
-}
-
-/* ---------- RASTREABILIDADES ---------- */
-let rastroDia = null;
-let rastroCatalogo = [];
-let rastroVerificados = {};
-
-async function renderRastreabilidade(){
-  const content = document.getElementById('rastro-content');
-  content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
-
-  const dias = await sb('loja_rastreabilidade_catalogo?select=dia_semana&limit=1000');
-  const diasUnicos = [...new Set(dias.map(d=>d.dia_semana).filter(Boolean))];
-  const ordem = ['segunda','terça','terca','quarta','quinta','sexta','sábado','sabado','domingo'];
-  diasUnicos.sort((a,b)=>{
-    const ra = ordem.findIndex(o=>a.toLowerCase().includes(o));
-    const rb = ordem.findIndex(o=>b.toLowerCase().includes(o));
-    return ra - rb;
-  });
-
-  if(!rastroDia || !diasUnicos.includes(rastroDia)){
-    const hojeIdx = new Date().getDay(); // 0=domingo..6=sabado
-    const nomesHoje = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
-    rastroDia = diasUnicos.find(d=>d.toLowerCase().includes(nomesHoje[hojeIdx])) || diasUnicos[0];
-  }
-
-  window.__rastroDiasUnicos = diasUnicos;
-  await carregarRastreabilidadeDia();
-}
-
-async function carregarRastreabilidadeDia(){
-  const content = document.getElementById('rastro-content');
-  const diasUnicos = window.__rastroDiasUnicos || [];
-
-  rastroCatalogo = await sb(`loja_rastreabilidade_catalogo?dia_semana=eq.${encodeURIComponent(rastroDia)}&select=*&order=categoria.asc,descricao.asc`);
-
-  const hoje = new Date().toISOString().slice(0,10);
-  const verifRows = await sb(`loja_rastreabilidade_verificacoes?data=eq.${hoje}&select=catalogo_id,lote,validade,nao_conformidade,verificado_por`);
-  rastroVerificados = {};
-  verifRows.forEach(v=> rastroVerificados[v.catalogo_id] = v);
-
-  let html = `<div class="day-pills">`;
-  diasUnicos.forEach(d=>{
-    html += `<div class="day-pill ${d === rastroDia ? 'active' : ''}" onclick="selecionarDiaRastro('${d.replace(/'/g,"\\'")}')">${d.slice(0,3)}</div>`;
-  });
-  html += `</div>`;
-
-  const total = rastroCatalogo.length;
-  const feitos = rastroCatalogo.filter(c=>rastroVerificados[c.id]).length;
-  html += `<div class="plano-summary">
-    <div class="box"><div class="n" style="color:var(--teal);">${feitos}/${total}</div><div class="l">Verificados hoje</div></div>
-  </div>`;
-
-  const grupos = {};
-  rastroCatalogo.forEach(c=>{
-    const cat = c.categoria || 'Outros';
-    if(!grupos[cat]) grupos[cat] = [];
-    grupos[cat].push(c);
-  });
-
-  Object.keys(grupos).sort().forEach((cat, idx)=>{
-    html += `<div class="econ-secao">
-      <div class="econ-secao-header ${idx===0?'open':''}" onclick="toggleSecao(this)">
-        <span>${cat}</span><span class="chevron">▶</span>
-      </div>
-      <div class="econ-secao-body ${idx===0?'open':''}">`;
-    grupos[cat].forEach(c=>{
-      const v = rastroVerificados[c.id];
-      const checked = !!v;
-      let extraInfo = '';
-      if(checked && (v.lote || v.validade)){
-        const val = v.validade ? new Date(v.validade+'T00:00:00').toLocaleDateString('pt-PT') : '—';
-        extraInfo = `<div class="e-meta">Lote: ${v.lote || '—'} · Validade: ${val}</div>`;
-      }
-      if(checked && v.nao_conformidade){
-        extraInfo += `<div class="e-meta" style="color:var(--red);">⚠️ ${v.nao_conformidade}</div>`;
-      }
-      html += `<div class="econ-item">
-        <div class="e-info">
-          <div class="e-desc">${c.descricao}</div>
-          <div class="e-meta">${c.material || ''}</div>
-          ${extraInfo}
-        </div>
-        <button class="econ-btn ${checked ? 'filled' : ''}" onclick="toggleRastreabilidade(${c.id})">${checked ? '✓ OK' : 'Verificar'}</button>
-      </div>`;
-    });
-    html += `</div></div>`;
-  });
-
-  content.innerHTML = html;
-}
-
-function selecionarDiaRastro(dia){
-  rastroDia = dia;
-  carregarRastreabilidadeDia();
-}
-
-async function toggleRastreabilidade(catalogoId){
-  const jaVerificado = rastroVerificados[catalogoId];
-  const hoje = new Date().toISOString().slice(0,10);
-
-  if(jaVerificado){
-    try{
-      const existing = await sb(`loja_rastreabilidade_verificacoes?catalogo_id=eq.${catalogoId}&data=eq.${hoje}&select=id`);
-      if(existing && existing.length){
-        await sb(`loja_rastreabilidade_verificacoes?id=eq.${existing[0].id}`, {method:"DELETE"});
-      }
-      delete rastroVerificados[catalogoId];
-      showToast();
-      carregarRastreabilidadeDia();
-    }catch(e){
-      console.error('Erro ao guardar', e);
-    }
-    return;
-  }
-
-  const idColaborador = prompt('Número de colaborador (ID) de quem verifica:', currentUser && currentUser.numero ? currentUser.numero : '');
-  if(idColaborador === null) return;
-
-  const lote = prompt('Lote:');
-  if(lote === null) return;
-
-  const validadeStr = prompt('Validade (DD/MM/AAAA):');
-  if(validadeStr === null) return;
-  let validadeISO = null;
-  const partes = validadeStr.trim().split('/');
-  if(partes.length === 3){
-    validadeISO = `${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}`;
-  }
-
-  const naoConformidade = prompt('Não conformidade encontrada (deixe em branco se estiver tudo OK):');
-
-  try{
-    await sb('loja_rastreabilidade_verificacoes', {method:"POST", body: JSON.stringify({
-      catalogo_id: catalogoId, data: hoje, verificado: true,
-      verificado_por: currentUser ? currentUser.name : null,
-      colaborador_numero: idColaborador.trim() || null,
-      lote: lote.trim() || null,
-      validade: validadeISO,
-      nao_conformidade: (naoConformidade && naoConformidade.trim()) ? naoConformidade.trim() : null
-    })});
-    rastroVerificados[catalogoId] = true;
-    showToast();
-    carregarRastreabilidadeDia();
-  }catch(e){
-    console.error('Erro ao guardar', e);
-  }
-}
-
-/* ---------- FORMATADORES ---------- */
-function fmtEuro(v){
-  if(v === null || v === undefined) return '—';
-  return Number(v).toLocaleString('pt-PT', {minimumFractionDigits:0, maximumFractionDigits:0}) + ' €';
-}
-function fmtNum(v){
-  if(v === null || v === undefined) return '—';
-  return Number(v).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1});
-}
-</script>
-</body>
-</html>
-
+    <div class="box"><div class="n" style="color:var(--amber);">${pendentes.length}</div><div class="l">Por imple
