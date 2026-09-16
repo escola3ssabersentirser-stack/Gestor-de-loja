@@ -480,7 +480,6 @@
         </div>
 
         <div id="aprofundar-hoje-wrap" style="display:none;">
-        <div id="foco-semanal-wrap"></div>
         <div id="resumo-vendas-quebra-wrap"></div>
 
         <div id="dash-chefe-only">
@@ -1276,7 +1275,6 @@ async function renderDashboard(){
   renderTasks();
   renderAlerts();
   verificarMensagemParabens();
-  renderFocoSemanal();
   renderResumoVendasQuebra();
   renderEvolucaoScoreDashboard();
 
@@ -2901,6 +2899,26 @@ function renderAudits(){
   });
 }
 
+async function editarNotaAuditoria(nome){
+  const rows = await sb(`loja_auditorias?nome=eq.${encodeURIComponent(nome)}&select=*`);
+  const atual = rows && rows.length ? rows[0].percentagem : null;
+  const novaStr = prompt(`Nova nota para ${nome} (%):`, atual !== null && atual !== undefined ? String(atual) : '');
+  if(novaStr === null) return;
+  const nova = parseFloat(novaStr.replace(',','.'));
+  if(isNaN(nova)){ alert('Valor inválido.'); return; }
+  try{
+    if(rows && rows.length){
+      await sb(`loja_auditorias?nome=eq.${encodeURIComponent(nome)}`, {method:"PATCH", body: JSON.stringify({percentagem: nova})});
+    } else {
+      await sb('loja_auditorias', {method:"POST", body: JSON.stringify({nome, percentagem: nova})});
+    }
+    showToast();
+    abrirDetalheAuditoria(nome);
+  }catch(e){
+    console.error('Erro ao guardar', e);
+  }
+}
+
 async function abrirDetalheAuditoria(nome){
   const content = document.getElementById('melhoria-content');
   const alvo = content || document.body;
@@ -2919,6 +2937,7 @@ async function abrirDetalheAuditoria(nome){
     html += `<div class="card" style="text-align:center;">
       <div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px;">${nome}</div>
       <div style="font-size:36px;font-weight:700;color:var(--navy);">${pct}</div>
+      ${currentUser && currentUser.role === 'gestora' ? `<button class="econ-btn" style="margin-top:10px;" onclick="editarNotaAuditoria('${nome.replace(/'/g,"\\'")}')">✏️ Editar nota</button>` : ''}
     </div>`;
 
     if(!auditorias || !auditorias.length){
@@ -5345,8 +5364,7 @@ async function renderMelhoriaContinua(){
   categorias.forEach(cat=>{
     const found = auditorias.find(a=>a.nome === cat.nome);
     const pct = found ? found.percentagem : null;
-    const semRelatorio = (cat.nome === 'SHT' || cat.nome === 'Controlo');
-    html += `<div class="mc-card" ${semRelatorio ? '' : `onclick="abrirDetalheAuditoria('${cat.nome}')"`} style="${semRelatorio ? 'cursor:default;' : ''}">
+    html += `<div class="mc-card" onclick="abrirDetalheAuditoria('${cat.nome}')">
       <div class="mc-name">${cat.label}</div>
       <div class="mc-pct ${pct===null?'nodata':''}">${pct===null ? 'Sem dados' : pct+'%'}</div>
     </div>`;
