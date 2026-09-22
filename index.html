@@ -944,6 +944,18 @@
   </div>
 
   <!-- ===================== MÓDULO GENÉRICO (placeholder) ===================== -->
+  <!-- ===================== MODAL: RESULTADO DE INVENTÁRIO ===================== -->
+  <div id="modal-inventario" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:999;display:flex;align-items:flex-end;">
+    <div style="background:var(--bg,#fff);width:100%;max-height:88vh;overflow-y:auto;border-radius:16px 16px 0 0;padding:18px;">
+      <h3 id="modal-inventario-titulo" style="margin:0 0 14px;">Resultado de Inventário</h3>
+      <div id="modal-inventario-campos"></div>
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button class="econ-btn" style="flex:1;" onclick="fecharModalInventario()">Cancelar</button>
+        <button class="btn-primary" style="flex:1;margin-top:0;" onclick="guardarModalInventario()">Guardar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="placeholder-screen" class="hidden">
     <div class="topbar">
       <div class="topbar-left">
@@ -2365,7 +2377,83 @@ async function marcarResultadoDiarioBool(secao, campo, valor){
   }
 }
 
+let modalInventarioSecaoAtual = null;
+
 async function editarResultadoDiarioSecao(secao, label){
+  modalInventarioSecaoAtual = secao;
+  const rows = await sb(`loja_resultado_diario_secao?data=eq.${hojeISO()}&secao=eq.${encodeURIComponent(secao)}&select=*`);
+  const atual = rows && rows.length ? rows[0] : {};
+
+  document.getElementById('modal-inventario-titulo').textContent = `Resultado de Inventário — ${label}`;
+  const campo = (id, label, valor, tipo='number') => `
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">${label}</label>
+      <input id="${id}" type="${tipo}" inputmode="decimal" value="${valor ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+    </div>`;
+  let html = '';
+  html += campo('inv-m13', 'Quebra — Motivo 13 (falta à descarga), €', atual.quebra_motivo13);
+  html += campo('inv-m11', 'Quebra — Motivo 11 (roubo), €', atual.quebra_motivo11);
+  html += campo('inv-m12', 'Quebra — Motivo 12 (sinistro), €', atual.quebra_motivo12);
+  html += campo('inv-m19', 'Quebra — Motivo 19 (qualidade), €', atual.quebra_motivo19);
+  html += campo('inv-m21', 'Quebra — Motivo 21 (fora de validade), €', atual.quebra_motivo21);
+  html += campo('inv-m304', 'Quebra — Motivo 304 (qualidade), €', atual.quebra_motivo304);
+  html += campo('inv-listas', 'Número de listas automáticas hoje', atual.numero_listas_automaticas);
+  html += campo('inv-semstock', 'Quantos "Sem Stock" tratados hoje', atual.sem_stock_tratados);
+  html += `<div style="margin-bottom:12px;">
+    <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">OSA</label>
+    <select id="inv-osa" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+      <option value="OK" ${atual.osa==='OK'?'selected':''}>OK</option>
+      <option value="KO" ${atual.osa==='KO'?'selected':''}>KO</option>
+    </select>
+  </div>`;
+
+  document.getElementById('modal-inventario-campos').innerHTML = html;
+  document.getElementById('modal-inventario').classList.remove('hidden');
+}
+
+function fecharModalInventario(){
+  document.getElementById('modal-inventario').classList.add('hidden');
+  modalInventarioSecaoAtual = null;
+}
+
+async function guardarModalInventario(){
+  const secao = modalInventarioSecaoAtual;
+  if(!secao) return;
+  const num = (id) => { const v = parseFloat((document.getElementById(id).value||'').replace(',','.')); return isNaN(v) ? null : v; };
+  const int = (id) => { const v = parseInt(document.getElementById(id).value||''); return isNaN(v) ? null : v; };
+
+  try{
+    const rows = await sb(`loja_resultado_diario_secao?data=eq.${hojeISO()}&secao=eq.${encodeURIComponent(secao)}&select=rotina_validades_tratada,higienizacoes_assinadas`);
+    const atual = rows && rows.length ? rows[0] : {};
+    await sb(`loja_resultado_diario_secao?on_conflict=data,secao`, {
+      method:"POST",
+      body: JSON.stringify({
+        data: hojeISO(), secao,
+        quebra_motivo13: num('inv-m13'),
+        quebra_motivo11: num('inv-m11'),
+        quebra_motivo12: num('inv-m12'),
+        quebra_motivo19: num('inv-m19'),
+        quebra_motivo21: num('inv-m21'),
+        quebra_motivo304: num('inv-m304'),
+        numero_listas_automaticas: int('inv-listas'),
+        osa: document.getElementById('inv-osa').value,
+        sem_stock_tratados: int('inv-semstock'),
+        rotina_validades_tratada: atual.rotina_validades_tratada ?? false,
+        higienizacoes_assinadas: atual.higienizacoes_assinadas ?? false,
+        registado_por: currentUser ? currentUser.name : null
+      }),
+      prefer: "resolution=merge-duplicates,return=representation"
+    });
+    showToast();
+    fecharModalInventario();
+    renderSecaoDetail(secao, secao);
+  }catch(e){
+    console.error('Erro ao guardar', e);
+    alert('Não consegui guardar. Verifique a ligação e tente novamente.');
+  }
+}
+
+async function editarResultadoDiarioSecaoOLD(secao, label){
   const q13 = parseFloat((prompt('Valor de quebra — Motivo 13 (falta à descarga), em €:') || '').replace(',','.'));
   const q11 = parseFloat((prompt('Valor de quebra — Motivo 11 (roubo), em €:') || '').replace(',','.'));
   const q12 = parseFloat((prompt('Valor de quebra — Motivo 12 (sinistro), em €:') || '').replace(',','.'));
@@ -4954,9 +5042,6 @@ async function renderSecaoDetail(secao, label){
         </div>`;
       }
       resumoHtml += `<div class="card"><div style="font-size:11.5px;color:var(--ink-soft);">Budget mês: <b style="color:var(--ink);">${fmtEuro(v.budget_mes)}</b> · Budget ano: <b style="color:var(--ink);">${fmtEuro(v.budget_ano)}</b></div></div>`;
-      if(secao === 'Talho'){
-        resumoHtml += `<div class="vs-nodata" style="text-align:left;padding:10px 14px;">⚠️ Os dados mensais de vendas 2026 do Talho parecem incompletos nos ficheiros recebidos até agora (valores muito abaixo do esperado em vários meses) — este LFL pode não refletir a realidade. Envie um ficheiro de vendas mais completo do Talho para corrigir.</div>`;
-      }
     }
     const bhTotal = rows.reduce((s,p)=> s + (p.bh_positivo||0) + (p.bh_negativo||0), 0);
     const trocasTotal = rows.reduce((s,p)=> s + (p.trocas_horario||0), 0);
