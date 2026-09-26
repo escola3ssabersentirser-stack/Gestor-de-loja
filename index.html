@@ -382,6 +382,8 @@
 <meta name="apple-mobile-web-app-title" content="Gestor de Loja">
 <meta name="mobile-web-app-capable" content="yes">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/index.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -3536,14 +3538,15 @@ async function renderPlanoSemanal(){
 }
 
 async function criarPlanoSemanal(){
-  const [resumoRows, markdowns, colaboradores, formacaoRows, percursoRows, artigosQuebra, artigosSemVendas] = await Promise.all([
+  const [resumoRows, markdowns, colaboradores, formacaoRows, percursoRows, artigosQuebra, artigosSemVendas, vendasSecoes] = await Promise.all([
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc&limit=5'),
     sb('loja_colaboradores?select=nome,secao,bh_negativo&order=bh_negativo.asc'),
     sb('loja_formacao_compliance?select=*'),
     sb('loja_formacoes_percurso?select=*'),
     sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=10'),
-    sb('loja_artigos_sem_vendas?select=*&limit=10')
+    sb('loja_artigos_sem_vendas?select=*&limit=10'),
+    sb('loja_vendas_secao?select=*')
   ]);
   const r = resumoRows[0] || {};
 
@@ -3572,7 +3575,14 @@ async function criarPlanoSemanal(){
   contexto += `⏰ Banco de Horas negativo (${bhNegativo.length} colaborador(es)):\n${bhNegativo.slice(0,8).map(c=>`• ${c.nome} (${c.secao}): ${c.bh_negativo}h`).join('\n') || '— nenhum'}\n\n`;
   contexto += `🎓 Formações pendentes: ${pendComplianceCount} de compliance + ${percursoPendCount} percursos formativos\n\n`;
   contexto += `📉 Artigos com mais quebra (${dataMaisRecenteQuebra || '—'}):\n${artigosQuebraHoje.map(a=>`• ${a.descricao}: ${a.valor_quebra}€`).join('\n') || '— sem dados'}\n\n`;
-  contexto += `🛒 Artigos a perder vendas:\n${artigosSemVendas.map(a=>`• ${a.descricao}`).join('\n') || '— sem dados'}`;
+  contexto += `🛒 Artigos a perder vendas:\n${artigosSemVendas.map(a=>`• ${a.descricao}`).join('\n') || '— sem dados'}\n\n`;
+  contexto += `📊 VALORES POR SECÇÃO (mês):\n`;
+  DEPARTAMENTOS_LOJA.forEach(secaoD=>{
+    const v = vendasSecoes.find(x=>x.secao===secaoD);
+    if(!v) { contexto += `• ${labelSecaoPainel(secaoD)}: sem dados\n`; return; }
+    const desvio = v.vendas_mes && v.budget_mes ? ((Number(v.vendas_mes)-Number(v.budget_mes))/Number(v.budget_mes)*100).toFixed(1) : null;
+    contexto += `• ${labelSecaoPainel(secaoD)}: Vendas ${v.vendas_mes!=null?fmtEuro(v.vendas_mes):'—'}${desvio!==null?' ('+(desvio>=0?'+':'')+desvio+'%)':''} · Quebra ${v.quebras_mes!=null?fmtEuro(v.quebras_mes):'—'}\n`;
+  });
 
   document.getElementById('modal-plano-semanal-campos').innerHTML = `
     <div style="margin-bottom:12px;">
@@ -3621,8 +3631,16 @@ async function criarPlanoSemanal(){
    Prazo: </textarea>
     </div>
     <div style="margin-bottom:12px;">
-      <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Assinatura</label>
+      <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Assinatura da Gestora</label>
       <input id="ps-assinatura" type="text" value="${currentUser ? currentUser.name : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:6px;">Presenças na Reunião Semanal — Assinatura por Secção</label>
+      ${DEPARTAMENTOS_LOJA.map(s=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:12px;color:var(--ink);width:120px;flex-shrink:0;">${labelSecaoPainel(s)}</span>
+          <input id="ps-assin-${s.replace(/[^a-zA-Z0-9]/g,'')}" type="text" placeholder="Nome / assinatura" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:13px;box-sizing:border-box;">
+        </div>`).join('')}
     </div>
   `;
   document.getElementById('modal-plano-semanal').classList.remove('hidden');
@@ -3630,24 +3648,92 @@ async function criarPlanoSemanal(){
 
 async function guardarPlanoSemanalModal(){
   const num = (id) => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? null : v; };
+  const semana = document.getElementById('ps-semana').value.trim();
+  const contexto = document.getElementById('ps-contexto').value;
+  const acoesTexto = document.getElementById('ps-acoes').value;
+  const assinaturaGestora = document.getElementById('ps-assinatura').value.trim();
+  const assinaturasSecao = DEPARTAMENTOS_LOJA.map(s => ({
+    secao: labelSecaoPainel(s),
+    nome: (document.getElementById(`ps-assin-${s.replace(/[^a-zA-Z0-9]/g,'')}`).value || '').trim()
+  }));
+
   try{
     await sb('loja_plano_semana', {method:"POST", body: JSON.stringify({
-      semana: document.getElementById('ps-semana').value.trim(),
+      semana,
       vendas_objetivo: num('ps-vendas-obj'), vendas_realizado: num('ps-vendas-real'),
       quebras_objetivo_pct: num('ps-quebra-obj'), quebras_realizado_pct: num('ps-quebra-real'),
-      desvios_causas: document.getElementById('ps-contexto').value,
-      acoes: [{area:'Ver texto', acao: document.getElementById('ps-acoes').value, responsavel:'', prazo:''}],
-      assinatura_nome: document.getElementById('ps-assinatura').value.trim(),
+      desvios_causas: contexto,
+      acoes: [{area:'Ver texto', acao: acoesTexto, responsavel:'', prazo:''}],
+      assinatura_nome: assinaturaGestora,
+      assinaturas_secao: assinaturasSecao,
       assinado_em: new Date().toISOString(),
       criado_por: currentUser ? currentUser.name : null
     })});
     showToast();
     document.getElementById('modal-plano-semanal').classList.add('hidden');
     renderPlanoSemanal();
+
+    gerarPlanoSemanalWord(semana, contexto, acoesTexto, assinaturaGestora, assinaturasSecao);
   }catch(e){
     console.error('Erro ao guardar', e);
     alert('Não consegui guardar. Tente novamente.');
   }
+}
+
+async function gerarPlanoSemanalWord(semana, contexto, acoesTexto, assinaturaGestora, assinaturasSecao){
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType } = docx;
+
+  const paragrafosContexto = contexto.split('\n').map(linha => new Paragraph({
+    children: [new TextRun({ text: linha || ' ', bold: /^[📅📊🎯💰📉🏷️⏰🎓🛒]/.test(linha) })]
+  }));
+  const paragrafosAcoes = acoesTexto.split('\n').map(linha => new Paragraph({ children: [new TextRun(linha || ' ')] }));
+
+  const linhasAssinaturas = assinaturasSecao.map(a => new TableRow({
+    children: [
+      new TableCell({ width: {size: 40, type: WidthType.PERCENTAGE}, children: [new Paragraph(a.secao)] }),
+      new TableCell({ width: {size: 60, type: WidthType.PERCENTAGE}, children: [new Paragraph(a.nome || '')] }),
+    ]
+  }));
+
+  const doc = new Document({
+    sections: [{
+      children: [
+        new Paragraph({ text: `Plano de Ação Semanal — ${semana}`, heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ text: 'Loja 747 — Viana do Castelo Portuzelo', spacing: {after: 300} }),
+        new Paragraph({ text: 'Contexto da Semana', heading: HeadingLevel.HEADING_2 }),
+        ...paragrafosContexto,
+        new Paragraph({ text: '', spacing: {after: 200} }),
+        new Paragraph({ text: 'Ações para Reverter', heading: HeadingLevel.HEADING_2 }),
+        ...paragrafosAcoes,
+        new Paragraph({ text: '', spacing: {after: 300} }),
+        new Paragraph({ text: 'Assinatura da Gestora', heading: HeadingLevel.HEADING_2 }),
+        new Paragraph({ text: assinaturaGestora || '—', spacing: {after: 300} }),
+        new Paragraph({ text: 'Presenças na Reunião Semanal — Assinatura por Secção', heading: HeadingLevel.HEADING_2 }),
+        new Table({
+          width: {size: 100, type: WidthType.PERCENTAGE},
+          rows: [
+            new TableRow({ children: [
+              new TableCell({ children: [new Paragraph({children:[new TextRun({text:'Secção', bold:true})]})] }),
+              new TableCell({ children: [new Paragraph({children:[new TextRun({text:'Assinatura', bold:true})]})] }),
+            ]}),
+            ...linhasAssinaturas
+          ]
+        }),
+      ]
+    }]
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const nomeFicheiro = `Plano_de_Acao_Semanal_${semana.replace(/\s+/g,'_')}.docx`;
+  saveAs(blob, nomeFicheiro);
+
+  showToast();
+  setTimeout(()=>{
+    if(confirm(`Ficheiro "${nomeFicheiro}" descarregado. Quer abrir já o email para o enviar? (Terá de anexar o ficheiro manualmente.)`)){
+      const link = `mailto:${EMAIL_GERENTE}?subject=${encodeURIComponent('Plano de Ação Semanal — '+semana)}&body=${encodeURIComponent('Em anexo o Plano de Ação Semanal, com o contexto, as ações e as assinaturas da reunião.\n\n(Lembre-se de anexar o ficheiro '+nomeFicheiro+' que acabou de descarregar.)')}`;
+      window.location.href = link;
+    }
+  }, 800);
 }
 
 async function criarPlanoSemanalOLD(){
@@ -5688,7 +5774,8 @@ async function blocoAvaliacaoClienteSecao(secao, label){
   html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   html += `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
     <button class="btn-primary" style="margin-top:0;width:100%;margin-bottom:6px;" onclick="adicionarAvaliacaoCliente('${(secao||'').replace(/'/g,"\\'")}')">+ Registar avaliação</button>
-    <div style="font-size:11px;color:var(--ink-soft);">⚠️ Quem faz a avaliação (no formulário externo do Microsoft Forms) tem também de a <b>registar aqui</b> com este botão — só assim conta para o total da loja.</div>
+    <a href="${LINK_FORM_AQUI_CLIENTE}" target="_blank" style="font-size:11.5px;color:var(--navy);word-break:break-all;">📋 ${LINK_FORM_AQUI_CLIENTE}</a>
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">⚠️ Quem preencher o Microsoft Forms acima tem também de <b>registar aqui</b> com o botão — só assim conta para o total da loja.</div>
   </div>`;
 
   // Resumo geral da loja (todos os avaliadores/colaboradores) — soma real, sem limite
