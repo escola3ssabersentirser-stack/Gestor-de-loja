@@ -3407,7 +3407,7 @@ async function renderPontosCriticos(){
     if(!p.data_prevista) return false;
     return new Date(p.data_prevista+'T00:00:00') < hoje;
   });
-  const compliancePendente = formacaoRows.filter(f => f.codigo_conduta==='a formar' || f.data_privacy==='a formar' || f.politica_anticorrupcao==='a formar').length;
+  const compliancePendente = formacaoRows.filter(f => f.codigo_conduta==='a formar' || f.data_privacy==='a formar' || f.politica_anticorrupcao==='a formar' || f.seguranca_protecao==='a formar').length;
   if(percursoAtrasados.length || compliancePendente){
     html += `<div>
       <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px;">🎓 FORMAÇÕES — Em Atraso</div>`;
@@ -3551,7 +3551,7 @@ async function criarPlanoSemanal(){
   const r = resumoRows[0] || {};
 
   const bhNegativo = colaboradores.filter(c => Number(c.bh_negativo) < -1);
-  const pendComplianceCount = formacaoRows.filter(f => f.codigo_conduta==='a formar' || f.data_privacy==='a formar' || f.politica_anticorrupcao==='a formar').length;
+  const pendComplianceCount = formacaoRows.filter(f => f.codigo_conduta==='a formar' || f.data_privacy==='a formar' || f.politica_anticorrupcao==='a formar' || f.seguranca_protecao==='a formar').length;
   const percursoPendCount = percursoRows.length;
   const dataMaisRecenteQuebra = artigosQuebra.length ? artigosQuebra[0].data : null;
   const artigosQuebraHoje = artigosQuebra.filter(a => a.data === dataMaisRecenteQuebra).sort((a,b)=>Number(b.valor_quebra)-Number(a.valor_quebra)).slice(0,5);
@@ -5130,6 +5130,36 @@ async function blocoFeedbackSecao(secao, label){
   return html;
 }
 
+async function gerarDocumentoWordEEmail(titulo, secoes, assinaturaNome, nomeFicheiroBase){
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+
+  const filhos = [
+    new Paragraph({ text: titulo, heading: HeadingLevel.HEADING_1 }),
+    new Paragraph({ text: 'Loja 747 — Viana do Castelo Portuzelo', spacing: {after: 300} }),
+  ];
+  secoes.forEach(s=>{
+    filhos.push(new Paragraph({ text: s.label, heading: HeadingLevel.HEADING_2 }));
+    const linhas = String(s.valor && String(s.valor).trim() ? s.valor : '—').split('\n');
+    linhas.forEach(l => filhos.push(new Paragraph({ children: [new TextRun(l || ' ')] })));
+    filhos.push(new Paragraph({ text: '', spacing: {after: 150} }));
+  });
+  filhos.push(new Paragraph({ text: `Assinado por: ${assinaturaNome || '—'}` }));
+  filhos.push(new Paragraph({ text: `Data: ${new Date().toLocaleDateString('pt-PT')} ${new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})}` }));
+
+  const doc = new Document({ sections: [{ children: filhos }] });
+  const blob = await Packer.toBlob(doc);
+  const nomeFicheiro = `${nomeFicheiroBase}.docx`;
+  saveAs(blob, nomeFicheiro);
+
+  showToast();
+  setTimeout(()=>{
+    if(confirm(`Ficheiro "${nomeFicheiro}" descarregado. Quer abrir já o email para o enviar? (Terá de anexar o ficheiro manualmente.)`)){
+      const link = `mailto:${EMAIL_GERENTE}?subject=${encodeURIComponent(titulo)}&body=${encodeURIComponent('Em anexo o documento "'+titulo+'".\n\n(Lembre-se de anexar o ficheiro '+nomeFicheiro+' que acabou de descarregar.)')}`;
+      window.location.href = link;
+    }
+  }, 700);
+}
+
 function adicionarFeedback(secao, nomePreenchido, notaAvaliacao, comentarioAvaliacao){
   const situacaoInicial = notaAvaliacao ? `Avaliação Aqui para o Cliente — nota ${notaAvaliacao}/5${comentarioAvaliacao ? ': '+comentarioAvaliacao : ''}` : '';
   abrirFormularioGenerico('💬 Momento de Feedback (obrigatório após avaliação ao cliente)', [
@@ -5157,7 +5187,7 @@ function adicionarFeedback(secao, nomePreenchido, notaAvaliacao, comentarioAvali
       showToast();
       if(secao) renderSecaoDetail(secao, secao); else renderFeedbackGestores();
 
-      gerarDocumentoEEmail(`Momento de Feedback — ${valores.colaborador}`, [
+      gerarDocumentoWordEEmail(`Momento de Feedback — ${valores.colaborador}`, [
         {label:'Colaborador', valor: valores.colaborador},
         {label:'Secção', valor: secao || '—'},
         {label:'1. Situação', valor: valores.situacao},
@@ -5169,7 +5199,7 @@ function adicionarFeedback(secao, nomePreenchido, notaAvaliacao, comentarioAvali
         {label:'Compromisso do colaborador', valor: valores.compromisso},
         {label:'Assinatura de quem avalia', valor: valores.assinaturaResponsavel},
         {label:'Assinatura do colaborador', valor: valores.assinaturaColaborador},
-      ], valores.assinaturaResponsavel);
+      ], valores.assinaturaResponsavel, `Feedback_${valores.colaborador.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}`);
     }catch(e){
       console.error('Erro ao guardar', e);
     }
@@ -6099,20 +6129,22 @@ async function resolverAlertaQuebra(id){
 async function definirDataPrevistaFormacao(id){
   const rows = await sb(`loja_formacoes_percurso?id=eq.${id}&select=data_prevista`);
   const atual = rows && rows.length && rows[0].data_prevista ? new Date(rows[0].data_prevista+'T00:00:00').toLocaleDateString('pt-PT') : '';
-  const dataStr = prompt('Data prevista para esta formação (DD/MM/AAAA):', atual);
-  if(dataStr === null) return;
-  let dataISO = null;
-  if(dataStr.trim()){
-    const partes = dataStr.trim().split('/');
-    if(partes.length === 3) dataISO = `${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}`;
-  }
-  try{
-    await sb(`loja_formacoes_percurso?id=eq.${id}`, {method:"PATCH", body: JSON.stringify({data_prevista: dataISO})});
-    showToast();
-    renderPainelControloGestao();
-  }catch(e){
-    console.error('Erro ao guardar', e);
-  }
+  abrirFormularioGenerico('📅 Data Prevista da Formação', [
+    {id:'data', label:'Data (DD/MM/AAAA) — deixe em branco para remover', tipo:'text', valor: atual}
+  ], async (valores)=>{
+    let dataISO = null;
+    if(valores.data){
+      const partes = valores.data.split('/');
+      if(partes.length === 3) dataISO = `${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}`;
+    }
+    try{
+      await sb(`loja_formacoes_percurso?id=eq.${id}`, {method:"PATCH", body: JSON.stringify({data_prevista: dataISO})});
+      showToast();
+      renderFormacoesScreen();
+    }catch(e){
+      console.error('Erro ao guardar', e);
+    }
+  });
 }
 
 async function renderMinhaAreaScreen(){
@@ -6141,6 +6173,7 @@ async function renderMinhaAreaScreen(){
     if(f.codigo_conduta === 'a formar') formacaoPend.push('Código de Conduta');
     if(f.data_privacy === 'a formar') formacaoPend.push('Data Privacy');
     if(f.politica_anticorrupcao === 'a formar') formacaoPend.push('Política Anticorrupção');
+    if(f.seguranca_protecao === 'a formar') formacaoPend.push('Segurança e Proteção');
   }
   (percursoRows||[]).forEach(pr=> formacaoPend.push(`${pr.curso}${pr.data_prevista ? ' — '+new Date(pr.data_prevista+'T00:00:00').toLocaleDateString('pt-PT') : ''}`));
   html += `<div class="section-title">🎓 Formação Pendente <span class="count">· ${formacaoPend.length}</span></div>`;
@@ -6459,6 +6492,7 @@ async function blocoFormacaoCompliance(){
       if(i.codigo_conduta === 'a formar') pend.push({campo:'codigo_conduta', label:'Código de Conduta'});
       if(i.data_privacy === 'a formar') pend.push({campo:'data_privacy', label:'Data Privacy'});
       if(i.politica_anticorrupcao === 'a formar') pend.push({campo:'politica_anticorrupcao', label:'Política Anticorrupção'});
+      if(i.seguranca_protecao === 'a formar') pend.push({campo:'seguranca_protecao', label:'Segurança e Proteção'});
       if(!pend.length) return;
       html += `<div style="padding:8px 14px;border-top:1px solid var(--line);">
         <div style="font-size:12.5px;font-weight:600;color:var(--ink);">${i.nome}</div>`;
@@ -6848,6 +6882,7 @@ async function abrirDetalhePessoa(p){
     if(f.codigo_conduta === 'a formar') formacaoPend.push({tipo:'compliance', campo:'codigo_conduta', label:'Código de Conduta', id:f.id});
     if(f.data_privacy === 'a formar') formacaoPend.push({tipo:'compliance', campo:'data_privacy', label:'Data Privacy', id:f.id});
     if(f.politica_anticorrupcao === 'a formar') formacaoPend.push({tipo:'compliance', campo:'politica_anticorrupcao', label:'Política Anticorrupção', id:f.id});
+    if(f.seguranca_protecao === 'a formar') formacaoPend.push({tipo:'compliance', campo:'seguranca_protecao', label:'Segurança e Proteção', id:f.id});
   }
   (percursoRows||[]).forEach(pr=> formacaoPend.push({tipo:'percurso', label:pr.curso, id:pr.id, data_prevista:pr.data_prevista}));
 
