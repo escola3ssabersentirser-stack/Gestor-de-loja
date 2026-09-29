@@ -560,6 +560,9 @@
         <div class="section-title">🔁 Artigos Repetidos (ruturas repetidas)</div>
         <div class="card" id="dashboard-repetidos-card"></div>
 
+        <div class="section-title">🔧 Regularizações</div>
+        <div class="card" id="dashboard-regularizacoes-card"></div>
+
         <div class="section-title">Resultados — Vendas mensais</div>
         <div class="card">
           <h3>2026 vs 2025</h3>
@@ -1133,7 +1136,7 @@ async function loadStoreData(){
     ? '-' + (Number(r.quebras_mes)/Number(r.vendas_mes)*100).toFixed(1).replace('.',',') + '%'
     : k.quebras;
   return {
-    week: k.semana, score: k.score, sales: vendasMesTexto, loss: quebraMesTexto, absence: absentismoAno,
+    week: (r && r.semana_referencia) ? r.semana_referencia : k.semana, score: k.score, sales: vendasMesTexto, loss: quebraMesTexto, absence: absentismoAno,
     tasks: tasks.map(t=>({id:t.id, text:t.texto, done:t.concluida, data:t.data, respNome:t.responsavel_nome, respNumero:t.responsavel_numero, execNome:t.executado_nome})),
     alerts: alerts.map(a=>({level:a.nivel, text:a.texto})),
     audits: audits.map(a=>({name:a.nome, pct:a.percentagem}))
@@ -1644,6 +1647,7 @@ async function renderDashboard(){
     renderVendasComMaiorSubida();
     renderArtigosSemVendasDashboard();
     renderArtigosRepetidosDashboard();
+    renderRegularizacoesDashboard();
     renderChecklistGerencia();
     renderPlanoSemanal();
     renderReunioesTeams();
@@ -2492,9 +2496,7 @@ async function blocoResultadoDiarioSecao(secao, label){
   html += `<button class="btn-primary" style="margin-top:0;margin-bottom:12px;" onclick="editarResultadoDiarioSecao('${secao.replace(/'/g,"\\'")}', '${label.replace(/'/g,"\\'")}')">${r ? 'Atualizar resultados de hoje' : '+ Registar resultados de hoje'}</button>`;
   if(r){
     html += `<table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-      <tr><td style="padding:5px 0;color:var(--ink-soft);">Quebra Motivo 13 (falta à descarga)</td><td style="text-align:right;font-weight:700;">${fmtE(r.quebra_motivo13)}</td></tr>
-      <tr><td style="padding:5px 0;color:var(--ink-soft);">Quebra Motivo 11 (roubo)</td><td style="text-align:right;font-weight:700;">${fmtE(r.quebra_motivo11)}</td></tr>
-      <tr><td style="padding:5px 0;color:var(--ink-soft);">Quebra Motivo 12 (sinistro)</td><td style="text-align:right;font-weight:700;">${fmtE(r.quebra_motivo12)}</td></tr>
+      <tr><td style="padding:5px 0;color:var(--ink-soft);">Resultado de Inventário</td><td style="text-align:right;font-weight:700;">${fmtE(r.resultado_inventario)}</td></tr>
       <tr><td style="padding:5px 0;color:var(--ink-soft);">Nº Listas Automáticas</td><td style="text-align:right;font-weight:700;">${r.numero_listas_automaticas ?? '—'}</td></tr>
       <tr><td style="padding:5px 0;color:var(--ink-soft);">OSA</td><td style="text-align:right;font-weight:700;color:${r.osa==='OK'?'var(--green)':'var(--red)'};">${r.osa || '—'}</td></tr>
       <tr><td style="padding:5px 0;color:var(--ink-soft);">Sem Stock tratados</td><td style="text-align:right;font-weight:700;">${r.sem_stock_tratados ?? '—'}</td></tr>
@@ -2544,12 +2546,7 @@ async function editarResultadoDiarioSecao(secao, label){
       <input id="${id}" type="${tipo}" inputmode="decimal" value="${valor ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
     </div>`;
   let html = '';
-  html += campo('inv-m13', 'Quebra — Motivo 13 (falta à descarga), €', atual.quebra_motivo13);
-  html += campo('inv-m11', 'Quebra — Motivo 11 (roubo), €', atual.quebra_motivo11);
-  html += campo('inv-m12', 'Quebra — Motivo 12 (sinistro), €', atual.quebra_motivo12);
-  html += campo('inv-m19', 'Quebra — Motivo 19 (qualidade), €', atual.quebra_motivo19);
-  html += campo('inv-m21', 'Quebra — Motivo 21 (fora de validade), €', atual.quebra_motivo21);
-  html += campo('inv-m304', 'Quebra — Motivo 304 (qualidade), €', atual.quebra_motivo304);
+  html += campo('inv-resultado', 'Resultado de Inventário (€)', atual.resultado_inventario);
   html += campo('inv-listas', 'Número de listas automáticas hoje', atual.numero_listas_automaticas);
   html += campo('inv-semstock', 'Quantos "Sem Stock" tratados hoje', atual.sem_stock_tratados);
   html += `<div style="margin-bottom:12px;">
@@ -2582,12 +2579,7 @@ async function guardarModalInventario(){
       method:"POST",
       body: JSON.stringify({
         data: hojeISO(), secao,
-        quebra_motivo13: num('inv-m13'),
-        quebra_motivo11: num('inv-m11'),
-        quebra_motivo12: num('inv-m12'),
-        quebra_motivo19: num('inv-m19'),
-        quebra_motivo21: num('inv-m21'),
-        quebra_motivo304: num('inv-m304'),
+        resultado_inventario: num('inv-resultado'),
         numero_listas_automaticas: int('inv-listas'),
         osa: document.getElementById('inv-osa').value,
         sem_stock_tratados: int('inv-semstock'),
@@ -3209,6 +3201,24 @@ async function renderArtigosSemVendasDashboard(){
   wrap.innerHTML = html;
 }
 
+async function renderRegularizacoesDashboard(){
+  const wrap = document.getElementById('dashboard-regularizacoes-card');
+  if(!wrap) return;
+  const rows = await sb('loja_regularizacoes?select=*&order=id.asc');
+  if(!rows.length){
+    wrap.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);">Sem regularizações registadas.</div>`;
+    return;
+  }
+  let html = '';
+  rows.forEach(r=>{
+    html += `<div style="padding:6px 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;">
+      <span style="font-size:12.5px;color:var(--ink);">${r.descricao} ${r.secao ? `<span style="color:var(--ink-soft);font-size:11px;">(${r.secao})</span>` : ''}</span>
+      <span style="font-size:12.5px;font-weight:700;color:${r.valor_regularizacao<0?'var(--red)':'var(--green)'};">${r.valor_regularizacao}</span>
+    </div>`;
+  });
+  wrap.innerHTML = html;
+}
+
 async function renderArtigosRepetidosDashboard(){
   const wrap = document.getElementById('dashboard-repetidos-card');
   if(!wrap) return;
@@ -3538,7 +3548,14 @@ async function renderPlanoSemanal(){
 }
 
 async function criarPlanoSemanal(){
-  const [resumoRows, markdowns, colaboradores, formacaoRows, percursoRows, artigosQuebra, artigosSemVendas, vendasSecoes] = await Promise.all([
+  const hojeD = new Date();
+  const diaSemana = (hojeD.getDay()+6)%7;
+  const segD = new Date(hojeD); segD.setDate(hojeD.getDate()-diaSemana);
+  const domD = new Date(segD); domD.setDate(segD.getDate()+6);
+  const segISO = segD.toISOString().slice(0,10);
+  const domISO = domD.toISOString().slice(0,10);
+
+  const [resumoRows, markdowns, colaboradores, formacaoRows, percursoRows, artigosQuebra, artigosSemVendas, vendasSecoes, vendasDiaSemana] = await Promise.all([
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc&limit=5'),
     sb('loja_colaboradores?select=nome,secao,bh_negativo&order=bh_negativo.asc'),
@@ -3546,7 +3563,8 @@ async function criarPlanoSemanal(){
     sb('loja_formacoes_percurso?select=*'),
     sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=10'),
     sb('loja_artigos_sem_vendas?select=*&limit=10'),
-    sb('loja_vendas_secao?select=*')
+    sb('loja_vendas_secao?select=*'),
+    sb(`loja_vendas_dia?data=gte.${segISO}&data=lte.${domISO}&select=*&order=data.asc`)
   ]);
   const r = resumoRows[0] || {};
 
@@ -3561,7 +3579,16 @@ async function criarPlanoSemanal(){
   const quebraAnoPct = r.vendas_ano && r.quebras_ano ? (Number(r.quebras_ano)/Number(r.vendas_ano)*100).toFixed(1) : null;
 
   let contexto = `📅 Semana: ${semanaAtualLabel()}\n\n`;
-  contexto += `📊 SEMANA ANTERIOR (${r.semana_anterior_referencia || '—'}):\n`;
+  contexto += `📆 VENDAS DIA A DIA (esta semana):\n`;
+  if(vendasDiaSemana.length){
+    vendasDiaSemana.forEach(v=>{
+      const desvioD = v.vendas_budget ? ((Number(v.vendas_real)-Number(v.vendas_budget))/Number(v.vendas_budget)*100).toFixed(1) : null;
+      contexto += `  ${new Date(v.data+'T00:00:00').toLocaleDateString('pt-PT',{weekday:'short',day:'2-digit',month:'2-digit'})}: ${fmtEuro(v.vendas_real)} / obj. ${fmtEuro(v.vendas_budget)}${desvioD!==null?' ('+(desvioD>=0?'+':'')+desvioD+'%)':''}\n`;
+    });
+  } else {
+    contexto += `  — sem dados diários ainda para esta semana\n`;
+  }
+  contexto += `\n📊 SEMANA ANTERIOR (${r.semana_anterior_referencia || '—'}):\n`;
   contexto += `  Vendas: ${r.vendas_semana_anterior!=null ? fmtEuro(r.vendas_semana_anterior) : 'sem dados'} · Quebra: ${r.quebras_semana_anterior!=null ? fmtEuro(r.quebras_semana_anterior) : 'sem dados'}\n\n`;
   contexto += `🎯 OBJETIVOS:\n`;
   contexto += `  Vendas — Semana atual: ${fmtEuro(r.budget_semana_vendas)}\n`;
@@ -7902,9 +7929,7 @@ async function renderControloQuebra(){
   const porDia = {};
   resultados.forEach(r=>{
     if(!porDia[r.data]) porDia[r.data] = 0;
-    ['quebra_motivo11','quebra_motivo12','quebra_motivo13','quebra_motivo19','quebra_motivo21','quebra_motivo304'].forEach(k=>{
-      if(r[k] !== null && r[k] !== undefined) porDia[r.data] += Number(r[k]);
-    });
+    if(r.resultado_inventario !== null && r.resultado_inventario !== undefined) porDia[r.data] += Number(r.resultado_inventario);
   });
   const dias = Object.keys(porDia).sort();
   const maisRecentePorSecaoResumo = {};
@@ -7919,8 +7944,7 @@ async function renderControloQuebra(){
   } else {
     secoesResumo.forEach(secaoK=>{
       const r = maisRecentePorSecaoResumo[secaoK];
-      const total = ['quebra_motivo11','quebra_motivo12','quebra_motivo13','quebra_motivo19','quebra_motivo21','quebra_motivo304']
-        .reduce((s,k)=> s + (r[k]!==null && r[k]!==undefined ? Number(r[k]) : 0), 0);
+      const total = r.resultado_inventario !== null && r.resultado_inventario !== undefined ? Number(r.resultado_inventario) : 0;
       const dataLabel = new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT');
       html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;">
         <span style="font-size:13px;color:var(--ink);">${labelSecaoPainel(secaoK)} <span style="font-size:11px;color:var(--ink-soft);">(${dataLabel})</span></span>
@@ -7948,43 +7972,6 @@ async function renderControloQuebra(){
     html += `<table class="results-table" style="margin-top:12px;"><thead><tr><th>Dia</th><th>Quebra Total</th></tr></thead><tbody>`;
     dias.slice().reverse().forEach(d=>{
       html += `<tr><td>${new Date(d+'T00:00:00').toLocaleDateString('pt-PT')}</td><td>${porDia[d].toLocaleString('pt-PT',{maximumFractionDigits:0})} €</td></tr>`;
-    });
-    html += `</tbody></table>`;
-  }
-  html += `</div>`;
-
-  html += `<div class="section-title">📋 Motivos de Quebra — Por Secção (mais recente)</div>`;
-  html += `<div class="card" style="overflow-x:auto;">`;
-  const maisRecentePorSecao = {};
-  resultados.forEach(r=>{
-    if(!maisRecentePorSecao[r.secao]) maisRecentePorSecao[r.secao] = r;
-  });
-  const secoesComDados = Object.keys(maisRecentePorSecao);
-  if(!secoesComDados.length){
-    html += `<div style="font-size:13px;color:var(--ink-soft);">Sem dados.</div>`;
-  } else {
-    html += `<table style="border-collapse:collapse;font-size:11.5px;min-width:560px;">
-      <thead><tr>
-        <th style="text-align:left;padding:4px 6px;">Secção</th>
-        <th style="padding:4px 6px;">Mot.11<br>Roubo</th>
-        <th style="padding:4px 6px;">Mot.12<br>Sinistro</th>
-        <th style="padding:4px 6px;">Mot.13<br>F.Descarga</th>
-        <th style="padding:4px 6px;">Mot.19<br>Qualidade</th>
-        <th style="padding:4px 6px;">Mot.21<br>F.Validade</th>
-        <th style="padding:4px 6px;">Mot.304<br>Qualidade</th>
-      </tr></thead><tbody>`;
-    secoesComDados.forEach(secaoK=>{
-      const r = maisRecentePorSecao[secaoK];
-      const fmt = (v) => v===null||v===undefined?'—':Number(v).toLocaleString('pt-PT',{maximumFractionDigits:0});
-      html += `<tr style="border-top:1px solid var(--line);">
-        <td style="padding:5px 6px;font-weight:600;">${labelSecaoPainel(secaoK)}</td>
-        <td style="padding:5px 6px;text-align:center;">${fmt(r.quebra_motivo11)}</td>
-        <td style="padding:5px 6px;text-align:center;">${fmt(r.quebra_motivo12)}</td>
-        <td style="padding:5px 6px;text-align:center;">${fmt(r.quebra_motivo13)}</td>
-        <td style="padding:5px 6px;text-align:center;">${fmt(r.quebra_motivo19)}</td>
-        <td style="padding:5px 6px;text-align:center;">${fmt(r.quebra_motivo21)}</td>
-        <td style="padding:5px 6px;text-align:center;">${fmt(r.quebra_motivo304)}</td>
-      </tr>`;
     });
     html += `</tbody></table>`;
   }
