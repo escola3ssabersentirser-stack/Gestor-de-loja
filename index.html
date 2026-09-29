@@ -1136,7 +1136,7 @@ async function loadStoreData(){
     ? '-' + (Number(r.quebras_mes)/Number(r.vendas_mes)*100).toFixed(1).replace('.',',') + '%'
     : k.quebras;
   return {
-    week: (r && r.semana_referencia) ? r.semana_referencia : k.semana, score: k.score, sales: vendasMesTexto, loss: quebraMesTexto, absence: absentismoAno,
+    week: semanaAtualLabel(), score: k.score, sales: vendasMesTexto, loss: quebraMesTexto, absence: absentismoAno,
     tasks: tasks.map(t=>({id:t.id, text:t.texto, done:t.concluida, data:t.data, respNome:t.responsavel_nome, respNumero:t.responsavel_numero, execNome:t.executado_nome})),
     alerts: alerts.map(a=>({level:a.nivel, text:a.texto})),
     audits: audits.map(a=>({name:a.nome, pct:a.percentagem}))
@@ -1917,7 +1917,7 @@ async function renderBudgetObjetivo(){
   el.innerHTML = `
     <h3 style="margin-bottom:2px;">Vendas</h3>
     <table style="width:100%;border-collapse:collapse;">
-      ${linha('Semana ('+(r.semana_referencia||'—')+')', vendasSemana, budgetSemana, true)}
+      ${linha(semanaAtualLabel(), vendasSemana, budgetSemana, true)}
       ${linha('Mês ('+(r.mes_referencia||'—')+')', vendasMes, budgetMes, true)}
       ${linha('Ano', vendasAno, budgetAno, true)}
     </table>
@@ -2998,13 +2998,22 @@ const CHECKLIST_TAREFAS = [
 const DIAS_CHECKLIST = ['seg','ter','qua','qui','sex','sab','dom'];
 const DIAS_CHECKLIST_LABEL = {seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'};
 
+function numeroSemanaISO(data){
+  const d = new Date(Date.UTC(data.getFullYear(), data.getMonth(), data.getDate()));
+  const diaSemana = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - diaSemana);
+  const inicioAno = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - inicioAno) / 86400000) + 1) / 7);
+}
+
 function semanaAtualLabel(){
   const hoje = new Date();
   const dia = (hoje.getDay()+6)%7;
   const seg = new Date(hoje); seg.setDate(hoje.getDate()-dia);
   const dom = new Date(seg); dom.setDate(seg.getDate()+6);
   const f = (d)=> d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
-  return `${f(seg)} a ${f(dom)}`;
+  const num = numeroSemanaISO(hoje);
+  return `Semana ${num} · ${f(seg)} a ${f(dom)}`;
 }
 
 let checklistData = null;
