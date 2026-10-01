@@ -461,6 +461,7 @@
     <div class="content">
 
       <div id="aniversarios-hoje-wrap"></div>
+      <div id="alertas-lembretes-wrap"></div>
 
       <div class="day-pills" id="dash-tab-pills">
         <div class="day-pill active" data-dashtab="hoje" onclick="selecionarDashTab('hoje')">🏠 Hoje</div>
@@ -538,6 +539,11 @@
 
         <div class="section-title">⏳ Contagem até ao Fim do Ano</div>
         <div class="card" id="countdown-ano-card"></div>
+
+        <div id="dashboard-quebra-responsavel-wrap"></div>
+
+        <div class="section-title">📅 Resumo do Mês — Setembro (fecho)</div>
+        <div class="card" id="dashboard-resumo-mes-card"></div>
 
         <div class="section-title">🚨 Pontos Críticos</div>
         <div class="card" id="dashboard-pontos-criticos-card"></div>
@@ -1625,6 +1631,7 @@ async function renderDashboard(){
   verificarMensagemParabens();
   verificarNotificacoesColaborador();
   verificarFormacoesDeHoje();
+  renderAlertasLembretes();
   renderResumoVendasQuebra();
   renderEvolucaoScoreDashboard();
 
@@ -1641,6 +1648,8 @@ async function renderDashboard(){
     renderBudgetObjetivo();
     renderCountdownAno();
     renderAgendaDashboard();
+    renderQuebraDoDiaResponsavel();
+    renderResumoMesSetembro();
     renderPontosCriticos();
     renderPioresEvolucoes();
     renderQuebrasComMaiorSubida();
@@ -1769,6 +1778,23 @@ async function marcarMarkdownTratado(id, secao, label){
   }catch(e){
     console.error('Erro ao guardar', e);
   }
+}
+
+function renderAlertasLembretes(){
+  const wrap = document.getElementById('alertas-lembretes-wrap');
+  if(!wrap || !currentUser || !isChefe()) { if(wrap) wrap.innerHTML=''; return; }
+  const hoje = new Date();
+  const avisos = [];
+  if(hoje.getDate() === 1){
+    avisos.push('💧 Dia 1 do mês — registar leitura do contador de água e consumo de gasóleo.');
+  }
+  if(hoje.getDay() === 1){
+    avisos.push('💧 Segunda-feira — registar leitura do contador de água e consumo de Economato.');
+  }
+  if(!avisos.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = `<div class="card" style="background:var(--amber-light,#fff6e0);border:1px solid var(--amber);margin-bottom:12px;">
+    ${avisos.map(a=>`<div style="font-size:12.5px;color:#8A5E10;padding:4px 0;">${a}</div>`).join('')}
+  </div>`;
 }
 
 async function verificarFormacoesDeHoje(){
@@ -1992,11 +2018,48 @@ function hojeISO(){ return new Date().toISOString().slice(0,10); }
 
 let focoAtual = null;
 
+async function calcularVendasPorPeriodo(){
+  const hoje = new Date();
+  const diaSemana = (hoje.getDay()+6)%7;
+  const seg = new Date(hoje); seg.setDate(hoje.getDate()-diaSemana);
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const inicioAno = new Date(hoje.getFullYear(), 0, 1);
+  const iso = (d) => d.toISOString().slice(0,10);
+
+  const dias = await sb(`loja_vendas_dia?data=gte.${iso(inicioAno)}&select=*&order=data.asc`);
+  if(!dias.length) return null;
+
+  const somaDesde = (dataInicioISO) => {
+    const subset = dias.filter(d => d.data >= dataInicioISO);
+    if(!subset.length) return {vendas:null, budget:null};
+    return {
+      vendas: subset.reduce((s,d)=> s + (d.vendas_real!==null?Number(d.vendas_real):0), 0),
+      budget: subset.reduce((s,d)=> s + (d.vendas_budget!==null?Number(d.vendas_budget):0), 0)
+    };
+  };
+
+  return {
+    semana: somaDesde(iso(seg)),
+    mes: somaDesde(iso(inicioMes)),
+    ano: somaDesde(iso(inicioAno)),
+    diasDisponiveis: dias.length
+  };
+}
+
 async function renderResumoVendasQuebra(){
   const wrap = document.getElementById('resumo-vendas-quebra-wrap');
   if(!wrap) return;
   const rows = await sb('loja_resumo?id=eq.1&select=*');
   const r = rows[0];
+
+  // A semana calcula-se sempre a partir dos dias registados (soma exata, muda sozinha todos os dias).
+  // O mês e o ano continuam a vir do relatório Bom Dia (já é um acumulado oficial "Mês a Data" — somar só os dias
+  // que tenho aqui subestimaria o mês, porque não tenho todos os dias desde o dia 1).
+  const calculado = await calcularVendasPorPeriodo();
+  if(calculado && calculado.semana.vendas !== null){
+    r.vendas_semana = calculado.semana.vendas;
+    if(calculado.semana.budget) r.budget_semana_vendas = calculado.semana.budget;
+  }
 
   const fmt = (v) => v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-PT',{maximumFractionDigits:0})+' €';
   const variacaoTxt = (atual, base, inv) => {
@@ -2761,8 +2824,15 @@ async function editarCustosLoja(){
 const ORDEM_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const MES_ABREV = {Janeiro:'Jan',Fevereiro:'Fev',Março:'Mar',Abril:'Abr',Maio:'Mai',Junho:'Jun',Julho:'Jul',Agosto:'Ago',Setembro:'Set',Outubro:'Out',Novembro:'Nov',Dezembro:'Dez'};
 
+function mesAtualNome(){
+  return ORDEM_MESES[new Date().getMonth()];
+}
+
 async function renderResultadosVendas(){
-  const rows = await sb('loja_custos_mensais?select=ano,mes,vendas&order=ano.asc');
+  const [rows, resumoRows] = await Promise.all([
+    sb('loja_custos_mensais?select=ano,mes,vendas&order=ano.asc'),
+    sb('loja_resumo?id=eq.1&select=vendas_mes')
+  ]);
   const porMes = {};
   ORDEM_MESES.forEach(m => porMes[m] = {y25:null, y26:null});
   rows.forEach(r=>{
@@ -2770,6 +2840,10 @@ async function renderResultadosVendas(){
     if(r.ano === 2025) porMes[r.mes].y25 = r.vendas === null ? null : Number(r.vendas);
     if(r.ano === 2026) porMes[r.mes].y26 = r.vendas === null ? null : Number(r.vendas);
   });
+  // O mês atual usa sempre o valor ao vivo (loja_resumo), para nunca ficar desfasado do resto da app.
+  if(resumoRows[0] && resumoRows[0].vendas_mes !== null){
+    porMes[mesAtualNome()].y26 = Number(resumoRows[0].vendas_mes);
+  }
 
   const todosValores = ORDEM_MESES.flatMap(m => [porMes[m].y25, porMes[m].y26]).filter(v => v !== null && v > 0);
   const max = todosValores.length ? Math.max(...todosValores) : 1;
@@ -2812,7 +2886,10 @@ async function renderResultadosVendas(){
 }
 
 async function renderResultadosQuebra(){
-  const rows = await sb('loja_custos_mensais?select=ano,mes,quebra&order=ano.asc');
+  const [rows, resumoRows] = await Promise.all([
+    sb('loja_custos_mensais?select=ano,mes,quebra&order=ano.asc'),
+    sb('loja_resumo?id=eq.1&select=quebras_mes')
+  ]);
   const porMes = {};
   ORDEM_MESES.forEach(m => porMes[m] = {y25:null, y26:null});
   rows.forEach(r=>{
@@ -2820,6 +2897,9 @@ async function renderResultadosQuebra(){
     if(r.ano === 2025) porMes[r.mes].y25 = r.quebra === null ? null : Number(r.quebra);
     if(r.ano === 2026) porMes[r.mes].y26 = r.quebra === null ? null : Number(r.quebra);
   });
+  if(resumoRows[0] && resumoRows[0].quebras_mes !== null){
+    porMes[mesAtualNome()].y26 = Number(resumoRows[0].quebras_mes);
+  }
 
   const todosValores = ORDEM_MESES.flatMap(m => [porMes[m].y25, porMes[m].y26]).filter(v => v !== null && v > 0);
   const max = todosValores.length ? Math.max(...todosValores) : 1;
@@ -3378,6 +3458,127 @@ async function renderPioresEvolucoes(){
   wrap.innerHTML = html;
 }
 
+async function sincronizarQuebraDiariaAutomatica(secao){
+  const snaps = await sb(`loja_secao_snapshot?secao=eq.${encodeURIComponent(secao)}&select=*&order=data.desc&limit=2`);
+  if(snaps.length < 2) return;
+  const [recente, anterior] = snaps;
+  if(recente.quebras_mes === null || anterior.quebras_mes === null) return;
+  const deltaQuebra = Number(recente.quebras_mes) - Number(anterior.quebras_mes);
+  const deltaVendas = (recente.vendas_mes!==null && anterior.vendas_mes!==null) ? Number(recente.vendas_mes) - Number(anterior.vendas_mes) : null;
+
+  const existentes = await sb(`loja_resultado_diario_secao?secao=eq.${encodeURIComponent(secao)}&data=eq.${recente.data}&select=*`);
+  if(existentes.length && existentes[0].resultado_inventario !== null && existentes[0].registado_por !== 'Automático (Bom Dia)') return; // não sobrepor registo manual
+
+  const payload = { data: recente.data, secao, resultado_inventario: Math.round(deltaQuebra*100)/100, registado_por: 'Automático (Bom Dia)' };
+  if(existentes.length){
+    await sb(`loja_resultado_diario_secao?id=eq.${existentes[0].id}`, {method:"PATCH", body: JSON.stringify(payload)});
+  } else {
+    await sb('loja_resultado_diario_secao', {method:"POST", body: JSON.stringify(payload)});
+  }
+  if(deltaVendas !== null){
+    await sb('loja_vendas_secao_dia?on_conflict=secao,data', {method:"POST", body: JSON.stringify({
+      secao, data: recente.data, vendas_real: Math.round(deltaVendas*100)/100, quebras_real: Math.round(deltaQuebra*100)/100
+    }), prefer: "resolution=merge-duplicates"});
+  }
+}
+
+async function renderQuebraDoDiaResponsavel(){
+  const wrap = document.getElementById('dashboard-quebra-responsavel-wrap');
+  if(!wrap) return;
+  if(!currentUser || !['responsavel','area'].includes(currentUser.role) || !foundColaborador || !foundColaborador.secao){
+    wrap.innerHTML = '';
+    return;
+  }
+  const secao = foundColaborador.secao;
+  const hoje = hojeISO();
+
+  await sincronizarQuebraDiariaAutomatica(secao);
+  const resultados = await sb(`loja_resultado_diario_secao?secao=eq.${encodeURIComponent(secao)}&select=*&order=data.desc&limit=35`);
+  const deHoje = resultados.find(r => r.data === hoje);
+
+  let html = `<div class="section-title">📉 A Minha Quebra do Dia — ${labelSecaoPainel(secao)}</div>`;
+  html += `<div class="card">`;
+  if(deHoje && deHoje.registado_por === 'Automático (Bom Dia)'){
+    html += `<div style="font-size:10.5px;color:var(--teal);margin-bottom:6px;">🔄 Valor de hoje calculado automaticamente a partir do Bom Dia — pode corrigir se souber o valor exato.</div>`;
+  }
+  html += `<button class="btn-primary" style="width:100%;margin-top:0;margin-bottom:10px;" onclick="editarResultadoDiarioSecao('${secao.replace(/'/g,"\\'")}', '${labelSecaoPainel(secao).replace(/'/g,"\\'")}')">
+    ${deHoje && deHoje.resultado_inventario !== null ? '✏️ Atualizar quebra de hoje ('+fmtEuro(deHoje.resultado_inventario)+')' : '+ Registar quebra de hoje'}
+  </button>`;
+
+  if(resultados.length){
+    const ultimos14 = resultados.slice(0,14).reverse().filter(r=>r.resultado_inventario !== null);
+    if(ultimos14.length){
+      const max = Math.max(...ultimos14.map(r=>Math.abs(Number(r.resultado_inventario))), 1);
+      html += `<div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Variação diária (últimos dias)</div>`;
+      html += `<div class="rchart" style="height:80px;">`;
+      ultimos14.forEach(r=>{
+        const v = Number(r.resultado_inventario);
+        const cor = v >= 0 ? 'var(--red)' : 'var(--green)';
+        html += `<div class="bars"><div class="bar" style="height:${(Math.abs(v)/max*100).toFixed(1)}%;background:${cor};"></div></div>`;
+      });
+      html += `</div><div class="rchart-labels">`;
+      ultimos14.forEach(r=> html += `<span style="font-size:7.5px;">${new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})}</span>`);
+      html += `</div>`;
+
+      const totalMes = resultados.filter(r=>{
+        const d = new Date(r.data+'T00:00:00');
+        const hojeD = new Date();
+        return r.resultado_inventario !== null && d.getMonth() === hojeD.getMonth() && d.getFullYear() === hojeD.getFullYear();
+      }).reduce((s,r)=> s + Number(r.resultado_inventario), 0);
+      html += `<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:6px;border-top:1px solid var(--line);">
+        <span style="font-size:12px;color:var(--ink-soft);">Acumulado este mês</span>
+        <span style="font-size:13px;font-weight:700;color:${totalMes>=0?'var(--red)':'var(--green)'};">${fmtEuro(totalMes)}</span>
+      </div>`;
+    } else {
+      html += `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem valores registados para fazer o gráfico.</div>`;
+    }
+  }
+  html += `</div>`;
+  wrap.innerHTML = html;
+}
+
+async function renderResumoMesSetembro(){
+  const wrap = document.getElementById('dashboard-resumo-mes-card');
+  if(!wrap) return;
+  const [resumoRows, vendasSecoes] = await Promise.all([
+    sb('loja_resumo?id=eq.1&select=*'),
+    sb('loja_vendas_secao?select=*')
+  ]);
+  const r = resumoRows[0] || {};
+  const desvioLoja = r.vendas_mes && r.budget_mes_vendas ? ((Number(r.vendas_mes)-Number(r.budget_mes_vendas))/Number(r.budget_mes_vendas)*100) : null;
+  const quebraPct = r.vendas_mes && r.quebras_mes ? (Number(r.quebras_mes)/Number(r.vendas_mes)*100) : null;
+
+  let html = `<div style="display:flex;justify-content:space-between;padding:6px 0;">
+    <span style="font-size:12.5px;color:var(--ink-soft);">Vendas (loja)</span>
+    <span style="font-size:14px;font-weight:800;color:var(--navy);">${fmtEuro(r.vendas_mes)} <span style="font-size:11px;font-weight:400;color:${desvioLoja>=0?'var(--green)':'var(--red)'};">(${desvioLoja>=0?'+':''}${desvioLoja?.toFixed(1)}%)</span></span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12.5px;color:var(--ink-soft);">Objetivo</span>
+    <span style="font-size:13px;color:var(--ink);">${fmtEuro(r.budget_mes_vendas)}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12.5px;color:var(--ink-soft);">Quebra (loja)</span>
+    <span style="font-size:14px;font-weight:800;color:${quebraPct>1.9?'var(--red)':'var(--green)'};">${fmtEuro(r.quebras_mes)} (${quebraPct?.toFixed(2)}%)</span>
+  </div>`;
+
+  html += `<div style="font-size:11px;font-weight:700;color:var(--navy);margin-top:10px;padding-top:8px;border-top:1px solid var(--line);">Por Secção</div>`;
+  DEPARTAMENTOS_LOJA.forEach(secaoD=>{
+    const v = vendasSecoes.find(x=>x.secao===secaoD);
+    if(!v || v.vendas_mes===null) return;
+    const desvio = v.budget_mes ? ((Number(v.vendas_mes)-Number(v.budget_mes))/Number(v.budget_mes)*100) : null;
+    const quebraPctS = v.quebras_mes ? (Number(v.quebras_mes)/Number(v.vendas_mes)*100) : null;
+    html += `<div style="padding:5px 0;border-top:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;">
+        <span style="font-size:12px;color:var(--ink);">${labelSecaoPainel(secaoD)}</span>
+        <span style="font-size:12px;font-weight:700;color:${desvio>=0?'var(--green)':'var(--red)'};">${fmtEuro(v.vendas_mes)} (${desvio>=0?'+':''}${desvio?.toFixed(1)}%)</span>
+      </div>
+      <div style="font-size:10.5px;color:var(--ink-soft);text-align:right;">Quebra: ${fmtEuro(v.quebras_mes)} (${quebraPctS?.toFixed(1)}%)</div>
+    </div>`;
+  });
+
+  wrap.innerHTML = html;
+}
+
 async function renderPontosCriticos(){
   const wrap = document.getElementById('dashboard-pontos-criticos-card');
   if(!wrap) return;
@@ -3849,20 +4050,28 @@ function renderPlanoAcaoGestoresFiltro(filtroArea){
       html += `<div style="padding:8px 0 2px;font-size:12px;font-weight:700;color:var(--navy);">${area}</div>`;
       grupos[area].forEach(p=>{
         const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
+        const dataP = p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-PT') : '';
         html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);">
           <div style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
           <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${p.acao}</div>
-          <span class="pa-estado ${cls}">${p.estado}</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+            <span class="pa-estado ${cls}">${p.estado}</span>
+            <span style="font-size:10.5px;color:var(--ink-soft);">${dataP}</span>
+          </div>
         </div>`;
       });
     });
   } else {
     itens.forEach(p=>{
       const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
+      const dataP = p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-PT') : '';
       html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);">
         <div style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${p.acao}</div>
-        <span class="pa-estado ${cls}">${p.estado}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+          <span class="pa-estado ${cls}">${p.estado}</span>
+          <span style="font-size:10.5px;color:var(--ink-soft);">${dataP}</span>
+        </div>
       </div>`;
     });
   }
@@ -5985,6 +6194,15 @@ async function renderSecaoDetail(secao, label){
   if(isChefe()){
     const vendasRows = await sb(`loja_vendas_secao?secao=eq.${encodeURIComponent(secao)}&select=*`);
     const v = vendasRows[0];
+
+    const hojeSD = new Date(); const diaSD = (hojeSD.getDay()+6)%7;
+    const segSD = new Date(hojeSD); segSD.setDate(hojeSD.getDate()-diaSD);
+    const diasSecao = await sb(`loja_vendas_secao_dia?secao=eq.${encodeURIComponent(secao)}&data=gte.${segSD.toISOString().slice(0,10)}&select=*`);
+    if(v && diasSecao.length){
+      v.vendas_semana = diasSecao.reduce((s,d)=> s + (d.vendas_real!==null?Number(d.vendas_real):0), 0);
+      v.quebras_semana = diasSecao.reduce((s,d)=> s + (d.quebras_real!==null?Number(d.quebras_real):0), 0);
+    }
+
     if(v && v.vendas_ano !== null){
       const periodo = v.periodo_comparacao || 'Jan-Set';
       const fmtOuTraco = (x) => x === null || x === undefined ? 'Sem dados' : fmtEuro(x);
@@ -6183,16 +6401,50 @@ async function definirDataPrevistaFormacao(id){
   });
 }
 
+function novaAlteracaoHorario(p){
+  abrirFormularioGenerico(`✍️ Alteração de Horário — ${p.nome}`, [
+    {id:'descricao', label:'Descrição da alteração', tipo:'textarea', linhas:3},
+    {id:'data', label:'Data da alteração', tipo:'text', valor: new Date().toLocaleDateString('pt-PT')}
+  ], async (valores)=>{
+    if(!valores.descricao) return;
+    let dataISO = null;
+    if(valores.data){
+      const partes = valores.data.split('/');
+      if(partes.length === 3) dataISO = `${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}`;
+    }
+    try{
+      await sb('loja_alteracoes_horario', {method:"POST", body: JSON.stringify({
+        colaborador_numero: p.numero_pessoal, colaborador_nome: p.nome,
+        descricao: valores.descricao, data_alteracao: dataISO,
+        criado_por: currentUser ? currentUser.name : null
+      })});
+      showToast();
+      abrirDetalhePessoa(p);
+    }catch(e){ console.error('Erro ao guardar', e); }
+  });
+}
+
+async function assinarAlteracaoHorario(id){
+  try{
+    await sb(`loja_alteracoes_horario?id=eq.${id}`, {method:"PATCH", body: JSON.stringify({
+      assinado: true, assinado_em: new Date().toISOString()
+    })});
+    showToast();
+    renderMinhaAreaScreen();
+  }catch(e){ console.error('Erro ao guardar', e); }
+}
+
 async function renderMinhaAreaScreen(){
   const content = document.getElementById('minha-area-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
   if(!foundColaborador){ content.innerHTML = '<div class="card">Não foi possível identificar o seu registo.</div>'; return; }
   const p = foundColaborador;
 
-  const [fichaRows, formacaoRows, percursoRows] = await Promise.all([
+  const [fichaRows, formacaoRows, percursoRows, alteracoesRows] = await Promise.all([
     sb(`loja_ficha_pessoal?numero_pessoal=eq.${encodeURIComponent(p.numero_pessoal)}&select=*`),
     sb(`loja_formacao_compliance?numero_pessoal=eq.${encodeURIComponent(p.numero_pessoal)}&select=*`),
-    sb(`loja_formacoes_percurso?numero_pessoal=eq.${encodeURIComponent(p.numero_pessoal)}&select=*`)
+    sb(`loja_formacoes_percurso?numero_pessoal=eq.${encodeURIComponent(p.numero_pessoal)}&select=*`),
+    sb(`loja_alteracoes_horario?colaborador_numero=eq.${encodeURIComponent(p.numero_pessoal)}&assinado=eq.false&select=*`)
   ]);
   const ficha = fichaRows && fichaRows.length ? fichaRows[0] : null;
 
@@ -6201,7 +6453,21 @@ async function renderMinhaAreaScreen(){
     <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12.5px;color:var(--ink-soft);">Secção</span><span style="font-size:13px;font-weight:700;">${labelSecaoPainel(p.secao)}</span></div>
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Banco de Horas (a gozar)</span><span style="font-size:13px;font-weight:700;color:${Number(p.bh_positivo)>0?'var(--green)':'var(--ink)'};">${p.bh_positivo ?? 0}h</span></div>
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Banco de Horas (em falta)</span><span style="font-size:13px;font-weight:700;color:${Number(p.bh_negativo)<0?'var(--red)':'var(--ink)'};">${p.bh_negativo ?? 0}h</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Dia previsto para gozar horas</span><span style="font-size:13px;font-weight:700;color:${p.data_prevista_gozar_horas?'var(--navy)':'var(--ink-soft)'};">${p.data_prevista_gozar_horas ? new Date(p.data_prevista_gozar_horas+'T00:00:00').toLocaleDateString('pt-PT') : 'Sem data marcada'}</span></div>
   </div>`;
+
+  if(alteracoesRows.length){
+    html += `<div class="section-title">✍️ Alterações de Horário — Para Assinar <span class="count">· ${alteracoesRows.length}</span></div>`;
+    html += `<div class="card">`;
+    alteracoesRows.forEach(a=>{
+      html += `<div style="padding:8px 0;border-top:1px solid var(--line);">
+        <div style="font-size:12.5px;color:var(--ink);">${a.descricao}</div>
+        ${a.data_alteracao ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">Data: ${new Date(a.data_alteracao+'T00:00:00').toLocaleDateString('pt-PT')}</div>` : ''}
+        <button class="econ-btn filled" style="margin-top:6px;" onclick="assinarAlteracaoHorario(${a.id})">✓ Assinar (tomei conhecimento)</button>
+      </div>`;
+    });
+    html += `</div>`;
+  }
 
   const formacaoPend = [];
   if(formacaoRows && formacaoRows.length){
@@ -6908,6 +7174,19 @@ async function abrirDetalhePessoa(p){
     html += `<div style="padding:8px 0;border-top:1px solid var(--line);">
       <div style="font-size:12.5px;color:var(--ink);line-height:1.4;">${f.texto}</div>
       <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${data}${f.criado_por ? ' · '+f.criado_por : ''}</div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  const alteracoesExistentes = await sb(`loja_alteracoes_horario?colaborador_numero=eq.${encodeURIComponent(p.numero_pessoal)}&select=*&order=criado_em.desc&limit=10`);
+  html += `<div class="section-title">✍️ Alterações de Horário <span class="count">· ${alteracoesExistentes.length}</span></div>`;
+  html += `<div class="card">`;
+  html += `<button class="econ-btn" style="width:100%;margin-bottom:${alteracoesExistentes.length?'10px':'0'};" onclick='novaAlteracaoHorario(${JSON.stringify(p).replace(/'/g,"&apos;")})'>+ Nova alteração de horário</button>`;
+  alteracoesExistentes.forEach(a=>{
+    html += `<div style="padding:8px 0;border-top:1px solid var(--line);">
+      <div style="font-size:12.5px;color:var(--ink);">${a.descricao}</div>
+      ${a.data_alteracao ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">Data: ${new Date(a.data_alteracao+'T00:00:00').toLocaleDateString('pt-PT')}</div>` : ''}
+      <div style="font-size:11px;color:${a.assinado?'var(--green)':'var(--amber)'};margin-top:2px;">${a.assinado?'✓ Assinado':'⏳ Por assinar'}</div>
     </div>`;
   });
   html += `</div>`;
