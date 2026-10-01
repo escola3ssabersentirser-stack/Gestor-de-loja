@@ -4011,12 +4011,12 @@ async function enviarPlanoSemanalPorEmail(id){
   const rows = await sb(`loja_plano_semana?id=eq.${id}&select=*`);
   const p = rows[0];
   const acoes = (p.acoes || []).map((a,i)=>`${i+1}. [${a.area}] ${a.acao} — Responsável: ${a.responsavel} — Prazo: ${a.prazo}`).join('\n');
-  gerarDocumentoEEmail(`Plano de Ação Semanal — ${p.semana}`, [
+  gerarDocumentoWordEEmail(`Plano de Ação Semanal — ${p.semana}`, [
     {label:'Vendas — Objetivo / Realizado', valor:`${fmtEuro(p.vendas_objetivo)} / ${fmtEuro(p.vendas_realizado)}`},
     {label:'Quebras — Objetivo / Realizado', valor:`${p.quebras_objetivo_pct ?? '—'}% / ${p.quebras_realizado_pct ?? '—'}%`},
     {label:'Causas dos desvios', valor: p.desvios_causas},
     {label:'Ações definidas', valor: acoes},
-  ], p.assinatura_nome);
+  ], p.assinatura_nome, `Plano_Semanal_${(p.semana||'').replace(/[^a-zA-Z0-9]/g,'_')}`);
 }
 
 async function renderPlanoAcaoGestores(){
@@ -4483,14 +4483,14 @@ async function saveAta(){
 
 function enviarAtaPorEmail(){
   if(!ataAtual) return;
-  gerarDocumentoEEmail(`Ata Semanal — ${ataAtual.semana || ''}`, [
+  gerarDocumentoWordEEmail(`Ata Semanal — ${ataAtual.semana || ''}`, [
     {label:'Vendas', valor: ataAtual.vendas},
     {label:'Quebras', valor: ataAtual.quebras},
     {label:'Vendas a potenciar — semana seguinte', valor: ataAtual.vendas_potenciar},
     {label:'Auditorias (secção e loja)', valor: ataAtual.auditorias},
     {label:'Custos da loja', valor: ataAtual.custos},
     {label:'Equipa (horários, conflitos, energia)', valor: ataAtual.equipa},
-  ], ataAtual.criado_por);
+  ], ataAtual.criado_por, `Ata_Semanal_${(ataAtual.semana||'').replace(/[^a-zA-Z0-9]/g,'_')}`);
 }
 
 async function saveComunicacao(){
@@ -5375,7 +5375,8 @@ async function blocoFeedbackSecao(secao, label){
   return html;
 }
 
-async function gerarDocumentoWordEEmail(titulo, secoes, assinaturaNome, nomeFicheiroBase){
+async function gerarDocumentoWordEEmail(titulo, secoes, assinaturaNome, nomeFicheiroBase, destinatario){
+  destinatario = destinatario || EMAIL_GERENTE;
   const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
 
   const filhos = [
@@ -5399,7 +5400,7 @@ async function gerarDocumentoWordEEmail(titulo, secoes, assinaturaNome, nomeFich
   showToast();
   setTimeout(()=>{
     if(confirm(`Ficheiro "${nomeFicheiro}" descarregado. Quer abrir já o email para o enviar? (Terá de anexar o ficheiro manualmente.)`)){
-      const link = `mailto:${EMAIL_GERENTE}?subject=${encodeURIComponent(titulo)}&body=${encodeURIComponent('Em anexo o documento "'+titulo+'".\n\n(Lembre-se de anexar o ficheiro '+nomeFicheiro+' que acabou de descarregar.)')}`;
+      const link = `mailto:${destinatario}?subject=${encodeURIComponent(titulo)}&body=${encodeURIComponent('Em anexo o documento "'+titulo+'".\n\n(Lembre-se de anexar o ficheiro '+nomeFicheiro+' que acabou de descarregar.)')}`;
       window.location.href = link;
     }
   }, 700);
@@ -5730,7 +5731,7 @@ function novaAvaliacaoTrimestral(secao){
 
       const criteriosTxt = CRITERIOS_MAPA_CAIXAS.map(c=>`${c.label}: ${notas[c.key] ?? '—'}/5`).join('\n');
       const valoresTxt = CRITERIOS_VALORES_EMPRESA.map(c=>`${c.label}: ${notas[c.key] ?? '—'}/5`).join('\n');
-      gerarDocumentoEEmail(`Avaliação Trimestral — ${nome} (${valores.trimestre})`, [
+      gerarDocumentoWordEEmail(`Avaliação Trimestral — ${nome} (${valores.trimestre})`, [
         {label:'Colaborador', valor: nome},
         {label:'Secção', valor: secao},
         {label:'Nota geral', valor: notaGeral!==null ? notaGeral.toFixed(2)+'/5' : '—'},
@@ -5738,7 +5739,7 @@ function novaAvaliacaoTrimestral(secao){
         {label:'Valores da Companhia', valor: valoresTxt},
         {label:'Pontos fortes', valor: valores.fortes},
         {label:'Pontos a desenvolver', valor: valores.desenvolver},
-      ], valores.assinatura);
+      ], valores.assinatura, `Avaliacao_Trimestral_${nome.replace(/\s+/g,'_')}_${valores.trimestre.replace(/\s+/g,'_')}`);
 
       criarPlanoDesenvolvimentoPessoal(numero, nome, secao);
     }catch(e){
@@ -5858,14 +5859,14 @@ async function guardarPlanoDevModal(){
     document.getElementById('modal-plano-dev').classList.add('hidden');
     renderSecaoDetail(secao, secao);
     if(enviarEmail){
-      gerarDocumentoEEmail(`Plano de Desenvolvimento Pessoal — ${nome}`, [
+      gerarDocumentoWordEEmail(`Plano de Desenvolvimento Pessoal — ${nome}`, [
         {label:'Colaborador', valor: nome},
         {label:'Secção', valor: secao},
         {label:'Período', valor: `${inicio.toLocaleDateString('pt-PT')} a ${fim.toLocaleDateString('pt-PT')}`},
         {label:'Objetivos', valor: objetivos},
         {label:'Ações', valor: acoesTxt},
         {label:'Assinatura do colaborador', valor: assinaturaColaborador},
-      ], currentUser ? currentUser.name : '');
+      ], currentUser ? currentUser.name : '', `Plano_Desenvolvimento_${nome.replace(/\s+/g,'_')}`);
     }
   }catch(e){
     console.error('Erro ao guardar', e);
@@ -7309,12 +7310,12 @@ function marcarReuniaoGerente(p){
     {id:'data', label:'Data pretendida', tipo:'text', valor: new Date().toLocaleDateString('pt-PT')}
   ], async (valores)=>{
     if(!valores.motivo) return;
-    gerarDocumentoEEmailPara('maria.conceicao.alves@jeronimo-martins.com', `Pedido de reunião — ${p.nome}`, [
+    gerarDocumentoWordEEmail(`Pedido de reunião — ${p.nome}`, [
       {label:'Colaborador', valor: p.nome},
       {label:'Secção', valor: p.secao},
       {label:'Motivo', valor: valores.motivo},
       {label:'Data pretendida', valor: valores.data},
-    ], currentUser ? currentUser.name : '');
+    ], currentUser ? currentUser.name : '', `Pedido_Reuniao_${p.nome.replace(/\s+/g,'_')}`, 'maria.conceicao.alves@jeronimo-martins.com');
   });
 }
 
