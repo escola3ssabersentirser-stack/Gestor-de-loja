@@ -460,6 +460,7 @@
 
     <div class="content">
 
+      <div id="resumo-executivo-wrap"></div>
       <div id="aniversarios-hoje-wrap"></div>
       <div id="alertas-lembretes-wrap"></div>
 
@@ -547,6 +548,18 @@
 
         <div class="section-title">📅 Resumo do Mês — Setembro (fecho)</div>
         <div class="card" id="dashboard-resumo-mes-card"></div>
+
+        <div class="section-title">🔗 Validades × Markdown × Quebra — Por Secção</div>
+        <div class="card" id="dashboard-correlacao-secao-card"></div>
+
+        <div class="section-title">🔗 Reposição × Score da Loja</div>
+        <div class="card" id="dashboard-correlacao-reposicao-card"></div>
+
+        <div class="section-title">💰 Resultado da Loja (Lucro/Prejuízo)</div>
+        <div class="card" id="dashboard-resultado-loja-card"></div>
+
+        <div class="section-title">✅ Checklists por Validar</div>
+        <div class="card" id="dashboard-checklists-validar-card"></div>
 
         <div class="section-title">📣 Comunicações Importantes</div>
         <div class="card" id="dashboard-comunicacoes-card"></div>
@@ -1659,7 +1672,12 @@ async function renderDashboard(){
     renderAgendaDashboard();
     renderQuebraDoDiaResponsavel();
     renderCrescimentoPct();
+    renderResumoExecutivo();
     renderComunicacoesDashboard();
+    renderCorrelacaoSecao();
+    renderCorrelacaoReposicao();
+    renderResultadoLoja();
+    renderChecklistsPorValidar();
     renderResumoMesSetembro();
     renderPontosCriticos();
     renderPioresEvolucoes();
@@ -3299,6 +3317,19 @@ async function renderArtigosSemVendasDashboard(){
       ${r.descricao} ${r.secao ? `<span style="color:var(--ink-soft);font-size:11px;">(${r.secao})</span>` : ''}
     </div>`;
   });
+
+  const hoje = new Date();
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
+  const historicoMes = await sb(`loja_artigos_sem_vendas_historico?data_deteccao=gte.${inicioMes}&select=*`);
+  const unicosMes = {};
+  historicoMes.forEach(h=> unicosMes[h.material || h.descricao] = h);
+  const totalUnicosMes = Object.keys(unicosMes).length;
+  if(totalUnicosMes){
+    html += `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);margin-top:4px;">
+      <span style="font-size:11.5px;font-weight:700;color:var(--navy);">📊 Acumulado este mês (artigos diferentes)</span>
+      <span style="font-size:13px;font-weight:800;color:var(--navy);">${totalUnicosMes}</span>
+    </div>`;
+  }
   wrap.innerHTML = html;
 }
 
@@ -3739,6 +3770,153 @@ async function renderCrescimentoPct(){
   wrap.innerHTML = html;
 }
 
+const MAPA_SECAO_MARKDOWN = {
+  'Talho': 'TALHO', 'Peixaria': 'PEIXARIA', 'Padaria/Pastelaria': 'PADARIA/PASTELARIA',
+  'Frutas/Vegetais': 'FRUTAS E VEGETAIS', 'Linha de atendimento': 'TAKE-AWAY'
+};
+
+async function renderCorrelacaoSecao(){
+  const wrap = document.getElementById('dashboard-correlacao-secao-card');
+  if(!wrap) return;
+  const [validades, markdowns, vendasSecoes] = await Promise.all([
+    sb('loja_validades_execucao_pct?select=*'),
+    sb('loja_markdown_pct_divisao?select=*'),
+    sb('loja_vendas_secao?select=*')
+  ]);
+
+  let html = `<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">Secções com problema em mais de uma área pedem atenção prioritária.</div>`;
+  DEPARTAMENTOS_LOJA.forEach(secaoD=>{
+    const v = validades.find(x=>x.secao_app===secaoD);
+    const divMarkdown = MAPA_SECAO_MARKDOWN[secaoD];
+    const m = divMarkdown ? markdowns.find(x=>x.divisao===divMarkdown) : null;
+    const vs = vendasSecoes.find(x=>x.secao===secaoD);
+    const quebraPct = (vs && vs.vendas_mes && vs.quebras_mes) ? (Number(vs.quebras_mes)/Number(vs.vendas_mes)*100) : null;
+
+    if(!v && !m && quebraPct===null) return;
+
+    const validadesVal = v ? Number(v.tx_execucao_pct) : null;
+    const markdownVal = m ? Number(m.pct_nao_realizado_valor) : null;
+
+    const problemas = [];
+    if(validadesVal !== null && validadesVal < 90) problemas.push('Validades');
+    if(markdownVal !== null && markdownVal > 20) problemas.push('Markdown');
+    if(quebraPct !== null && quebraPct > 2.2) problemas.push('Quebra');
+
+    html += `<div style="padding:8px 0;border-top:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:12.5px;font-weight:700;color:var(--ink);">${labelSecaoPainel(secaoD)}</span>
+        ${problemas.length>=2 ? `<span style="font-size:10px;color:#fff;background:var(--red);padding:2px 6px;border-radius:6px;">⚠️ ${problemas.length} problemas</span>` : ''}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px;font-size:11px;">
+        <span style="color:${validadesVal!==null && validadesVal<90?'var(--red)':'var(--ink-soft)'};">Validades: ${validadesVal!==null?validadesVal+'%':'—'}</span>
+        <span style="color:${markdownVal!==null && markdownVal>20?'var(--red)':'var(--ink-soft)'};">Markdown: ${markdownVal!==null?markdownVal+'%':'—'}</span>
+        <span style="color:${quebraPct!==null && quebraPct>2.2?'var(--red)':'var(--ink-soft)'};">Quebra: ${quebraPct!==null?quebraPct.toFixed(1)+'%':'—'}</span>
+      </div>
+    </div>`;
+  });
+  wrap.innerHTML = html;
+}
+
+async function renderCorrelacaoReposicao(){
+  const wrap = document.getElementById('dashboard-correlacao-reposicao-card');
+  if(!wrap) return;
+  const [semVendas, repetidos, indicadores] = await Promise.all([
+    sb('loja_artigos_sem_vendas?select=*'),
+    sb('loja_artigos_repetidos?select=*'),
+    sb('loja_indicadores_melhoria_continua?select=*')
+  ]);
+  const score = indicadores.find(i=>i.indicador && i.indicador.toLowerCase().includes('score'));
+  const massiva = indicadores.find(i=>i.indicador === 'Massiva');
+
+  let html = `<div style="display:flex;justify-content:space-between;padding:6px 0;">
+    <span style="font-size:12px;color:var(--ink-soft);">Dias Sem Vendas (artigos)</span>
+    <span style="font-size:13px;font-weight:700;color:${semVendas.length?'var(--red)':'var(--green)'};">${semVendas.length}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Repetidos (não repostos)</span>
+    <span style="font-size:13px;font-weight:700;color:${repetidos.length?'var(--red)':'var(--green)'};">${repetidos.length}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Reposição Massiva</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">${massiva ? massiva.valor_pct+'%' : '—'}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Score da Loja</span>
+    <span style="font-size:14px;font-weight:800;color:${score && Number(score.valor_pct)<70?'var(--red)':'var(--green)'};">${score ? score.valor_pct+'%' : '—'}</span>
+  </div>`;
+
+  const totalProblemas = semVendas.length + repetidos.length;
+  if(totalProblemas > 0 && score){
+    html += `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;padding-top:6px;border-top:1px solid var(--line);">
+      ${totalProblemas} problemas de reposição identificados — vale a pena verificar se têm influência no Score (${score.valor_pct}%).
+    </div>`;
+  }
+  wrap.innerHTML = html;
+}
+
+async function renderResultadoLoja(){
+  const wrap = document.getElementById('dashboard-resultado-loja-card');
+  if(!wrap) return;
+  const rows = await sb('loja_resumo?id=eq.1&select=*');
+  const r = rows[0] || {};
+
+  const vendas = Number(r.vendas_mes) || 0;
+  const quebra = Number(r.quebras_mes) || 0;
+  const custos = {
+    'Economato': r.economato_mes, 'Pessoal': r.pessoal_mes, 'Água': r.agua_mes,
+    'Luz': r.luz_mes, 'Manutenções/Reparações': r.manutencoes_mes,
+    'Lixo': r.lixo_mes, 'Seguros/Acidentes': r.seguros_acidentes_mes
+  };
+  const totalCustos = Object.values(custos).reduce((s,v)=> s + (v!==null && v!==undefined ? Number(v) : 0), 0);
+  const faltamCustos = Object.entries(custos).filter(([k,v])=>v===null||v===undefined).map(([k])=>k);
+
+  const resultado = vendas - quebra - totalCustos;
+
+  let html = `<div style="font-size:10px;color:var(--amber);font-weight:700;margin-bottom:6px;">⚠️ Custos de referência: ${r.mes_referencia_custos || 'sem data'} — pode estar desatualizado. Envie valores mais recentes para eu corrigir.</div>`;
+  html += `<div style="display:flex;justify-content:space-between;padding:5px 0;">
+    <span style="font-size:12px;color:var(--ink-soft);">Vendas do mês</span>
+    <span style="font-size:13px;font-weight:700;color:var(--green);">+${fmtEuro(vendas)}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Quebra</span>
+    <span style="font-size:13px;font-weight:700;color:var(--red);">-${fmtEuro(quebra)}</span>
+  </div>`;
+  Object.entries(custos).forEach(([label, v])=>{
+    html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--line);">
+      <span style="font-size:11.5px;color:var(--ink-soft);">${label}</span>
+      <span style="font-size:12px;font-weight:600;color:${v!==null?'var(--red)':'var(--ink-soft)'};">${v!==null&&v!==undefined?'-'+fmtEuro(v):'sem dados'}</span>
+    </div>`;
+  });
+  html += `<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:2px solid var(--navy);margin-top:6px;">
+    <span style="font-size:13px;font-weight:800;color:var(--ink);">Resultado${faltamCustos.length?' (parcial)':''}</span>
+    <span style="font-size:17px;font-weight:800;color:${resultado>=0?'var(--green)':'var(--red)'};">${resultado>=0?'+':''}${fmtEuro(resultado)}</span>
+  </div>`;
+  if(faltamCustos.length){
+    html += `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">Em falta: ${faltamCustos.join(', ')} — o resultado real pode ser ainda mais negativo.</div>`;
+  }
+  wrap.innerHTML = html;
+}
+
+async function renderChecklistsPorValidar(){
+  const wrap = document.getElementById('dashboard-checklists-validar-card');
+  if(!wrap) return;
+  const semana = semanaAtualLabel();
+  const checklists = await sb(`loja_checklist_secao?semana=eq.${encodeURIComponent(semana)}&select=secao,atualizado_em`);
+  const validadas = new Set(checklists.map(c=>c.secao));
+  const faltam = DEPARTAMENTOS_LOJA.filter(s=>!validadas.has(s));
+
+  let html = '';
+  if(!faltam.length){
+    html = `<div style="font-size:12.5px;color:var(--green);">✓ Todas as secções validaram o checklist desta semana. 🎉</div>`;
+  } else {
+    html = `<div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:6px;">${faltam.length} de ${DEPARTAMENTOS_LOJA.length} secções ainda não validaram esta semana:</div>`;
+    faltam.forEach(s=>{
+      html += `<div style="padding:4px 0;font-size:12.5px;color:var(--ink);">• ${labelSecaoPainel(s)}</div>`;
+    });
+  }
+  wrap.innerHTML = html;
+}
+
 async function renderResumoMesSetembro(){
   const wrap = document.getElementById('dashboard-resumo-mes-card');
   if(!wrap) return;
@@ -3779,6 +3957,135 @@ async function renderResumoMesSetembro(){
   });
 
   wrap.innerHTML = html;
+}
+
+async function renderResumoExecutivo(){
+  const wrap = document.getElementById('resumo-executivo-wrap');
+  if(!wrap || !currentUser || !isChefe()) { if(wrap) wrap.innerHTML=''; return; }
+
+  const [resumoRows, vendasDia, artigosQuebra, artigosSemVendas, custos] = await Promise.all([
+    sb('loja_resumo?id=eq.1&select=*'),
+    sb('loja_vendas_dia?select=*&order=data.desc&limit=2'),
+    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=30'),
+    sb('loja_artigos_sem_vendas?select=*&limit=5'),
+    sb('loja_custos_mensais?select=ano,mes,vendas,quebra&order=ano.asc')
+  ]);
+  const r = resumoRows[0] || {};
+  const mesAtual = mesAtualNome();
+  const idxAtual = ORDEM_MESES.indexOf(mesAtual);
+  const mesAnteriorNome = ORDEM_MESES[(idxAtual-1+12)%12];
+  const anoAtual = new Date().getFullYear();
+  const cAtual = custos.find(c=>c.ano===anoAtual && c.mes===mesAnteriorNome);
+  const cAnoPassado = custos.find(c=>c.ano===anoAtual-1 && c.mes===mesAnteriorNome);
+
+  const pct = (a,b) => (a!==null && a!==undefined && b) ? ((Number(a)-Number(b))/Number(b)*100) : null;
+  const sinal = (p) => p===null ? '—' : `${p>=0?'ganhámos':'perdemos'} ${Math.abs(p).toFixed(1)}%`;
+  const cor = (p) => p===null ? 'var(--ink-soft)' : (p>=0?'var(--green)':'var(--red)');
+
+  // Ontem: real vs budget (não é LFL com ano passado — não tenho dados diários de 2025)
+  const ontemDesvio = vendasDia.length ? pct(vendasDia[0].vendas_real, vendasDia[0].vendas_budget) : null;
+  const dataOntem = vendasDia.length ? vendasDia[0].data : null;
+  const quebraOntemArtigos = dataOntem ? artigosQuebra.filter(a=>a.data===dataOntem) : [];
+  const quebraOntemTotal = quebraOntemArtigos.reduce((s,a)=>s+Number(a.valor_quebra),0);
+  const quebraOntemPct = (vendasDia.length && vendasDia[0].vendas_real) ? (quebraOntemTotal/Number(vendasDia[0].vendas_real)*100) : null;
+
+  // Mês passado: vendas realizadas vs objetivo médio mensal (objetivo do ano / 12 — não guardo o objetivo exato de cada mês)
+  const objetivoMedioMensal = r.budget_ano_vendas ? Number(r.budget_ano_vendas)/12 : null;
+  const mesPassadoVendasPct = cAtual ? pct(cAtual.vendas, objetivoMedioMensal) : null;
+  const quebraPctAtual = cAtual && cAtual.vendas ? (Number(cAtual.quebra)/Number(cAtual.vendas)*100) : null;
+  const quebraDeltaPP = quebraPctAtual!==null ? (quebraPctAtual-2.20) : null;
+
+  // Ao ano: realizado vs objetivo do ano PRORATEADO até hoje (dá o verdadeiro "à frente/atrás do objetivo")
+  const hojeD = new Date();
+  const inicioAnoD = new Date(hojeD.getFullYear(),0,1);
+  const diasNoAno = (new Date(hojeD.getFullYear(),11,31) - inicioAnoD)/86400000 + 1;
+  const diasPassados = (hojeD - inicioAnoD)/86400000 + 1;
+  const objetivoAteHoje = r.budget_ano_vendas ? Number(r.budget_ano_vendas) * (diasPassados/diasNoAno) : null;
+  const vendasAnoPct = objetivoAteHoje ? pct(r.vendas_ano, objetivoAteHoje) : null;
+  const quebraAnoPct = (r.vendas_ano && r.quebras_ano) ? (Number(r.quebras_ano)/Number(r.vendas_ano)*100) : null;
+
+  // Top 5 artigos a perder mais quebra (ontem)
+  const topQuebraOntem = [...quebraOntemArtigos].sort((a,b)=>Number(b.valor_quebra)-Number(a.valor_quebra)).slice(0,5);
+
+  let html = `<div class="card" style="background:linear-gradient(135deg,var(--navy),#1b3a5c);border:none;">
+    <div style="font-size:11px;color:rgba(255,255,255,0.7);font-weight:700;letter-spacing:0.5px;">🎯 OBJETIVO ANUAL</div>
+    <div style="display:flex;gap:16px;margin-top:6px;">
+      <div><div style="font-size:20px;font-weight:800;color:#fff;">+5%</div><div style="font-size:10.5px;color:rgba(255,255,255,0.7);">Crescer LFL</div></div>
+      <div><div style="font-size:20px;font-weight:800;color:#fff;">2,20%</div><div style="font-size:10.5px;color:rgba(255,255,255,0.7);">Objetivo de Quebra</div></div>
+    </div>
+  </div>`;
+
+  html += `<div class="card">
+    <div style="font-size:11px;color:var(--ink-soft);font-weight:700;">📅 ONTEM${dataOntem?' ('+new Date(dataOntem+'T00:00:00').toLocaleDateString('pt-PT')+')':''}</div>
+    <div style="font-size:15px;font-weight:800;color:${cor(ontemDesvio)};margin-top:4px;">${sinal(ontemDesvio)} <span style="font-size:11px;font-weight:400;color:var(--ink-soft);">vs objetivo do dia</span></div>
+    ${quebraOntemPct!==null ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;">Quebra de ontem: <b style="color:${quebraOntemPct>2.2?'var(--red)':'var(--green)'};">${quebraOntemPct.toFixed(2)}%</b></div>` : ''}
+    <div style="font-size:10px;color:var(--ink-soft);margin-top:4px;font-style:italic;">Nota: comparação com o objetivo do dia — ainda não tenho vendas diárias de 2025 para comparar diretamente com "ontem do ano passado".</div>
+  </div>`;
+
+  if(topQuebraOntem.length || artigosSemVendas.length){
+    html += `<div class="card">`;
+    if(topQuebraOntem.length){
+      html += `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-bottom:4px;">📉 Artigos com mais quebra (ontem)</div>`;
+      topQuebraOntem.forEach(a=>{
+        html += `<div style="display:flex;justify-content:space-between;padding:3px 0;">
+          <span style="font-size:12px;color:var(--ink);">${a.descricao}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuro(a.valor_quebra)}</span>
+        </div>`;
+      });
+    }
+    if(artigosSemVendas.length){
+      html += `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-top:8px;margin-bottom:4px;">🛒 Artigos a perder vendas</div>`;
+      artigosSemVendas.forEach(a=>{
+        html += `<div style="font-size:12px;color:var(--ink);padding:2px 0;">• ${a.descricao}</div>`;
+      });
+    }
+    html += `<button class="btn-primary" style="width:100%;margin-top:10px;" onclick="criarPlanoReversaoOntem()">📝 Plano de Ação para Reverter (Word)</button>`;
+    html += `</div>`;
+  }
+
+  html += `<div class="card">
+    <div style="font-size:11px;color:var(--ink-soft);font-weight:700;">📆 MÊS PASSADO (${mesAnteriorNome})</div>
+    <div style="font-size:14px;font-weight:800;color:${cor(mesPassadoVendasPct)};margin-top:4px;">${sinal(mesPassadoVendasPct)} <span style="font-size:11px;font-weight:400;color:var(--ink-soft);">vs objetivo médio mensal</span></div>
+    ${quebraDeltaPP!==null ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;">Quebra: <b style="color:${quebraDeltaPP>0?'var(--red)':'var(--green)'};">${quebraPctAtual.toFixed(2)}%</b> (${quebraDeltaPP>=0?'pior':'melhor'} em ${Math.abs(quebraDeltaPP).toFixed(2)} p.p. vs objetivo de 2,20%)</div>` : ''}
+  </div>`;
+
+  html += `<div class="card">
+    <div style="font-size:11px;color:var(--ink-soft);font-weight:700;">📈 AO ANO</div>
+    <div style="font-size:14px;font-weight:800;color:${cor(vendasAnoPct)};margin-top:4px;">${sinal(vendasAnoPct)} <span style="font-size:11px;font-weight:400;color:var(--ink-soft);">vs objetivo do ano (ajustado aos dias já passados)</span></div>
+    ${quebraAnoPct!==null ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;">Quebra do ano: <b style="color:${quebraAnoPct>2.2?'var(--red)':'var(--green)'};">${quebraAnoPct.toFixed(2)}%</b></div>` : ''}
+  </div>`;
+
+  wrap.innerHTML = html;
+}
+
+async function criarPlanoReversaoOntem(){
+  const [vendasDia, artigosQuebra, artigosSemVendas] = await Promise.all([
+    sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
+    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=10'),
+    sb('loja_artigos_sem_vendas?select=*&limit=10')
+  ]);
+  const ontem = vendasDia[0];
+  const dataOntem = ontem ? ontem.data : null;
+  const quebraOntem = dataOntem ? artigosQuebra.filter(a=>a.data===dataOntem).sort((a,b)=>Number(b.valor_quebra)-Number(a.valor_quebra)) : [];
+
+  abrirFormularioGenerico('📝 Plano de Reversão — Ontem', [
+    {id:'causas', label:'Causas identificadas', tipo:'textarea', linhas:4, valor: '- \n- '},
+    {id:'acoes', label:'Ações para reverter', tipo:'textarea', linhas:5, valor: '1. \n2. \n3. '},
+    {id:'responsavel', label:'Responsável', tipo:'text', valor: currentUser?currentUser.name:''},
+    {id:'prazo', label:'Prazo', tipo:'text', valor: 'Hoje'}
+  ], async (valores)=>{
+    const artigosTxt = quebraOntem.map(a=>`• ${a.descricao}: ${fmtEuro(a.valor_quebra)}`).join('\n') || '—';
+    const semVendasTxt = artigosSemVendas.map(a=>`• ${a.descricao}`).join('\n') || '—';
+    gerarDocumentoWordEEmail(`Plano de Reversão — ${dataOntem ? new Date(dataOntem+'T00:00:00').toLocaleDateString('pt-PT') : 'Ontem'}`, [
+      {label:'Vendas vs Objetivo', valor: ontem ? `${fmtEuro(ontem.vendas_real)} de ${fmtEuro(ontem.vendas_budget)}` : '—'},
+      {label:'Artigos com mais quebra', valor: artigosTxt},
+      {label:'Artigos a perder vendas', valor: semVendasTxt},
+      {label:'Causas identificadas', valor: valores.causas},
+      {label:'Ações para reverter', valor: valores.acoes},
+      {label:'Responsável', valor: valores.responsavel},
+      {label:'Prazo', valor: valores.prazo},
+    ], valores.responsavel, `Plano_Reversao_${(dataOntem||'hoje').replace(/-/g,'')}`);
+  });
 }
 
 async function renderComunicacoesDashboard(){
