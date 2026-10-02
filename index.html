@@ -542,8 +542,14 @@
 
         <div id="dashboard-quebra-responsavel-wrap"></div>
 
+        <div class="section-title">📊 Crescimento (%)</div>
+        <div class="card" id="dashboard-crescimento-card"></div>
+
         <div class="section-title">📅 Resumo do Mês — Setembro (fecho)</div>
         <div class="card" id="dashboard-resumo-mes-card"></div>
+
+        <div class="section-title">📣 Comunicações Importantes</div>
+        <div class="card" id="dashboard-comunicacoes-card"></div>
 
         <div class="section-title">🚨 Pontos Críticos</div>
         <div class="card" id="dashboard-pontos-criticos-card"></div>
@@ -568,6 +574,9 @@
 
         <div class="section-title">🔧 Regularizações</div>
         <div class="card" id="dashboard-regularizacoes-card"></div>
+
+        <div class="section-title">🧾 Notas de Crédito — Por Validar</div>
+        <div class="card" id="dashboard-notas-credito-card"></div>
 
         <div class="section-title">Resultados — Vendas mensais</div>
         <div class="card">
@@ -1649,6 +1658,8 @@ async function renderDashboard(){
     renderCountdownAno();
     renderAgendaDashboard();
     renderQuebraDoDiaResponsavel();
+    renderCrescimentoPct();
+    renderComunicacoesDashboard();
     renderResumoMesSetembro();
     renderPontosCriticos();
     renderPioresEvolucoes();
@@ -1657,6 +1668,7 @@ async function renderDashboard(){
     renderArtigosSemVendasDashboard();
     renderArtigosRepetidosDashboard();
     renderRegularizacoesDashboard();
+    renderNotasCreditoDashboard();
     renderChecklistGerencia();
     renderPlanoSemanal();
     renderReunioesTeams();
@@ -3290,6 +3302,130 @@ async function renderArtigosSemVendasDashboard(){
   wrap.innerHTML = html;
 }
 
+async function blocoNotasCredito(contextoId, modoCompleto){
+  const todas = await sb('loja_notas_credito?select=*&order=data.desc');
+  const porValidar = todas.filter(r=>!r.validado);
+  const hoje = new Date();
+  const diaSemana = (hoje.getDay()+6)%7;
+  const seg = new Date(hoje); seg.setDate(hoje.getDate()-diaSemana);
+  const segISO = seg.toISOString().slice(0,10);
+  const estaSemana = todas.filter(r => r.data >= segISO);
+  const esteMes = todas.filter(r => { const d = new Date(r.data+'T00:00:00'); return d.getMonth()===hoje.getMonth() && d.getFullYear()===hoje.getFullYear(); });
+  const esteAno = todas.filter(r => new Date(r.data+'T00:00:00').getFullYear()===hoje.getFullYear());
+  const naoConformes = todas.filter(r => r.conforme === false);
+
+  const soma = (arr) => arr.reduce((s,r)=> s + Number(r.valor), 0);
+
+  let html = `<div style="display:flex;justify-content:space-between;padding:6px 0;">
+    <span style="font-size:12px;color:var(--ink-soft);">Por validar</span>
+    <span style="font-size:14px;font-weight:800;color:${porValidar.length?'var(--red)':'var(--green)'};">${porValidar.length} · ${fmtEuro(soma(porValidar))}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Esta semana</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">${estaSemana.length} · ${fmtEuro(soma(estaSemana))}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Este mês</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">${esteMes.length} · ${fmtEuro(soma(esteMes))}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Este ano</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">${esteAno.length} · ${fmtEuro(soma(esteAno))}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">⚠️ Não conformes</span>
+    <span style="font-size:13px;font-weight:700;color:${naoConformes.length?'var(--red)':'var(--green)'};">${naoConformes.length} · ${fmtEuro(soma(naoConformes))}</span>
+  </div>`;
+
+  if(modoCompleto){
+    // Gráfico de inconformidades por semana (últimas 8 semanas)
+    const porSemana = {};
+    todas.forEach(r=>{
+      const d = new Date(r.data+'T00:00:00');
+      const diaS = (d.getDay()+6)%7;
+      const segS = new Date(d); segS.setDate(d.getDate()-diaS);
+      const chave = segS.toISOString().slice(0,10);
+      if(!porSemana[chave]) porSemana[chave] = {total:0, naoConf:0};
+      porSemana[chave].total++;
+      if(r.conforme === false) porSemana[chave].naoConf++;
+    });
+    const semanasOrdenadas = Object.keys(porSemana).sort().slice(-8);
+    if(semanasOrdenadas.length){
+      const maxTotal = Math.max(...semanasOrdenadas.map(s=>porSemana[s].total), 1);
+      html += `<h3 style="margin:14px 0 6px;">📊 Inconformidades por Semana</h3>
+      <div class="rchart" style="height:80px;">`;
+      semanasOrdenadas.forEach(s=>{
+        const d = porSemana[s];
+        const pctNaoConf = d.total ? (d.naoConf/d.total*100) : 0;
+        html += `<div class="bars"><div class="bar" style="height:${(d.total/maxTotal*100).toFixed(1)}%;background:${pctNaoConf>0?'var(--red)':'var(--teal)'};"></div></div>`;
+      });
+      html += `</div><div class="rchart-labels">`;
+      semanasOrdenadas.forEach(s=> html += `<span style="font-size:7.5px;">${new Date(s+'T00:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})}</span>`);
+      html += `</div>`;
+    }
+
+    html += `<h3 style="margin:14px 0 6px;">Lista — Por Validar</h3>`;
+    if(!porValidar.length){
+      html += `<div style="font-size:12.5px;color:var(--green);">✓ Tudo validado.</div>`;
+    }
+    porValidar.forEach(r=>{
+      html += `<div class="card" style="padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;">
+          <span style="font-size:12.5px;color:var(--ink);">Fatura ${r.numero_factura} · ${new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT')}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--red);">${fmtEuro(r.valor)}</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="econ-btn filled" style="flex:1;" onclick="validarNotaCredito(${r.id}, true)">✓ Conforme</button>
+          <button class="econ-btn" style="flex:1;" onclick="validarNotaCredito(${r.id}, false)">⚠️ Não Conforme</button>
+        </div>
+      </div>`;
+    });
+
+    if(naoConformes.length){
+      html += `<h3 style="margin:14px 0 6px;color:var(--red);">⚠️ Não Conformes (histórico)</h3>`;
+      naoConformes.forEach(r=>{
+        html += `<div style="padding:8px 0;border-top:1px solid var(--line);">
+          <div style="display:flex;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--ink);">Fatura ${r.numero_factura} · ${new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT')}</span>
+            <span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuro(r.valor)}</span>
+          </div>
+          ${r.observacao ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${r.observacao}</div>` : ''}
+        </div>`;
+      });
+    }
+  }
+
+  return html;
+}
+
+async function validarNotaCredito(id, conforme){
+  let observacao = null;
+  if(!conforme){
+    observacao = prompt('Observação sobre a não conformidade (opcional):') || null;
+  }
+  try{
+    await sb(`loja_notas_credito?id=eq.${id}`, {method:"PATCH", body: JSON.stringify({
+      validado: true, conforme, observacao,
+      validado_por: currentUser ? currentUser.name : null,
+      validado_em: new Date().toISOString()
+    })});
+    showToast();
+    renderNotasCreditoDashboard();
+    if(document.getElementById('melhoria-screen') && !document.getElementById('melhoria-screen').classList.contains('hidden')){
+      abrirDetalheAuditoria('Controlo');
+    }
+    if(document.getElementById('colaboradores-screen') && !document.getElementById('colaboradores-screen').classList.contains('hidden')){
+      renderSecaoDetail('Frente de Loja', 'Frente de Loja');
+    }
+  }catch(e){ console.error('Erro ao guardar', e); }
+}
+
+async function renderNotasCreditoDashboard(){
+  const wrap = document.getElementById('dashboard-notas-credito-card');
+  if(!wrap) return;
+  wrap.innerHTML = await blocoNotasCredito('dashboard', false);
+}
+
 async function renderRegularizacoesDashboard(){
   const wrap = document.getElementById('dashboard-regularizacoes-card');
   if(!wrap) return;
@@ -3537,6 +3673,72 @@ async function renderQuebraDoDiaResponsavel(){
   wrap.innerHTML = html;
 }
 
+async function renderCrescimentoPct(){
+  const wrap = document.getElementById('dashboard-crescimento-card');
+  if(!wrap) return;
+  const [custos, resumoRows, vendasSecoes, vendasDia] = await Promise.all([
+    sb('loja_custos_mensais?select=ano,mes,vendas&order=ano.asc'),
+    sb('loja_resumo?id=eq.1&select=*'),
+    sb('loja_vendas_secao?select=*'),
+    sb('loja_vendas_dia?select=*&order=data.desc&limit=2')
+  ]);
+  const r = resumoRows[0] || {};
+  const mesAtual = mesAtualNome();
+  const idxAtual = ORDEM_MESES.indexOf(mesAtual);
+  const mesAnteriorNome = ORDEM_MESES[(idxAtual-1+12)%12];
+  const vMesAtual = Number(r.vendas_mes) || null;
+  const vMesAnterior = custos.find(c=>c.ano===2026 && c.mes===mesAnteriorNome)?.vendas;
+
+  const pct = (atual, anterior) => (atual!==null && anterior) ? ((Number(atual)-Number(anterior))/Number(anterior)*100) : null;
+  const seta = (p) => p===null ? '' : (p>=0?'▲':'▼');
+  const cor = (p) => p===null ? 'var(--ink-soft)' : (p>=0?'var(--green)':'var(--red)');
+  const fmt = (p) => p===null ? '—' : `${seta(p)} ${Math.abs(p).toFixed(1)}%`;
+
+  const crescMes = pct(vMesAtual, vMesAnterior);
+  const crescOntem = (vendasDia.length===2) ? pct(vendasDia[0].vendas_real, vendasDia[1].vendas_real) : null;
+  const quebraPctDia = (vendasDia.length && vendasDia[0].quebras_real!==undefined && vendasDia[0].quebras_real!==null && vendasDia[0].vendas_real) ? (Number(vendasDia[0].quebras_real)/Number(vendasDia[0].vendas_real)*100) : null;
+  const quebraPctMes = (r.vendas_mes && r.quebras_mes) ? (Number(r.quebras_mes)/Number(r.vendas_mes)*100) : null;
+
+  let html = `<div style="display:flex;justify-content:space-between;padding:5px 0;">
+    <span style="font-size:12px;color:var(--ink-soft);">${mesAnteriorNome} → ${mesAtual}</span>
+    <span style="font-size:13px;font-weight:700;color:${cor(crescMes)};">${fmt(crescMes)}</span>
+  </div>`;
+  if(crescOntem !== null){
+    html += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);">
+      <span style="font-size:12px;color:var(--ink-soft);">Vendas ontem vs anterior</span>
+      <span style="font-size:13px;font-weight:700;color:${cor(crescOntem)};">${fmt(crescOntem)}</span>
+    </div>`;
+  }
+  html += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Quebra objetivo</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">1,98%</span>
+  </div>`;
+  if(quebraPctDia !== null){
+    html += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);">
+      <span style="font-size:12px;color:var(--ink-soft);">Quebra de hoje</span>
+      <span style="font-size:13px;font-weight:700;color:${quebraPctDia>1.98?'var(--red)':'var(--green)'};">${quebraPctDia.toFixed(2)}%</span>
+    </div>`;
+  }
+  html += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);">
+    <span style="font-size:12px;color:var(--ink-soft);">Quebra do mês</span>
+    <span style="font-size:13px;font-weight:700;color:${quebraPctMes>1.98?'var(--red)':'var(--green)'};">${quebraPctMes?.toFixed(2)}%</span>
+  </div>`;
+
+  html += `<div style="font-size:10.5px;font-weight:700;color:var(--navy);margin-top:8px;padding-top:6px;border-top:1px solid var(--line);">Secções — vendas / quebra</div>`;
+  DEPARTAMENTOS_LOJA.forEach(secaoD=>{
+    const v = vendasSecoes.find(x=>x.secao===secaoD);
+    if(!v || v.vendas_mes===null) return;
+    const desvioV = v.budget_mes ? pct(v.vendas_mes, v.budget_mes) : null;
+    const pctQ = v.quebras_mes ? (Number(v.quebras_mes)/Number(v.vendas_mes)*100) : null;
+    html += `<div style="display:flex;justify-content:space-between;padding:4px 0;">
+      <span style="font-size:11.5px;color:var(--ink);">${labelSecaoPainel(secaoD)}</span>
+      <span style="font-size:11.5px;"><span style="color:${cor(desvioV)};font-weight:700;">${fmt(desvioV)}</span> <span style="color:var(--ink-soft);">· Q ${pctQ?.toFixed(1)}%</span></span>
+    </div>`;
+  });
+
+  wrap.innerHTML = html;
+}
+
 async function renderResumoMesSetembro(){
   const wrap = document.getElementById('dashboard-resumo-mes-card');
   if(!wrap) return;
@@ -3577,6 +3779,19 @@ async function renderResumoMesSetembro(){
   });
 
   wrap.innerHTML = html;
+}
+
+async function renderComunicacoesDashboard(){
+  const wrap = document.getElementById('dashboard-comunicacoes-card');
+  if(!wrap) return;
+  const rows = await sb('loja_comunicacao?select=informacoes&order=id.desc&limit=1');
+  const texto = rows && rows.length ? rows[0].informacoes : null;
+  if(!texto){
+    wrap.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);">Sem comunicações registadas.</div>`;
+    return;
+  }
+  wrap.innerHTML = `<div style="font-size:12.5px;color:var(--ink);white-space:pre-line;line-height:1.5;">${texto}</div>
+    <button class="econ-btn" style="width:100%;margin-top:10px;" onclick="selectMenu('comunicacao','Comunicação Semanal')">Ver Comunicação Semanal completa →</button>`;
 }
 
 async function renderPontosCriticos(){
@@ -4255,6 +4470,10 @@ async function abrirDetalheAuditoria(nome){
       <div style="font-size:36px;font-weight:700;color:var(--navy);">${pct}</div>
       ${currentUser && currentUser.role === 'gestora' ? `<button class="econ-btn" style="margin-top:10px;" onclick="editarNotaAuditoria('${nome.replace(/'/g,"\\'")}')">✏️ Editar nota</button>` : ''}
     </div>`;
+
+    if(nome === 'Controlo'){
+      html += `<div class="section-title">🧾 Notas de Crédito</div><div class="card">${await blocoNotasCredito('auditoria', true)}</div>`;
+    }
 
     if(!auditorias || !auditorias.length){
       html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda não há relatório detalhado guardado para esta auditoria.</div></div>`;
@@ -6258,6 +6477,7 @@ async function renderSecaoDetail(secao, label){
   if(secao === 'Frente de Loja'){
     tarefasHtml += await blocoIndicadoresFrenteLoja();
     tarefasHtml += await blocoVendaSugestiva();
+    tarefasHtml += `<div class="section-title">🧾 Notas de Crédito</div><div class="card">${await blocoNotasCredito('frente', true)}</div>`;
   }
   if(secao === 'Custos Comuns'){
     tarefasHtml += await blocoPicagemPaletes();
