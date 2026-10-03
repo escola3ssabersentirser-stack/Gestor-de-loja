@@ -1115,6 +1115,25 @@
     </div>
   </div>
 
+  <!-- ===================== FARDAMENTO (supervisão) ===================== -->
+  <div id="fardamento-screen" class="hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="menu-btn" onclick="openMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div>
+          <div class="who">Módulo</div>
+          <div class="name">👕 Fardamento</div>
+        </div>
+      </div>
+      <button class="logout" onclick="logout()">Sair</button>
+    </div>
+    <div class="content" id="fardamento-content">
+      <div class="placeholder-body"><p>A carregar...</p></div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ===================== DRAWER DE NAVEGAÇÃO ===================== -->
@@ -1219,13 +1238,27 @@ const MENU_ITEMS = [
 
 const MENU_GRUPOS = [
   {tipo:'item', id:'dashboard', icon:'📊', label:'Dashboard Gerente'},
-  {tipo:'item', id:'comunicacao', icon:'📣', label:'Comunicação Semanal'},
-  {tipo:'grupo', label:'Auditorias', icon:'✅', itens:[
-    {id:'auditoria:SHT', icon:'🦺', label:'SHT'},
-    {id:'auditoria:RH', icon:'👤', label:'RH'},
-    {id:'auditoria:Ambiental', icon:'🌱', label:'Ambiente'},
-    {id:'auditoria:Controlo', icon:'🎯', label:'Controlo Operacional'},
+
+  {tipo:'grupo', label:'📣 Comunicação', icon:'📣', itens:[
+    {id:'comunicacao', icon:'📣', label:'Comunicação Semanal'},
+    {id:'dash:resultados', icon:'💶', label:'Resultados — Vendas e Quebras'},
+    {id:'auditoria:SHT', icon:'🦺', label:'Auditoria SHT'},
+    {id:'auditoria:RH', icon:'👤', label:'Auditoria RH'},
+    {id:'auditoria:Ambiental', icon:'🌱', label:'Auditoria Ambiente'},
+    {id:'auditoria:Controlo', icon:'🎯', label:'Auditoria Controlo Operacional'},
+    {id:'formacoes', icon:'🎓', label:'Recursos Humanos — Formação Pendente'},
+    {id:'dash:gestao:avaliacao-cliente', icon:'⭐', label:'Cliente — Avaliação ao Atendimento'},
+    {id:'marketing', icon:'📣', label:'Marketing'},
   ]},
+
+  {tipo:'grupo', label:'🔎 Supervisão', icon:'🔎', itens:[
+    {id:'dash:gestao:checklist', icon:'✅', label:'Checklist Gerência'},
+    {id:'checklist-responsaveis', icon:'✅', label:'Checklist Responsáveis de Secção'},
+    {id:'rastreabilidade', icon:'🏷️', label:'Controlo de Rastreabilidades'},
+    {id:'validacao-tarefas', icon:'✅', label:'Validação de Tarefas'},
+    {id:'fardamento', icon:'👕', label:'Fardamento'},
+  ]},
+
   {tipo:'grupo', label:'Secções', icon:'🏬', itens:[
     {id:'secao:Talho', icon:'🥩', label:'Talho'},
     {id:'secao:Peixaria', icon:'🐟', label:'Peixaria'},
@@ -1235,25 +1268,8 @@ const MENU_GRUPOS = [
     {id:'secao:Custos Comuns', icon:'🧺', label:'Livre Serviço'},
     {id:'secao:Padaria/Pastelaria', icon:'🥐', label:'Padaria/Pastelaria'},
   ]},
-  {tipo:'grupo', label:'Supervisão', icon:'🔎', itens:[
-    {id:'rastreabilidade', icon:'🏷️', label:'Controlo de Rastreabilidades'},
-    {id:'validacao-tarefas', icon:'✅', label:'Validação de Tarefas'},
-    {id:'dash:gestao:checklist', icon:'✅', label:'Checklist Gerência'},
-    {id:'checklist-responsaveis', icon:'✅', label:'Checklist Responsáveis de Secção'},
-  ]},
-  {tipo:'item', id:'markdown', icon:'🏷️', label:'Markdown'},
-  {tipo:'item', id:'dash:gestao:planos-acao', icon:'🎯', label:'Planos de Ação'},
-  {tipo:'item', id:'dash:gestao:feedback', icon:'💬', label:'Momentos de Feedback'},
-  {tipo:'item', id:'formacoes', icon:'🎓', label:'Formações'},
-  {tipo:'grupo', label:'Atendimento ao Cliente', icon:'⭐', itens:[
-    {id:'dash:gestao:avaliacao-cliente', icon:'⭐', label:'Avaliação Aqui para o Cliente'},
-  ]},
-  {tipo:'item', id:'dash:resultados', icon:'💶', label:'Custos da Loja'},
-  {tipo:'item', id:'controlo-quebra', icon:'📉', label:'Controlo de Quebra'},
-  {tipo:'item', id:'limpeza', icon:'🧹', label:'Limpeza'},
-  {tipo:'item', id:'marketing', icon:'📣', label:'Marketing'},
+
   {tipo:'item', id:'economato', icon:'🧴', label:'Economato'},
-  {tipo:'item', id:'planogramas', icon:'🗺️', label:'Planogramas'},
   {tipo:'item', id:'melhoria', icon:'📈', label:'Melhoria Contínua (detalhe)'},
 ];
 
@@ -1367,6 +1383,7 @@ function selectMenu(id, label){
   document.getElementById('limpeza-screen').classList.add('hidden');
   document.getElementById('marketing-screen').classList.add('hidden');
   document.getElementById('minha-area-screen').classList.add('hidden');
+  document.getElementById('fardamento-screen').classList.add('hidden');
   document.getElementById('placeholder-screen').classList.add('hidden');
   if(id === 'dashboard'){
     document.getElementById('dashboard-screen').classList.remove('hidden');
@@ -1410,6 +1427,9 @@ function selectMenu(id, label){
   } else if(id === 'checklist-responsaveis'){
     document.getElementById('rastreabilidade-screen').classList.remove('hidden');
     renderRastreabilidade();
+  } else if(id === 'fardamento'){
+    document.getElementById('fardamento-screen').classList.remove('hidden');
+    renderFardamentoScreen();
   } else if(id.startsWith('dash:')){
     document.getElementById('dashboard-screen').classList.remove('hidden');
     const partes = id.replace('dash:','').split(':');
@@ -1646,6 +1666,7 @@ function logout(){
   document.getElementById('marketing-screen').classList.add('hidden');
   document.getElementById('minha-area-screen').classList.add('hidden');
   document.getElementById('placeholder-screen').classList.add('hidden');
+  document.getElementById('fardamento-screen').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('input-numero').value = '';
   document.getElementById('lookup-result').textContent = '';
@@ -7412,6 +7433,49 @@ function pedirFormacao(){
   });
 }
 
+async function renderFardamentoScreen(){
+  const content = document.getElementById('fardamento-content');
+  const rows = await sb('loja_pedidos_fardamento?select=*&order=criado_em.desc');
+  const pendentes = rows.filter(r=>r.estado==='Pendente');
+  const resolvidos = rows.filter(r=>r.estado!=='Pendente');
+
+  let html = `<div class="section-title">👕 Pedidos Pendentes <span class="count">· ${pendentes.length}</span></div>`;
+  html += `<div class="card">`;
+  if(!pendentes.length){
+    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem pedidos pendentes.</div>`;
+  } else {
+    pendentes.forEach((r,i)=>{
+      html += `<div style="padding:9px 0;border-top:${i===0?'none':'1px solid var(--line)'};">
+        <div style="font-size:13px;font-weight:600;color:var(--ink);">${r.colaborador_nome}</div>
+        <div style="font-size:12.5px;color:var(--ink);margin-top:2px;">${r.peca} ${r.tamanho?'· Tam. '+r.tamanho:''} · ${r.quantidade}x</div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${new Date(r.criado_em).toLocaleDateString('pt-PT')}</div>
+        ${isChefe() ? `<button class="econ-btn filled" style="margin-top:6px;" onclick="resolverPedidoFardamento(${r.id})">✓ Entregue</button>` : ''}
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
+  if(resolvidos.length){
+    html += `<div class="section-title">Histórico</div><div class="card">`;
+    resolvidos.slice(0,15).forEach((r,i)=>{
+      html += `<div style="padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};font-size:12px;color:var(--ink-soft);">
+        ${r.colaborador_nome} — ${r.peca} (${r.quantidade}x) · ${new Date(r.criado_em).toLocaleDateString('pt-PT')}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  content.innerHTML = html;
+}
+
+async function resolverPedidoFardamento(id){
+  try{
+    await sb(`loja_pedidos_fardamento?id=eq.${id}`, {method:"PATCH", body: JSON.stringify({estado:'Entregue'})});
+    showToast();
+    renderFardamentoScreen();
+  }catch(e){ console.error('Erro ao guardar', e); }
+}
+
 function pedirFardamento(){
   if(!foundColaborador) return;
   abrirFormularioGenerico('👕 Pedir Fardamento', [
@@ -7629,7 +7693,62 @@ async function renderValidacaoTarefasScreen(){
 async function renderFormacoesScreen(){
   const content = document.getElementById('formacoes-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
-  content.innerHTML = await blocoFormacaoCompliance();
+  const bhHtml = await blocoBancoHorasGozar();
+  const alteracoesHtml = await blocoAlteracoesHorarioPendentes();
+  const formacaoHtml = await blocoFormacaoCompliance();
+  content.innerHTML = bhHtml + alteracoesHtml + formacaoHtml;
+}
+
+async function blocoAlteracoesHorarioPendentes(){
+  const rows = await sb('loja_alteracoes_horario?assinado=eq.false&select=*&order=data_alteracao.asc');
+  let html = `<div class="section-title">✍️ Alterações de Horário — Pendentes de Assinar <span class="count">· ${rows.length}</span></div>`;
+  html += `<div class="card">`;
+  if(!rows.length){
+    html += `<div style="font-size:12.5px;color:var(--green);">✓ Tudo assinado.</div>`;
+  } else {
+    rows.forEach((a,i)=>{
+      html += `<div style="padding:8px 0;border-top:${i===0?'none':'1px solid var(--line)'};">
+        <div style="font-size:12.5px;font-weight:600;color:var(--ink);">${a.colaborador_nome}</div>
+        <div style="font-size:12px;color:var(--ink);margin-top:2px;">${a.descricao}</div>
+        ${a.data_alteracao ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">Data: ${new Date(a.data_alteracao+'T00:00:00').toLocaleDateString('pt-PT')}</div>` : ''}
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function blocoBancoHorasGozar(){
+  const colaboradores = await sb('loja_colaboradores?bh_positivo=gt.0&select=numero_pessoal,nome,secao,bh_positivo,data_prevista_gozar_horas&order=bh_positivo.desc');
+  let html = `<div class="section-title">⏰ Banco de Horas — Colaboradores com Horas a Gozar <span class="count">· ${colaboradores.length}</span></div>`;
+  html += `<div class="card">`;
+  if(!colaboradores.length){
+    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem colaboradores com horas positivas no momento.</div>`;
+  } else {
+    colaboradores.forEach((c,i)=>{
+      const hoje = new Date(); hoje.setHours(0,0,0,0);
+      let dataTxt = 'Sem data marcada';
+      let cor = 'var(--amber)';
+      if(c.data_prevista_gozar_horas){
+        const dataP = new Date(c.data_prevista_gozar_horas+'T00:00:00');
+        const dias = Math.round((dataP-hoje)/86400000);
+        dataTxt = dias<0 ? `⚠️ Devia ter sido a ${Math.abs(dias)}d` : (dias===0?'📅 Hoje':`📅 ${dataP.toLocaleDateString('pt-PT')} (em ${dias}d)`);
+        cor = dias<0 ? 'var(--red)' : 'var(--navy)';
+      }
+      html += `<div style="padding:8px 0;border-top:${i===0?'none':'1px solid var(--line)'};">
+        <div style="display:flex;justify-content:space-between;">
+          <span style="font-size:12.5px;font-weight:600;color:var(--ink);">${c.nome}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--green);">${c.bh_positivo}h</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:2px;">
+          <span style="font-size:11px;color:var(--ink-soft);">${labelSecaoPainel(c.secao)}</span>
+          <span style="font-size:11px;color:${cor};font-weight:600;">${dataTxt}</span>
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
 }
 
 function editarObservacaoFormacao(id){
