@@ -464,6 +464,23 @@
       <div id="aniversarios-hoje-wrap"></div>
       <div id="alertas-lembretes-wrap"></div>
 
+      <div id="organizado-home-wrap">
+        <div class="section-title">1️⃣ Resultados — Vendas e Quebras</div>
+        <div class="card" id="home-vendas-quebras-card"></div>
+
+        <div class="section-title">2️⃣ Resultados — Markdown</div>
+        <div class="card" id="home-markdown-card"></div>
+
+        <div class="section-title">3️⃣ Gestão de Validades</div>
+        <div class="card" id="home-validades-card"></div>
+
+        <div class="section-title">4️⃣ Listas de Reposição</div>
+        <div class="card" id="home-reposicao-card"></div>
+
+        <div class="section-title">5️⃣ Vendas por Categoria</div>
+        <div class="card" id="home-categoria-card"></div>
+      </div>
+
       <div class="day-pills" id="dash-tab-pills">
         <div class="day-pill active" data-dashtab="hoje" onclick="selecionarDashTab('hoje')">🏠 Hoje</div>
         <div class="day-pill" data-dashtab="resultados" onclick="selecionarDashTab('resultados')">📊 Resultados</div>
@@ -528,6 +545,24 @@
       <!-- ===== TAB: RESULTADOS ===== -->
       <div class="dash-tab-panel" data-dashpanel="resultados" style="display:none;">
       <div id="dash-chefe-only-2">
+
+        <div class="section-title">1️⃣ Resultados — Vendas e Quebras</div>
+        <div class="card" id="organizado-vendas-quebras-card"></div>
+
+        <div class="section-title">2️⃣ Resultados — Markdown</div>
+        <div class="card" id="organizado-markdown-card"></div>
+
+        <div class="section-title">3️⃣ Gestão de Validades</div>
+        <div class="card" id="organizado-validades-card"></div>
+
+        <div class="section-title">4️⃣ Listas de Reposição</div>
+        <div class="card" id="organizado-reposicao-card"></div>
+
+        <div class="section-title">5️⃣ Vendas por Categoria</div>
+        <div class="card" id="organizado-categoria-card"></div>
+
+        <div class="section-title" style="margin-top:24px;opacity:0.6;">— Mais detalhe abaixo —</div>
+
         <div id="evolucao-score-wrap"></div>
 
         <div class="section-title">Resultados das auditorias</div>
@@ -560,12 +595,6 @@
 
         <div class="section-title">🎯 Vendas do Mês — Onde Estamos vs Objetivo</div>
         <div class="card" id="dashboard-barra-objetivo-card"></div>
-
-        <div class="section-title">📅 Vendas de Ontem vs Objetivo</div>
-        <div class="card" id="dashboard-barra-vendas-dia-card"></div>
-
-        <div class="section-title">📉 Quebra de Ontem vs Objetivo (2,20%)</div>
-        <div class="card" id="dashboard-barra-quebra-dia-card"></div>
 
         <div class="section-title">📅 Vendas de Ontem vs Objetivo</div>
         <div class="card" id="dashboard-barra-vendas-dia-card"></div>
@@ -1716,6 +1745,7 @@ async function renderDashboard(){
     renderQuebraDoDiaResponsavel();
     renderCrescimentoPct();
     renderResumoExecutivo();
+    renderResultadosOrganizados('home');
     renderQuebraPctDashboard();
     renderComunicacoesDashboard();
     renderCorrelacaoSecao();
@@ -2909,6 +2939,79 @@ const MES_ABREV = {Janeiro:'Jan',Fevereiro:'Fev',Março:'Mar',Abril:'Abr',Maio:'
 
 function mesAtualNome(){
   return ORDEM_MESES[new Date().getMonth()];
+}
+
+async function renderResultadosOrganizados(prefixo){
+  prefixo = prefixo || 'organizado';
+  const [resumoRows, vendasSecoes, markdowns, validades, semVendas, repetidos, categoriasPerda, quebraArtigos] = await Promise.all([
+    sb('loja_resumo?id=eq.1&select=*'),
+    sb('loja_vendas_secao?select=*'),
+    sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.asc'),
+    sb('loja_validades_execucao_pct?select=*&order=tx_execucao_pct.desc'),
+    sb('loja_artigos_sem_vendas?select=*'),
+    sb('loja_artigos_repetidos?select=*'),
+    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=5'),
+    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=100')
+  ]);
+  const r = resumoRows[0] || {};
+
+  // 1. Vendas e Quebras
+  const quebraPctMes = (r.vendas_mes && r.quebras_mes) ? (Number(r.quebras_mes)/Number(r.vendas_mes)*100) : null;
+  const w1 = document.getElementById(prefixo+'-vendas-quebras-card');
+  if(w1) w1.innerHTML = `
+    <div style="display:flex;justify-content:space-between;padding:5px 0;"><span style="font-size:12px;color:var(--ink-soft);">Vendas (mês)</span><span style="font-size:14px;font-weight:800;color:var(--navy);">${fmtEuro(r.vendas_mes)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);"><span style="font-size:12px;color:var(--ink-soft);">Quebra (mês)</span><span style="font-size:14px;font-weight:800;color:${quebraPctMes>2.2?'var(--red)':'var(--green)'};">${fmtEuro(r.quebras_mes)} (${quebraPctMes?.toFixed(2)}%)</span></div>
+    <div style="font-size:10px;color:var(--ink-soft);margin-top:6px;">Objetivo de quebra: 2,20%</div>
+  `;
+
+  // 2. Markdown — melhores e piores
+  const w2 = document.getElementById(prefixo+'-markdown-card');
+  if(w2){
+    const melhores = markdowns.slice(0,3);
+    const piores = [...markdowns].sort((a,b)=>b.pct_nao_realizado_valor-a.pct_nao_realizado_valor).slice(0,3);
+    w2.innerHTML = `
+      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:4px;">✔ Melhores</div>
+      ${melhores.map(m=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${m.divisao}</span><span style="font-size:12px;font-weight:700;color:var(--green);">${m.pct_nao_realizado_valor}%</span></div>`).join('')}
+      <div style="font-size:11px;font-weight:700;color:var(--red);margin-top:8px;margin-bottom:4px;">⚠ Piores</div>
+      ${piores.map(m=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${m.divisao}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${m.pct_nao_realizado_valor}%</span></div>`).join('')}
+    `;
+  }
+
+  // 3. Validades — melhores e piores secções
+  const w3 = document.getElementById(prefixo+'-validades-card');
+  if(w3){
+    const ordenadas = [...validades].sort((a,b)=>b.tx_execucao_pct-a.tx_execucao_pct);
+    const melhoresV = ordenadas.slice(0,3);
+    const pioresV = [...ordenadas].reverse().slice(0,3);
+    w3.innerHTML = `
+      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:4px;">✔ Melhores Secções</div>
+      ${melhoresV.map(v=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${labelSecaoPainel(v.secao_app)}</span><span style="font-size:12px;font-weight:700;color:var(--green);">${v.tx_execucao_pct}%</span></div>`).join('')}
+      <div style="font-size:11px;font-weight:700;color:var(--red);margin-top:8px;margin-bottom:4px;">⚠ Piores Secções</div>
+      ${pioresV.map(v=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${labelSecaoPainel(v.secao_app)}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${v.tx_execucao_pct}%</span></div>`).join('')}
+      <div style="font-size:10px;color:var(--ink-soft);margin-top:8px;">Artigos não tratados: ainda não tenho essa lista — envie o relatório "Artigos Sem tratar validades" para eu adicionar aqui.</div>
+    `;
+  }
+
+  // 4. Listas de Reposição
+  const w4 = document.getElementById(prefixo+'-reposicao-card');
+  if(w4) w4.innerHTML = `
+    <div style="display:flex;justify-content:space-between;padding:5px 0;"><span style="font-size:12px;color:var(--ink-soft);">Artigos Sem Vendas (3+ dias)</span><span style="font-size:14px;font-weight:800;color:${semVendas.length?'var(--red)':'var(--green)'};">${semVendas.length}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);"><span style="font-size:12px;color:var(--ink-soft);">Artigos Repetidos</span><span style="font-size:14px;font-weight:800;color:${repetidos.length?'var(--red)':'var(--green)'};">${repetidos.length}</span></div>
+  `;
+
+  // 5. Vendas por Categoria — quem perde mais vendas, quem aumenta mais a quebra
+  const w5 = document.getElementById(prefixo+'-categoria-card');
+  if(w5){
+    const porDesc = {};
+    quebraArtigos.forEach(a=>{ porDesc[a.descricao] = (porDesc[a.descricao]||0) + Number(a.valor_quebra); });
+    const piorQuebra = Object.entries(porDesc).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    w5.innerHTML = `
+      <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:4px;">📉 Quem Perde Mais Vendas (categoria, vs ano passado)</div>
+      ${categoriasPerda.map(c=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${c.categoria}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${c.delta_pct.toFixed(1)}%</span></div>`).join('') || '<div style="font-size:11.5px;color:var(--ink-soft);">Sem dados.</div>'}
+      <div style="font-size:11px;font-weight:700;color:var(--red);margin-top:8px;margin-bottom:4px;">📈 Quem Mais Aumenta a Quebra (artigo)</div>
+      ${piorQuebra.map(([desc,val])=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${desc}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuro(val)}</span></div>`).join('')}
+    `;
+  }
 }
 
 async function renderResultadosVendas(){
@@ -8113,6 +8216,9 @@ function selecionarDashTab(tabId){
   });
   if(tabId === 'gestao'){
     mostrarSoBlocoGestao(null);
+  }
+  if(tabId === 'resultados'){
+    renderResultadosOrganizados('organizado');
   }
 }
 
