@@ -4111,11 +4111,11 @@ async function renderResumoExecutivo(){
   const wrap = document.getElementById('resumo-executivo-wrap');
   if(!wrap || !currentUser || !isChefe()) { if(wrap) wrap.innerHTML=''; return; }
 
-  const [resumoRows, vendasDia, artigosQuebra, artigosSemVendas, custos] = await Promise.all([
+  const [resumoRows, vendasDia, artigosQuebra, categoriasPerda, custos] = await Promise.all([
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_vendas_dia?select=*&order=data.desc&limit=2'),
     sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=30'),
-    sb('loja_artigos_sem_vendas?select=*&limit=5'),
+    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=5'),
     sb('loja_custos_mensais?select=ano,mes,vendas,quebra&order=ano.asc')
   ]);
   const r = resumoRows[0] || {};
@@ -4155,22 +4155,32 @@ async function renderResumoExecutivo(){
   // Top 5 artigos a perder mais quebra (ontem)
   const topQuebraOntem = [...quebraOntemArtigos].sort((a,b)=>Number(b.valor_quebra)-Number(a.valor_quebra)).slice(0,5);
 
+  // Ícone de seta + número grande, sem frases — visual, não textual
+  const setaGrande = (p) => p===null ? '—' : (p>=0?'▲':'▼');
+  const statBox = (label, pct, extra) => `
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:9.5px;color:var(--ink-soft);font-weight:700;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
+      <div style="font-size:22px;font-weight:800;color:${cor(pct)};line-height:1.2;">${setaGrande(pct)}${pct===null?'':Math.abs(pct).toFixed(1)+'%'}</div>
+      ${extra||''}
+    </div>`;
+
   let html = `<div class="card" style="background:linear-gradient(135deg,var(--navy),#1b3a5c);border:none;">
-    <div style="font-size:11px;color:rgba(255,255,255,0.7);font-weight:700;letter-spacing:0.5px;">🎯 OBJETIVO ANUAL</div>
-    <div style="display:flex;gap:16px;margin-top:6px;">
-      <div><div style="font-size:20px;font-weight:800;color:#fff;">+5%</div><div style="font-size:10.5px;color:rgba(255,255,255,0.7);">Crescer LFL</div></div>
-      <div><div style="font-size:20px;font-weight:800;color:#fff;">2,20%</div><div style="font-size:10.5px;color:rgba(255,255,255,0.7);">Objetivo de Quebra</div></div>
+    <div style="display:flex;gap:18px;">
+      <div><div style="font-size:24px;font-weight:800;color:#fff;">+5%</div><div style="font-size:9.5px;color:rgba(255,255,255,0.7);">OBJETIVO LFL</div></div>
+      <div style="width:1px;background:rgba(255,255,255,0.2);"></div>
+      <div><div style="font-size:24px;font-weight:800;color:#fff;">2,20%</div><div style="font-size:9.5px;color:rgba(255,255,255,0.7);">OBJETIVO QUEBRA</div></div>
     </div>
   </div>`;
 
   html += `<div class="card">
-    <div style="font-size:11px;color:var(--ink-soft);font-weight:700;">📅 ONTEM${dataOntem?' ('+new Date(dataOntem+'T00:00:00').toLocaleDateString('pt-PT')+')':''}</div>
-    <div style="font-size:15px;font-weight:800;color:${cor(ontemDesvio)};margin-top:4px;">${sinal(ontemDesvio)} <span style="font-size:11px;font-weight:400;color:var(--ink-soft);">vs objetivo do dia</span></div>
-    ${quebraOntemPct!==null ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;">Quebra de ontem: <b style="color:${quebraOntemPct>2.2?'var(--red)':'var(--green)'};">${quebraOntemPct.toFixed(2)}%</b></div>` : ''}
-    <div style="font-size:10px;color:var(--ink-soft);margin-top:4px;font-style:italic;">Nota: comparação com o objetivo do dia — ainda não tenho vendas diárias de 2025 para comparar diretamente com "ontem do ano passado".</div>
+    <div style="display:flex;gap:14px;">
+      ${statBox('ONTEM', ontemDesvio)}
+      ${quebraOntemPct!==null ? `<div style="flex:1;min-width:0;"><div style="font-size:9.5px;color:var(--ink-soft);font-weight:700;">QUEBRA ONTEM</div><div style="font-size:22px;font-weight:800;color:${quebraOntemPct>2.2?'var(--red)':'var(--green)'};line-height:1.2;">${quebraOntemPct.toFixed(2)}%</div></div>` : ''}
+    </div>
+    ${dataOntem ? `<div style="font-size:10px;color:var(--ink-soft);margin-top:8px;">${new Date(dataOntem+'T00:00:00').toLocaleDateString('pt-PT')} · vs objetivo do dia</div>` : ''}
   </div>`;
 
-  if(topQuebraOntem.length || artigosSemVendas.length){
+  if(topQuebraOntem.length || categoriasPerda.length){
     html += `<div class="card">`;
     if(topQuebraOntem.length){
       html += `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-bottom:4px;">📉 Artigos com mais quebra (ontem)</div>`;
@@ -4181,10 +4191,13 @@ async function renderResumoExecutivo(){
         </div>`;
       });
     }
-    if(artigosSemVendas.length){
-      html += `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-top:8px;margin-bottom:4px;">🛒 Artigos a perder vendas</div>`;
-      artigosSemVendas.forEach(a=>{
-        html += `<div style="font-size:12px;color:var(--ink);padding:2px 0;">• ${a.descricao}</div>`;
+    if(categoriasPerda.length){
+      html += `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-top:8px;margin-bottom:4px;">📊 Categorias que Mais Perdem Vendas (vs ano passado)</div>`;
+      categoriasPerda.forEach(c=>{
+        html += `<div style="display:flex;justify-content:space-between;padding:3px 0;">
+          <span style="font-size:12px;color:var(--ink);">${c.categoria} <span style="color:var(--ink-soft);font-size:10.5px;">(${c.divisao})</span></span>
+          <span style="font-size:12px;font-weight:700;color:var(--red);">${c.delta_pct.toFixed(1)}%</span>
+        </div>`;
       });
     }
     html += `<button class="btn-primary" style="width:100%;margin-top:10px;" onclick="criarPlanoReversaoOntem()">📝 Plano de Ação para Reverter (Word)</button>`;
@@ -4192,25 +4205,30 @@ async function renderResumoExecutivo(){
   }
 
   html += `<div class="card">
-    <div style="font-size:11px;color:var(--ink-soft);font-weight:700;">📆 MÊS PASSADO (${mesAnteriorNome})</div>
-    <div style="font-size:14px;font-weight:800;color:${cor(mesPassadoVendasPct)};margin-top:4px;">${sinal(mesPassadoVendasPct)} <span style="font-size:11px;font-weight:400;color:var(--ink-soft);">vs objetivo médio mensal</span></div>
-    ${quebraDeltaPP!==null ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;">Quebra: <b style="color:${quebraDeltaPP>0?'var(--red)':'var(--green)'};">${quebraPctAtual.toFixed(2)}%</b> (${quebraDeltaPP>=0?'pior':'melhor'} em ${Math.abs(quebraDeltaPP).toFixed(2)} p.p. vs objetivo de 2,20%)</div>` : ''}
+    <div style="font-size:9.5px;color:var(--ink-soft);font-weight:700;margin-bottom:6px;">MÊS PASSADO (${mesAnteriorNome.toUpperCase()})</div>
+    <div style="display:flex;gap:14px;">
+      ${statBox('VENDAS', mesPassadoVendasPct)}
+      ${quebraPctAtual!==null ? `<div style="flex:1;min-width:0;"><div style="font-size:9.5px;color:var(--ink-soft);font-weight:700;">QUEBRA</div><div style="font-size:22px;font-weight:800;color:${quebraDeltaPP>0?'var(--red)':'var(--green)'};line-height:1.2;">${quebraPctAtual.toFixed(2)}%</div></div>` : ''}
+    </div>
   </div>`;
 
   html += `<div class="card">
-    <div style="font-size:11px;color:var(--ink-soft);font-weight:700;">📈 AO ANO</div>
-    <div style="font-size:14px;font-weight:800;color:${cor(vendasAnoPct)};margin-top:4px;">${sinal(vendasAnoPct)} <span style="font-size:11px;font-weight:400;color:var(--ink-soft);">vs objetivo do ano (ajustado aos dias já passados)</span></div>
-    ${quebraAnoPct!==null ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;">Quebra do ano: <b style="color:${quebraAnoPct>2.2?'var(--red)':'var(--green)'};">${quebraAnoPct.toFixed(2)}%</b></div>` : ''}
+    <div style="font-size:9.5px;color:var(--ink-soft);font-weight:700;margin-bottom:6px;">AO ANO</div>
+    <div style="display:flex;gap:14px;">
+      ${statBox('VENDAS', vendasAnoPct)}
+      ${quebraAnoPct!==null ? `<div style="flex:1;min-width:0;"><div style="font-size:9.5px;color:var(--ink-soft);font-weight:700;">QUEBRA</div><div style="font-size:22px;font-weight:800;color:${quebraAnoPct>2.2?'var(--red)':'var(--green)'};line-height:1.2;">${quebraAnoPct.toFixed(2)}%</div></div>` : ''}
+    </div>
+    <div style="font-size:10px;color:var(--ink-soft);margin-top:8px;">Vendas ajustadas aos dias já passados do ano</div>
   </div>`;
 
   wrap.innerHTML = html;
 }
 
 async function criarPlanoReversaoOntem(){
-  const [vendasDia, artigosQuebra, artigosSemVendas] = await Promise.all([
+  const [vendasDia, artigosQuebra, categoriasPerda] = await Promise.all([
     sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
     sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=10'),
-    sb('loja_artigos_sem_vendas?select=*&limit=10')
+    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=10')
   ]);
   const ontem = vendasDia[0];
   const dataOntem = ontem ? ontem.data : null;
@@ -4223,11 +4241,11 @@ async function criarPlanoReversaoOntem(){
     {id:'prazo', label:'Prazo', tipo:'text', valor: 'Hoje'}
   ], async (valores)=>{
     const artigosTxt = quebraOntem.map(a=>`• ${a.descricao}: ${fmtEuro(a.valor_quebra)}`).join('\n') || '—';
-    const semVendasTxt = artigosSemVendas.map(a=>`• ${a.descricao}`).join('\n') || '—';
+    const categoriasTxt = categoriasPerda.map(c=>`• ${c.categoria} (${c.divisao}): ${c.delta_pct.toFixed(1)}% vs ano passado`).join('\n') || '—';
     gerarDocumentoWordEEmail(`Plano de Reversão — ${dataOntem ? new Date(dataOntem+'T00:00:00').toLocaleDateString('pt-PT') : 'Ontem'}`, [
       {label:'Vendas vs Objetivo', valor: ontem ? `${fmtEuro(ontem.vendas_real)} de ${fmtEuro(ontem.vendas_budget)}` : '—'},
       {label:'Artigos com mais quebra', valor: artigosTxt},
-      {label:'Artigos a perder vendas', valor: semVendasTxt},
+      {label:'Categorias que Mais Perdem Vendas', valor: categoriasTxt},
       {label:'Causas identificadas', valor: valores.causas},
       {label:'Ações para reverter', valor: valores.acoes},
       {label:'Responsável', valor: valores.responsavel},
