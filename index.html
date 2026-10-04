@@ -1306,21 +1306,21 @@ const MENU_GRUPOS = [
     {id:'auditoria:RH', icon:'👤', label:'Auditoria RH'},
     {id:'auditoria:Ambiental', icon:'🌱', label:'Auditoria Ambiente'},
     {id:'auditoria:Controlo', icon:'🎯', label:'Auditoria Controlo Operacional'},
+  ]},
+
+  {tipo:'grupo', label:'⭐ Atendimento ao Cliente', icon:'⭐', itens:[
+    {id:'dash:gestao:avaliacao-cliente', icon:'⭐', label:'Avaliação ao Atendimento'},
+  ]},
+
+  {tipo:'grupo', label:'🔎 Supervisão', icon:'🔎', itens:[
     {id:'dash:gestao:checklist', icon:'✅', label:'Checklist Gerência'},
     {id:'checklist-responsaveis', icon:'✅', label:'Checklist Responsáveis de Secção'},
     {id:'rastreabilidade', icon:'🏷️', label:'Controlo de Rastreabilidades'},
     {id:'validacao-tarefas', icon:'✅', label:'Validação de Tarefas'},
     {id:'melhoria', icon:'📈', label:'Melhoria Contínua'},
     {id:'limpeza', icon:'🧹', label:'Limpeza'},
-  ]},
-
-  {tipo:'grupo', label:'🧴 Economato', icon:'🧴', itens:[
     {id:'economato', icon:'🧴', label:'Economato'},
     {id:'fardamento', icon:'👕', label:'Fardamento'},
-  ]},
-
-  {tipo:'grupo', label:'⭐ Atendimento ao Cliente', icon:'⭐', itens:[
-    {id:'dash:gestao:avaliacao-cliente', icon:'⭐', label:'Avaliação ao Atendimento'},
   ]},
 
   {tipo:'grupo', label:'Secções', icon:'🏬', itens:[
@@ -2975,30 +2975,39 @@ function mesAtualNome(){
   return ORDEM_MESES[new Date().getMonth()];
 }
 
+const NAV_TEMA_COR = {
+  'Vendas':'sales', 'Quebras':'loss', 'Custos de Loja':'absence', 'Recursos Humanos':'score',
+  'Auditorias':'sales', 'Atendimento ao Cliente':'loss', 'Supervisão':'absence'
+};
+
 function renderNavTemas(){
   const wrap = document.getElementById('nav-temas-wrap');
   if(!wrap || !currentUser || !isChefe()) { if(wrap) wrap.innerHTML=''; return; }
 
-  // Uma coluna, uma coisa de cada vez — mais fácil de ler.
-  let html = '';
+  // Botões tipo KPI (como Score/Absentismo) — pela ordem pedida
+  let html = `<div class="kpi-grid" id="nav-temas-botoes">`;
   MENU_GRUPOS.forEach((entry, idx)=>{
-    if(entry.id === 'dashboard') return;
+    if(entry.id === 'dashboard' || entry.id === 'comunicacao') return;
     const label = entry.tipo === 'grupo' ? entry.label.replace(/[^\w\sÀ-ÿ]/g,'').trim() : entry.label;
     const acao = entry.tipo === 'grupo' ? `toggleNavTema(${idx})` : `selectMenu('${entry.id}', '${entry.label.replace(/'/g,"\\'")}')`;
-    html += `<div class="card" style="cursor:pointer;margin-bottom:8px;padding:16px;display:flex;align-items:center;gap:14px;" onclick="${acao}">
-      <span style="font-size:26px;">${entry.icon}</span>
-      <span style="font-size:15px;font-weight:700;color:var(--ink);">${label}</span>
+    const corClasse = NAV_TEMA_COR[label] || 'sales';
+    html += `<div class="kpi ${corClasse}" style="cursor:pointer;" onclick="${acao}">
+      <span class="kpi-icon">${entry.icon}</span>
+      <div class="label">${label}</div>
     </div>`;
-    if(entry.tipo === 'grupo'){
-      html += `<div id="nav-tema-${idx}" style="display:none;margin:0 0 8px 20px;">`;
-      entry.itens.forEach(item=>{
-        html += `<div class="card" style="cursor:pointer;margin-bottom:6px;padding:13px 16px;display:flex;align-items:center;gap:12px;" onclick="selectMenu('${item.id}', '${item.label.replace(/'/g,"\\'")}')">
-          <span style="font-size:19px;">${item.icon}</span>
-          <span style="font-size:13.5px;color:var(--ink);">${item.label}</span>
-        </div>`;
-      });
-      html += `</div>`;
-    }
+  });
+  html += `</div>`;
+
+  MENU_GRUPOS.forEach((entry, idx)=>{
+    if(entry.tipo !== 'grupo') return;
+    html += `<div id="nav-tema-${idx}" style="display:none;margin-top:10px;">`;
+    entry.itens.forEach(item=>{
+      html += `<div class="card" style="cursor:pointer;margin-bottom:6px;padding:13px 16px;display:flex;align-items:center;gap:12px;" onclick="selectMenu('${item.id}', '${item.label.replace(/'/g,"\\'")}')">
+        <span style="font-size:19px;">${item.icon}</span>
+        <span style="font-size:13.5px;color:var(--ink);">${item.label}</span>
+      </div>`;
+    });
+    html += `</div>`;
   });
 
   wrap.innerHTML = html;
