@@ -3134,7 +3134,10 @@ async function renderResultadosOrganizados(prefixo){
     const piorQuebra = Object.entries(porDesc).sort((a,b)=>b[1]-a[1]).slice(0,5);
     w5.innerHTML = `
       <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:4px;">📉 Quem Perde Mais Vendas (categoria, vs ano passado)</div>
-      ${categoriasPerda.map(c=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${c.categoria}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${c.delta_pct.toFixed(1)}%</span></div>`).join('') || '<div style="font-size:11.5px;color:var(--ink-soft);">Sem dados.</div>'}
+      ${categoriasPerda.map(c=>`<div style="padding:4px 0;border-top:1px solid var(--line);">
+        <div style="display:flex;justify-content:space-between;"><span style="font-size:12px;color:var(--ink);">${c.categoria}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${c.delta_pct.toFixed(1)}%</span></div>
+        ${c.quebra_ac_pct!==null && c.quebra_ac_pct!==undefined ? `<div style="font-size:10.5px;color:var(--ink-soft);">Quebra: ${Math.abs(c.quebra_ac_pct).toFixed(2)}% ${c.delta_quebra_pp ? `(${c.delta_quebra_pp>=0?'+':''}${c.delta_quebra_pp.toFixed(1)} p.p. vs ano passado)` : ''}</div>` : ''}
+      </div>`).join('') || '<div style="font-size:11.5px;color:var(--ink-soft);">Sem dados.</div>'}
       <div style="font-size:11px;font-weight:700;color:var(--red);margin-top:8px;margin-bottom:4px;">📈 Quem Mais Aumenta a Quebra (artigo)</div>
       ${piorQuebra.map(([desc,val])=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${desc}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuro(val)}</span></div>`).join('')}
     `;
@@ -9548,6 +9551,40 @@ async function renderMarkdownScreen(){
     });
   }
   html += `</div>`;
+
+  const [semMarkdown, piorAceitacao] = await Promise.all([
+    sb(`loja_markdown_artigo_detalhe?tipo=eq.sem_markdown&select=*&order=valor.desc&limit=10`),
+    sb(`loja_markdown_artigo_detalhe?tipo=eq.pior_aceitacao&select=*&order=valor.asc&limit=10`)
+  ]);
+
+  html += `<div class="section-title">⚠️ Artigos que Deram Quebra Sem Etiqueta de Markdown</div>`;
+  html += `<div class="card">`;
+  if(semMarkdown.length){
+    semMarkdown.forEach((a,i)=>{
+      html += `<div style="padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};display:flex;justify-content:space-between;">
+        <span style="font-size:12px;color:var(--ink);">${a.artigo} <span style="color:var(--ink-soft);font-size:10.5px;">(${a.divisao})</span></span>
+        <span style="font-size:12px;font-weight:700;color:var(--red);">${a.valor} un. quebra</span>
+      </div>`;
+    });
+  } else {
+    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
+  }
+  html += `</div>`;
+
+  html += `<div class="section-title">📉 Artigos com Pior % de Realização</div>`;
+  html += `<div class="card">`;
+  if(piorAceitacao.length){
+    piorAceitacao.forEach((a,i)=>{
+      html += `<div style="padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};display:flex;justify-content:space-between;">
+        <span style="font-size:12px;color:var(--ink);">${a.artigo} <span style="color:var(--ink-soft);font-size:10.5px;">(${a.divisao})</span></span>
+        <span style="font-size:12px;font-weight:700;color:var(--red);">${a.valor}%</span>
+      </div>`;
+    });
+  } else {
+    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
+  }
+  html += `</div>`;
+
   content.innerHTML = html;
 }
 
