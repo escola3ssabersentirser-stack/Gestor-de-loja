@@ -1003,8 +1003,8 @@
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
         <div>
-          <div class="who">Módulo</div>
-          <div class="name">🎓 Formações</div>
+          <div class="who">Pilar</div>
+          <div class="name">👥 Recursos Humanos</div>
         </div>
       </div>
       <button class="logout" onclick="logout()">Sair</button>
@@ -1160,6 +1160,38 @@
   </div>
 
   <!-- ===================== FARDAMENTO (supervisão) ===================== -->
+  <!-- ===================== VENDAS (só vendas) ===================== -->
+  <div id="painel-vendas-screen" class="hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="menu-btn" onclick="openMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div><div class="who">Pilar</div><div class="name">💶 Vendas</div></div>
+      </div>
+      <button class="logout" onclick="logout()">Sair</button>
+    </div>
+    <div class="content" id="painel-vendas-content">
+      <div class="placeholder-body"><p>A carregar...</p></div>
+    </div>
+  </div>
+
+  <!-- ===================== CUSTOS DE LOJA (só custos) ===================== -->
+  <div id="painel-custos-screen" class="hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="menu-btn" onclick="openMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div><div class="who">Pilar</div><div class="name">💰 Custos de Loja</div></div>
+      </div>
+      <button class="logout" onclick="logout()">Sair</button>
+    </div>
+    <div class="content" id="painel-custos-content">
+      <div class="placeholder-body"><p>A carregar...</p></div>
+    </div>
+  </div>
+
   <div id="fardamento-screen" class="hidden">
     <div class="topbar">
       <div class="topbar-left">
@@ -1285,7 +1317,7 @@ const MENU_GRUPOS = [
   {tipo:'item', id:'comunicacao', icon:'📣', label:'Comunicação Semanal'},
 
   {tipo:'grupo', label:'💶 Vendas', icon:'💶', itens:[
-    {id:'dash:resultados', icon:'💶', label:'Resultados de Vendas'},
+    {id:'painel-vendas', icon:'💶', label:'Vendas'},
   ]},
 
   {tipo:'grupo', label:'📉 Quebras', icon:'📉', itens:[
@@ -1294,7 +1326,7 @@ const MENU_GRUPOS = [
   ]},
 
   {tipo:'grupo', label:'💰 Custos de Loja', icon:'💰', itens:[
-    {id:'dash:resultados', icon:'💰', label:'Resultado da Loja (Lucro/Prejuízo)'},
+    {id:'painel-custos', icon:'💰', label:'Custos de Loja'},
   ]},
 
   {tipo:'grupo', label:'👥 Recursos Humanos', icon:'👥', itens:[
@@ -1444,6 +1476,8 @@ function selectMenu(id, label){
   document.getElementById('limpeza-screen').classList.add('hidden');
   document.getElementById('marketing-screen').classList.add('hidden');
   document.getElementById('minha-area-screen').classList.add('hidden');
+  document.getElementById('painel-vendas-screen').classList.add('hidden');
+  document.getElementById('painel-custos-screen').classList.add('hidden');
   document.getElementById('fardamento-screen').classList.add('hidden');
   document.getElementById('placeholder-screen').classList.add('hidden');
   if(id === 'dashboard'){
@@ -1488,6 +1522,12 @@ function selectMenu(id, label){
   } else if(id === 'checklist-responsaveis'){
     document.getElementById('rastreabilidade-screen').classList.remove('hidden');
     renderRastreabilidade();
+  } else if(id === 'painel-vendas'){
+    document.getElementById('painel-vendas-screen').classList.remove('hidden');
+    renderPainelVendas();
+  } else if(id === 'painel-custos'){
+    document.getElementById('painel-custos-screen').classList.remove('hidden');
+    renderPainelCustos();
   } else if(id === 'fardamento'){
     document.getElementById('fardamento-screen').classList.remove('hidden');
     renderFardamentoScreen();
@@ -1727,6 +1767,8 @@ function logout(){
   document.getElementById('marketing-screen').classList.add('hidden');
   document.getElementById('minha-area-screen').classList.add('hidden');
   document.getElementById('placeholder-screen').classList.add('hidden');
+  document.getElementById('painel-vendas-screen').classList.add('hidden');
+  document.getElementById('painel-custos-screen').classList.add('hidden');
   document.getElementById('fardamento-screen').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('input-numero').value = '';
@@ -7793,6 +7835,104 @@ function pedirFormacao(){
       showToast();
     }catch(e){ console.error('Erro ao guardar', e); }
   });
+}
+
+async function renderPainelVendas(){
+  const content = document.getElementById('painel-vendas-content');
+  const [resumoRows, vendasSecoes, vendasDia, categoriasPerda] = await Promise.all([
+    sb('loja_resumo?id=eq.1&select=*'),
+    sb('loja_vendas_secao?select=*'),
+    sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
+    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=5')
+  ]);
+  const r = resumoRows[0] || {};
+  const calc = await calcularVendasPorPeriodo();
+  const vendasSemana = calc && calc.semana.vendas!==null ? calc.semana.vendas : null;
+
+  let html = `<div class="section-title">💶 Vendas</div>`;
+  html += `<div class="card">
+    <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12.5px;color:var(--ink-soft);">Ontem</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasDia.length?fmtEuro(vendasDia[0].vendas_real):'—'}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Semana</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasSemana!==null?fmtEuro(vendasSemana):'—'}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Mês</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${fmtEuro(r.vendas_mes)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Ano</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${fmtEuro(r.vendas_ano)}</span></div>
+  </div>`;
+
+  if(r.budget_mes_vendas){
+    html += `<div class="section-title">🎯 Vendas do Mês vs Objetivo</div><div class="card">${htmlBarraComLinha(Number(r.vendas_mes)||0, Number(r.budget_mes_vendas), 100, 'objetivo', false)}</div>`;
+  }
+
+  html += `<div class="section-title">Vendas por Secção (mês)</div><div class="card">`;
+  DEPARTAMENTOS_LOJA.forEach(secaoD=>{
+    const v = vendasSecoes.find(x=>x.secao===secaoD);
+    if(!v || v.vendas_mes===null) return;
+    const desvio = v.budget_mes ? ((Number(v.vendas_mes)-Number(v.budget_mes))/Number(v.budget_mes)*100) : null;
+    html += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);">
+      <span style="font-size:12.5px;color:var(--ink);">${labelSecaoPainel(secaoD)}</span>
+      <span style="font-size:12.5px;font-weight:700;color:${desvio>=0?'var(--green)':'var(--red)'};">${fmtEuro(v.vendas_mes)} ${desvio!==null?`(${desvio>=0?'+':''}${desvio.toFixed(1)}%)`:''}</span>
+    </div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="section-title">📊 Categorias que Mais Perdem Vendas</div><div class="card">`;
+  if(categoriasPerda.length){
+    categoriasPerda.forEach(c=>{
+      html += `<div style="display:flex;justify-content:space-between;padding:4px 0;">
+        <span style="font-size:12px;color:var(--ink);">${c.categoria} <span style="color:var(--ink-soft);font-size:10.5px;">(${c.divisao})</span></span>
+        <span style="font-size:12px;font-weight:700;color:var(--red);">${c.delta_pct.toFixed(1)}%</span>
+      </div>`;
+    });
+  } else {
+    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
+  }
+  html += `</div>`;
+
+  content.innerHTML = html;
+}
+
+async function renderPainelCustos(){
+  const content = document.getElementById('painel-custos-content');
+  const rows = await sb('loja_resumo?id=eq.1&select=*');
+  const r = rows[0] || {};
+
+  const custos = {
+    'Economato': r.economato_mes, 'Pessoal': r.pessoal_mes, 'Água': r.agua_mes,
+    'Luz': r.luz_mes, 'Manutenções/Reparações': r.manutencoes_mes,
+    'Lixo': r.lixo_mes, 'Seguros/Acidentes': r.seguros_acidentes_mes
+  };
+  const totalCustos = Object.values(custos).reduce((s,v)=> s + (v!==null && v!==undefined ? Number(v) : 0), 0);
+  const faltamCustos = Object.entries(custos).filter(([k,v])=>v===null||v===undefined).map(([k])=>k);
+  const resultado = (Number(r.vendas_mes)||0) - (Number(r.quebras_mes)||0) - totalCustos;
+  const maiorValor = Math.max(...Object.values(custos).filter(v=>v!==null&&v!==undefined).map(Number), 1);
+
+  let html = `<div class="section-title">💰 Custos de Loja (mês)</div>`;
+  html += `<div class="card">
+    <div style="font-size:10px;color:var(--amber);font-weight:700;margin-bottom:10px;">⚠️ Referência: ${r.mes_referencia_custos || 'sem data'} — pode estar desatualizado.</div>`;
+  Object.entries(custos).forEach(([label,v])=>{
+    const semDados = v===null || v===undefined;
+    const larguraPct = semDados ? 0 : Math.max((Number(v)/maiorValor*100),2);
+    html += `<div style="margin-bottom:9px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+        <span style="font-size:11.5px;color:var(--ink-soft);">${label}</span>
+        <span style="font-size:11.5px;font-weight:700;color:${semDados?'var(--ink-soft)':'var(--ink)'};">${semDados?'sem dados':fmtEuro(v)}</span>
+      </div>
+      <div style="height:9px;background:var(--line);border-radius:5px;overflow:hidden;">
+        <div style="height:100%;width:${larguraPct}%;background:var(--red);border-radius:5px;"></div>
+      </div>
+    </div>`;
+  });
+  html += `<div style="display:flex;justify-content:space-between;padding-top:10px;margin-top:6px;border-top:1px solid var(--line);">
+    <span style="font-size:12.5px;font-weight:700;color:var(--ink);">Total de Custos</span>
+    <span style="font-size:14px;font-weight:800;color:var(--red);">${fmtEuro(totalCustos)}</span>
+  </div>`;
+  html += `</div>`;
+
+  html += `<div class="section-title">Resultado (Lucro/Prejuízo)</div>`;
+  html += `<div class="card">
+    <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">Vendas − Quebra − Custos${faltamCustos.length?' (parcial — faltam: '+faltamCustos.join(', ')+')':''}</div>
+    <div style="font-size:24px;font-weight:800;color:${resultado>=0?'var(--green)':'var(--red)'};">${resultado>=0?'+':''}${fmtEuro(resultado)}</div>
+  </div>`;
+
+  content.innerHTML = html;
 }
 
 async function renderFardamentoScreen(){
