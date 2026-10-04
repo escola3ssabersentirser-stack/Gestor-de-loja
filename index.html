@@ -465,20 +465,57 @@
       <div id="alertas-lembretes-wrap"></div>
 
       <div id="organizado-home-wrap">
-        <div class="section-title">1️⃣ Resultados — Vendas e Quebras</div>
-        <div class="card" id="home-vendas-quebras-card"></div>
+        <div class="section-title">Resultados</div>
+        <div class="kpi-grid" id="organizado-home-botoes">
+          <div class="kpi sales" style="cursor:pointer;" onclick="toggleOrganizadoDetalhe('vendas-quebras')">
+            <span class="kpi-icon">💶</span>
+            <div class="label">Vendas e Quebras</div>
+            <div class="value" id="kpi-home-vendas-quebras" style="font-size:20px;">—</div>
+          </div>
+          <div class="kpi loss" style="cursor:pointer;" onclick="toggleOrganizadoDetalhe('markdown')">
+            <span class="kpi-icon">🏷️</span>
+            <div class="label">Markdown</div>
+            <div class="value" id="kpi-home-markdown" style="font-size:20px;">—</div>
+          </div>
+          <div class="kpi score" style="cursor:pointer;" onclick="toggleOrganizadoDetalhe('validades')">
+            <span class="kpi-icon">📋</span>
+            <div class="label">Validades</div>
+            <div class="value" id="kpi-home-validades" style="font-size:20px;">—</div>
+          </div>
+          <div class="kpi absence" style="cursor:pointer;" onclick="toggleOrganizadoDetalhe('reposicao')">
+            <span class="kpi-icon">📦</span>
+            <div class="label">Reposição</div>
+            <div class="value" id="kpi-home-reposicao" style="font-size:20px;">—</div>
+          </div>
+        </div>
+        <div class="kpi-grid" style="margin-top:10px;">
+          <div class="kpi sales" style="cursor:pointer;grid-column:span 2;" onclick="toggleOrganizadoDetalhe('categoria')">
+            <span class="kpi-icon">📊</span>
+            <div class="label">Vendas por Categoria</div>
+            <div class="value" id="kpi-home-categoria" style="font-size:20px;">—</div>
+          </div>
+        </div>
 
-        <div class="section-title">2️⃣ Resultados — Markdown</div>
-        <div class="card" id="home-markdown-card"></div>
-
-        <div class="section-title">3️⃣ Gestão de Validades</div>
-        <div class="card" id="home-validades-card"></div>
-
-        <div class="section-title">4️⃣ Listas de Reposição</div>
-        <div class="card" id="home-reposicao-card"></div>
-
-        <div class="section-title">5️⃣ Vendas por Categoria</div>
-        <div class="card" id="home-categoria-card"></div>
+        <div id="detalhe-vendas-quebras" class="organizado-detalhe" style="display:none;margin-top:10px;">
+          <div class="section-title">💶 Vendas e Quebras</div>
+          <div class="card" id="home-vendas-quebras-card"></div>
+        </div>
+        <div id="detalhe-markdown" class="organizado-detalhe" style="display:none;margin-top:10px;">
+          <div class="section-title">🏷️ Markdown — Melhores e Piores</div>
+          <div class="card" id="home-markdown-card"></div>
+        </div>
+        <div id="detalhe-validades" class="organizado-detalhe" style="display:none;margin-top:10px;">
+          <div class="section-title">📋 Gestão de Validades</div>
+          <div class="card" id="home-validades-card"></div>
+        </div>
+        <div id="detalhe-reposicao" class="organizado-detalhe" style="display:none;margin-top:10px;">
+          <div class="section-title">📦 Listas de Reposição</div>
+          <div class="card" id="home-reposicao-card"></div>
+        </div>
+        <div id="detalhe-categoria" class="organizado-detalhe" style="display:none;margin-top:10px;">
+          <div class="section-title">📊 Vendas por Categoria</div>
+          <div class="card" id="home-categoria-card"></div>
+        </div>
       </div>
 
       <div class="day-pills" id="dash-tab-pills">
@@ -526,19 +563,6 @@
           </div>
         </div>
 
-        <div class="section-title">🧠 Reflexão do Dia</div>
-        <div id="reflexao-dia-wrap"></div>
-
-        <div class="section-title">📆 Plano do Dia</div>
-        <div class="card">
-          <h3>Progresso <span class="edit" onclick="addTask()">+ adicionar</span></h3>
-          <div id="task-container"></div>
-        </div>
-
-        <div class="section-title">Alertas</div>
-        <div class="card">
-          <div id="alert-container"></div>
-        </div>
         </div>
       </div>
 
@@ -1275,9 +1299,8 @@ const MENU_GRUPOS = [
     {id:'auditoria:RH', icon:'👤', label:'Auditoria RH'},
     {id:'auditoria:Ambiental', icon:'🌱', label:'Auditoria Ambiente'},
     {id:'auditoria:Controlo', icon:'🎯', label:'Auditoria Controlo Operacional'},
-    {id:'formacoes', icon:'🎓', label:'Recursos Humanos — Formação Pendente'},
+    {id:'formacoes', icon:'👥', label:'RH — Banco de Horas, Horários e Formação'},
     {id:'dash:gestao:avaliacao-cliente', icon:'⭐', label:'Cliente — Avaliação ao Atendimento'},
-    {id:'marketing', icon:'📣', label:'Marketing'},
   ]},
 
   {tipo:'grupo', label:'🔎 Supervisão', icon:'🔎', itens:[
@@ -1773,7 +1796,7 @@ async function renderDashboard(){
     renderAniversariosHoje();
     renderPlanoAcaoGestores();
     renderFeedbackGestores();
-    blocoAvaliacaoClienteSecao(null).then(html => document.getElementById('avaliacao-gestores-wrap').innerHTML = html);
+    blocoAvaliacaoClienteSecao(null, null, true).then(html => document.getElementById('avaliacao-gestores-wrap').innerHTML = html);
   } else {
     chefeOnly1.classList.add('hidden');
     chefeOnly2.classList.add('hidden');
@@ -2941,6 +2964,12 @@ function mesAtualNome(){
   return ORDEM_MESES[new Date().getMonth()];
 }
 
+function toggleOrganizadoDetalhe(nome){
+  document.querySelectorAll('.organizado-detalhe').forEach(el=>{
+    el.style.display = (el.id === 'detalhe-'+nome && el.style.display==='none') ? 'block' : 'none';
+  });
+}
+
 async function renderResultadosOrganizados(prefixo){
   prefixo = prefixo || 'organizado';
   const [resumoRows, vendasSecoes, markdowns, validades, semVendas, repetidos, categoriasPerda, quebraArtigos] = await Promise.all([
@@ -3011,6 +3040,29 @@ async function renderResultadosOrganizados(prefixo){
       <div style="font-size:11px;font-weight:700;color:var(--red);margin-top:8px;margin-bottom:4px;">📈 Quem Mais Aumenta a Quebra (artigo)</div>
       ${piorQuebra.map(([desc,val])=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:12px;color:var(--ink);">${desc}</span><span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuro(val)}</span></div>`).join('')}
     `;
+  }
+
+  // Números-resumo nos botões (só existem no modo "home")
+  if(prefixo === 'home'){
+    const kVQ = document.getElementById('kpi-home-vendas-quebras');
+    if(kVQ) kVQ.textContent = quebraPctMes!==null ? quebraPctMes.toFixed(2)+'%' : '—';
+    const kMk = document.getElementById('kpi-home-markdown');
+    if(kMk){
+      const piorMk = [...markdowns].sort((a,b)=>b.pct_nao_realizado_valor-a.pct_nao_realizado_valor)[0];
+      kMk.textContent = piorMk ? piorMk.pct_nao_realizado_valor+'%' : '—';
+    }
+    const kVal = document.getElementById('kpi-home-validades');
+    if(kVal){
+      const pior = [...validades].sort((a,b)=>a.tx_execucao_pct-b.tx_execucao_pct)[0];
+      kVal.textContent = pior ? pior.tx_execucao_pct+'%' : '—';
+    }
+    const kRep = document.getElementById('kpi-home-reposicao');
+    if(kRep) kRep.textContent = (semVendas.length+repetidos.length);
+    const kCat = document.getElementById('kpi-home-categoria');
+    if(kCat){
+      const pior = categoriasPerda[0];
+      kCat.textContent = pior ? pior.delta_pct.toFixed(1)+'%' : '—';
+    }
   }
 }
 
@@ -5109,6 +5161,7 @@ function renderPlanoAcaoGestoresFiltro(filtroArea){
 
 function renderTasks(){
   const c = document.getElementById('task-container');
+  if(!c) return;
   c.innerHTML = '';
   const hoje = hojeISO();
 
@@ -5215,6 +5268,7 @@ async function addTask(){
 
 function renderAlerts(){
   const c = document.getElementById('alert-container');
+  if(!c) return;
   c.innerHTML = '';
   if(storeData.alerts.length === 0){
     c.innerHTML = '<div style="font-size:13px;color:var(--ink-soft);">Sem alertas de momento.</div>';
@@ -7072,7 +7126,19 @@ async function enviarPedidosEconomatoEmail(){
 
 const LINK_FORM_AQUI_CLIENTE = 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=fVI7hPGtkE27GYPYg87TmSzZw09yyZhJkCYb0zr5YoRUNVI4MTdFUU5RUlFDRTBNSVFHWlcxUFZCNy4u&route=shorturl';
 
-async function blocoAvaliacaoClienteSecao(secao, label){
+async function blocoAvaliacaoClienteSecao(secao, label, modoSimples){
+  if(modoSimples){
+    const total = await sb('loja_avaliacoes_cliente?select=nota');
+    return `<div class="section-title">⭐ Avaliação Aqui para o Cliente</div>
+    <div class="card">
+      <a href="${LINK_FORM_AQUI_CLIENTE}" target="_blank" style="font-size:11.5px;color:var(--navy);word-break:break-all;">📋 ${LINK_FORM_AQUI_CLIENTE}</a>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
+        <span style="font-size:12.5px;color:var(--ink-soft);">Avaliações feitas</span>
+        <span style="font-size:20px;font-weight:800;color:var(--navy);">${total.length}</span>
+      </div>
+    </div>`;
+  }
+
   const query = secao ? `loja_avaliacoes_cliente?secao=eq.${encodeURIComponent(secao)}&select=*&order=criado_em.desc&limit=20` : `loja_avaliacoes_cliente?select=*&order=criado_em.desc&limit=100`;
   const itens = await sb(query);
 
