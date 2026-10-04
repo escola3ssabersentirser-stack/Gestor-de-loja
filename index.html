@@ -1281,25 +1281,46 @@ const MENU_ITEMS = [
 ];
 
 const MENU_GRUPOS = [
-  {tipo:'item', id:'dashboard', icon:'📊', label:'Dashboard Gerente'},
+  {tipo:'item', id:'dashboard', icon:'📊', label:'Dashboard'},
+  {tipo:'item', id:'comunicacao', icon:'📣', label:'Comunicação Semanal'},
 
-  {tipo:'grupo', label:'📣 Comunicação', icon:'📣', itens:[
-    {id:'comunicacao', icon:'📣', label:'Comunicação Semanal'},
-    {id:'dash:resultados', icon:'💶', label:'Resultados — Vendas e Quebras'},
+  {tipo:'grupo', label:'💶 Vendas', icon:'💶', itens:[
+    {id:'dash:resultados', icon:'💶', label:'Resultados de Vendas'},
+  ]},
+
+  {tipo:'grupo', label:'📉 Quebras', icon:'📉', itens:[
+    {id:'controlo-quebra', icon:'📉', label:'Controlo de Quebra'},
+    {id:'markdown', icon:'🏷️', label:'Markdown'},
+  ]},
+
+  {tipo:'grupo', label:'💰 Custos de Loja', icon:'💰', itens:[
+    {id:'dash:resultados', icon:'💰', label:'Resultado da Loja (Lucro/Prejuízo)'},
+  ]},
+
+  {tipo:'grupo', label:'👥 Recursos Humanos', icon:'👥', itens:[
+    {id:'formacoes', icon:'👥', label:'Banco de Horas, Horários e Formação'},
+  ]},
+
+  {tipo:'grupo', label:'✅ Auditorias', icon:'✅', itens:[
     {id:'auditoria:SHT', icon:'🦺', label:'Auditoria SHT'},
     {id:'auditoria:RH', icon:'👤', label:'Auditoria RH'},
     {id:'auditoria:Ambiental', icon:'🌱', label:'Auditoria Ambiente'},
     {id:'auditoria:Controlo', icon:'🎯', label:'Auditoria Controlo Operacional'},
-    {id:'formacoes', icon:'👥', label:'RH — Banco de Horas, Horários e Formação'},
-    {id:'dash:gestao:avaliacao-cliente', icon:'⭐', label:'Cliente — Avaliação ao Atendimento'},
-  ]},
-
-  {tipo:'grupo', label:'🔎 Supervisão', icon:'🔎', itens:[
     {id:'dash:gestao:checklist', icon:'✅', label:'Checklist Gerência'},
     {id:'checklist-responsaveis', icon:'✅', label:'Checklist Responsáveis de Secção'},
     {id:'rastreabilidade', icon:'🏷️', label:'Controlo de Rastreabilidades'},
     {id:'validacao-tarefas', icon:'✅', label:'Validação de Tarefas'},
+    {id:'melhoria', icon:'📈', label:'Melhoria Contínua'},
+    {id:'limpeza', icon:'🧹', label:'Limpeza'},
+  ]},
+
+  {tipo:'grupo', label:'🧴 Economato', icon:'🧴', itens:[
+    {id:'economato', icon:'🧴', label:'Economato'},
     {id:'fardamento', icon:'👕', label:'Fardamento'},
+  ]},
+
+  {tipo:'grupo', label:'⭐ Atendimento ao Cliente', icon:'⭐', itens:[
+    {id:'dash:gestao:avaliacao-cliente', icon:'⭐', label:'Avaliação ao Atendimento'},
   ]},
 
   {tipo:'grupo', label:'Secções', icon:'🏬', itens:[
@@ -1311,9 +1332,6 @@ const MENU_GRUPOS = [
     {id:'secao:Custos Comuns', icon:'🧺', label:'Livre Serviço'},
     {id:'secao:Padaria/Pastelaria', icon:'🥐', label:'Padaria/Pastelaria'},
   ]},
-
-  {tipo:'item', id:'economato', icon:'🧴', label:'Economato'},
-  {tipo:'item', id:'melhoria', icon:'📈', label:'Melhoria Contínua (detalhe)'},
 ];
 
 let currentScreen = "dashboard";
