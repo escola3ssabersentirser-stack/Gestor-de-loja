@@ -803,6 +803,9 @@
 
         <div class="section-title">🗓️ Reuniões e Formações Agendadas — Esta Semana</div>
         <div id="reunioes-formacoes-semana-wrap"></div>
+
+        <div class="section-title">📰 Informação de Negócio — Histórico</div>
+        <div id="info-negocio-historico-wrap"></div>
       </div>
 
       <!-- VISTA DE EDIÇÃO DA ATA (só Gestora) -->
@@ -5535,6 +5538,7 @@ async function renderComunicacao(){
   }
   renderAtaSemanal();
   renderReunioesFormacoesSemana();
+  renderInfoNegocioHistorico();
 }
 
 async function renderReunioesFormacoesSemana(){
@@ -5605,6 +5609,28 @@ function gerarDocumentoEEmail(titulo, secoes, assinaturaNome){
 }
 
 let ataAtual = null;
+
+async function renderInfoNegocioHistorico(){
+  const wrap = document.getElementById('info-negocio-historico-wrap');
+  if(!wrap) return;
+  const rows = await sb('loja_informacao_negocio_historico?select=*&order=data_documento.desc&limit=20');
+  if(!rows.length){
+    wrap.innerHTML = `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Sem registos ainda.</div></div>`;
+    return;
+  }
+  let html = '';
+  rows.forEach((r,i)=>{
+    const dataTxt = r.data_documento ? new Date(r.data_documento+'T00:00:00').toLocaleDateString('pt-PT') : '';
+    html += `<div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <span style="font-size:13px;font-weight:700;color:var(--navy);">${r.semana || r.titulo}</span>
+        <span style="font-size:11px;color:var(--ink-soft);">${dataTxt}</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--ink);white-space:pre-line;line-height:1.5;">${r.resumo}</div>
+    </div>`;
+  });
+  wrap.innerHTML = html;
+}
 
 async function renderAtaSemanal(){
   const wrap = document.getElementById('ata-semanal-wrap');
