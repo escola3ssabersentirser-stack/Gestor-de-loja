@@ -7897,6 +7897,45 @@ async function renderPainelCustos(){
     <div style="font-size:24px;font-weight:800;color:${resultado>=0?'var(--green)':'var(--red)'};">${resultado>=0?'+':''}${fmtEuro(resultado)}</div>
   </div>`;
 
+  // Comparação detalhada ao Ano Anterior — valor, variação %, e gráfico de barras lado a lado
+  const custosAno = {
+    'Água': {atual: r.agua_ano, anterior: r.agua_ano_anterior},
+    'Luz': {atual: r.luz_ano, anterior: r.luz_ano_anterior},
+    'Economato': {atual: r.economato_ano, anterior: r.economato_ano_anterior},
+    'Manutenções/Reparações': {atual: r.manutencoes_ano, anterior: r.manutencoes_ano_anterior},
+    'Pessoal': {atual: r.pessoal_ano, anterior: null},
+    'Lixo': {atual: r.lixo_ano, anterior: null},
+    'Seguros/Acidentes': {atual: r.seguros_acidentes_ano, anterior: null},
+  };
+
+  html += `<div class="section-title">📊 Custos ao Ano — vs Ano Anterior</div>`;
+  html += `<div class="card">`;
+  Object.entries(custosAno).forEach(([label, d])=>{
+    if(d.atual===null || d.atual===undefined) return;
+    const temAnterior = d.anterior!==null && d.anterior!==undefined;
+    const variacaoPct = temAnterior && d.anterior>0 ? ((Number(d.atual)-Number(d.anterior))/Number(d.anterior)*100) : null;
+    const maior = temAnterior ? Math.max(Number(d.atual), Number(d.anterior)) : Number(d.atual);
+    const pctAtual = Math.max((Number(d.atual)/maior*100), 2);
+    const pctAnterior = temAnterior ? Math.max((Number(d.anterior)/maior*100), 2) : 0;
+
+    html += `<div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:12.5px;font-weight:700;color:var(--ink);">${label}</span>
+        ${variacaoPct!==null ? `<span style="font-size:12px;font-weight:700;color:${variacaoPct<=0?'var(--green)':'var(--red)'};">${variacaoPct>=0?'+':''}${variacaoPct.toFixed(1)}%</span>` : ''}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-soft);margin-bottom:2px;"><span>Este ano</span><span>${fmtEuro(d.atual)}</span></div>
+      <div style="height:9px;background:var(--line);border-radius:5px;overflow:hidden;margin-bottom:6px;">
+        <div style="height:100%;width:${pctAtual}%;background:var(--navy);border-radius:5px;"></div>
+      </div>
+      ${temAnterior ? `
+      <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-soft);margin-bottom:2px;"><span>Ano anterior</span><span>${fmtEuro(d.anterior)}</span></div>
+      <div style="height:9px;background:var(--line);border-radius:5px;overflow:hidden;">
+        <div style="height:100%;width:${pctAnterior}%;background:var(--ink-soft);border-radius:5px;"></div>
+      </div>` : `<div style="font-size:10px;color:var(--ink-soft);">Sem valor do ano anterior para comparar.</div>`}
+    </div>`;
+  });
+  html += `</div>`;
+
   content.innerHTML = html;
 }
 
