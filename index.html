@@ -1411,6 +1411,13 @@ function buildDrawer(){
       row.innerHTML = `<span class="ic">${entry.icon}</span><span>${entry.label}</span>`;
       row.onclick = () => selectMenu(entry.id, entry.label);
       list.appendChild(row);
+    } else if(entry.itens.length === 1){
+      const item = entry.itens[0];
+      const row = document.createElement('div');
+      row.className = 'drawer-item' + (item.id === currentScreen ? ' active' : '');
+      row.innerHTML = `<span class="ic">${entry.icon}</span><span>${entry.label}</span>`;
+      row.onclick = () => selectMenu(item.id, item.label);
+      list.appendChild(row);
     } else {
       const groupKey = 'g'+idx;
       const aberto = !!drawerGruposAbertos[groupKey];
@@ -3031,7 +3038,10 @@ function renderNavTemas(){
   MENU_GRUPOS.forEach((entry, idx)=>{
     if(entry.id === 'dashboard' || entry.id === 'comunicacao') return;
     const label = entry.tipo === 'grupo' ? entry.label.replace(/[^\w\sÀ-ÿ]/g,'').trim() : entry.label;
-    const acao = entry.tipo === 'grupo' ? `toggleNavTema(${idx})` : `selectMenu('${entry.id}', '${entry.label.replace(/'/g,"\\'")}')`;
+    const unicoItem = entry.tipo === 'grupo' && entry.itens.length === 1;
+    const acao = unicoItem
+      ? `selectMenu('${entry.itens[0].id}', '${entry.itens[0].label.replace(/'/g,"\\'")}')`
+      : (entry.tipo === 'grupo' ? `toggleNavTema(${idx})` : `selectMenu('${entry.id}', '${entry.label.replace(/'/g,"\\'")}')`);
     const corClasse = NAV_TEMA_COR[label] || 'sales';
     html += `<div class="kpi ${corClasse}" style="cursor:pointer;" onclick="${acao}">
       <span class="kpi-icon">${entry.icon}</span>
@@ -3041,7 +3051,7 @@ function renderNavTemas(){
   html += `</div>`;
 
   MENU_GRUPOS.forEach((entry, idx)=>{
-    if(entry.tipo !== 'grupo') return;
+    if(entry.tipo !== 'grupo' || entry.itens.length === 1) return;
     html += `<div id="nav-tema-${idx}" style="display:none;margin-top:10px;">`;
     entry.itens.forEach(item=>{
       html += `<div class="card" style="cursor:pointer;margin-bottom:6px;padding:13px 16px;display:flex;align-items:center;gap:12px;" onclick="selectMenu('${item.id}', '${item.label.replace(/'/g,"\\'")}')">
@@ -5850,7 +5860,8 @@ async function blocoIndicadoresFrenteLoja(){
   let html = `<div class="section-title">📊 Indicadores de Frente de Loja <span class="count">· ${rows[0].semana}</span></div>`;
   html += `<div class="card">`;
   rows.forEach((r,i)=>{
-    const atingido = Number(r.valor) >= Number(r.objetivo);
+    const menorEhMelhor = r.indicador.includes('Performance');
+    const atingido = menorEhMelhor ? (Number(r.valor) <= Number(r.objetivo)) : (Number(r.valor) >= Number(r.objetivo));
     html += `<div style="padding:7px 0;border-top:${i===0?'none':'1px solid var(--line)'};display:flex;justify-content:space-between;">
       <span style="font-size:12.5px;color:var(--ink);">${r.indicador}</span>
       <span style="font-size:12.5px;font-weight:700;color:${atingido?'var(--green)':'var(--red)'};">${r.valor}${r.indicador.includes('Performance')?'':'%'} <span style="color:var(--ink-soft);font-weight:400;">/ ${r.objetivo}${r.indicador.includes('Performance')?'':'%'}</span></span>
@@ -9924,7 +9935,7 @@ async function carregarRastreabilidadeDia(){
   rastroVerificados = {};
   verifRows.forEach(v=> rastroVerificados[v.catalogo_id] = v);
 
-  let html = await blocoSupervisaoResumo();
+  let html = `<div class="section-title">🏷️ Rastreabilidades — Por Verificar</div>`;
 
   html += `<div class="day-pills">`;
   diasUnicos.forEach(d=>{
