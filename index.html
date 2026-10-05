@@ -4932,11 +4932,21 @@ async function gerarResumoSemanalEPlaneamento(){
   const r = resumoRows[0] || {};
   const quebraPctMes = (r.vendas_mes && r.quebras_mes) ? (Number(r.quebras_mes)/Number(r.vendas_mes)*100) : null;
 
+  // Semana que acabou de terminar (segunda a domingo anteriores a hoje) — calculada a partir dos dias reais, nunca de um valor guardado antigo
+  const hojeWD = new Date();
+  const diaWD = (hojeWD.getDay()+6)%7;
+  const segEstaSemana = new Date(hojeWD); segEstaSemana.setDate(hojeWD.getDate()-diaWD);
+  const segSemanaAnterior = new Date(segEstaSemana); segSemanaAnterior.setDate(segEstaSemana.getDate()-7);
+  const domSemanaAnterior = new Date(segEstaSemana); domSemanaAnterior.setDate(segEstaSemana.getDate()-1);
+  const diasSemanaAnterior = await sb(`loja_vendas_dia?data=gte.${dataLocalISO(segSemanaAnterior)}&data=lte.${dataLocalISO(domSemanaAnterior)}&select=*`);
+  const vendasSemanaAnteriorReal = diasSemanaAnterior.length ? diasSemanaAnterior.reduce((s,d)=> s + (d.vendas_real!==null?Number(d.vendas_real):0), 0) : null;
+  const labelSemanaAnterior = `${segSemanaAnterior.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})} a ${domSemanaAnterior.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})}`;
+
   const linhaTabela = (l,v1,v2) => `<tr><td style="border:1px solid #ccc;padding:6pt;">${escaparHtmlDoc(l)}</td><td style="border:1px solid #ccc;padding:6pt;text-align:right;">${escaparHtmlDoc(v1)}</td><td style="border:1px solid #ccc;padding:6pt;text-align:right;">${escaparHtmlDoc(v2)}</td></tr>`;
 
   const tabelaVendas = `<table style="border-collapse:collapse;width:100%;">
-    <tr><th style="border:1px solid #ccc;padding:6pt;text-align:left;">Indicador</th><th style="border:1px solid #ccc;padding:6pt;text-align:right;">Semana Anterior</th><th style="border:1px solid #ccc;padding:6pt;text-align:right;">Mês (MTD)</th></tr>
-    ${linhaTabela('Vendas', fmtEuro(r.vendas_semana), fmtEuro(r.vendas_mes))}
+    <tr><th style="border:1px solid #ccc;padding:6pt;text-align:left;">Indicador</th><th style="border:1px solid #ccc;padding:6pt;text-align:right;">Semana Anterior (${labelSemanaAnterior})</th><th style="border:1px solid #ccc;padding:6pt;text-align:right;">Mês (MTD)</th></tr>
+    ${linhaTabela('Vendas', vendasSemanaAnteriorReal!==null?fmtEuro(vendasSemanaAnteriorReal):'sem dados', fmtEuro(r.vendas_mes))}
     ${linhaTabela('Quebra', fmtEuro(r.quebras_mes), quebraPctMes!==null?quebraPctMes.toFixed(2)+'%':'—')}
   </table>`;
 
