@@ -3667,23 +3667,23 @@ async function blocoNotasCredito(contextoId, modoCompleto){
 
   let html = `<div style="display:flex;justify-content:space-between;padding:6px 0;">
     <span style="font-size:12px;color:var(--ink-soft);">Por validar</span>
-    <span style="font-size:14px;font-weight:800;color:${porValidar.length?'var(--red)':'var(--green)'};">${porValidar.length} · ${fmtEuro(soma(porValidar))}</span>
+    <span style="font-size:14px;font-weight:800;color:${porValidar.length?'var(--red)':'var(--green)'};">${porValidar.length} · ${fmtEuroPreciso(soma(porValidar))}</span>
   </div>
   <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
     <span style="font-size:12px;color:var(--ink-soft);">Esta semana</span>
-    <span style="font-size:13px;font-weight:700;color:var(--ink);">${estaSemana.length} · ${fmtEuro(soma(estaSemana))}</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">${estaSemana.length} · ${fmtEuroPreciso(soma(estaSemana))}</span>
   </div>
   <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
     <span style="font-size:12px;color:var(--ink-soft);">Este mês</span>
-    <span style="font-size:13px;font-weight:700;color:var(--ink);">${esteMes.length} · ${fmtEuro(soma(esteMes))}</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">${esteMes.length} · ${fmtEuroPreciso(soma(esteMes))}</span>
   </div>
   <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
     <span style="font-size:12px;color:var(--ink-soft);">Este ano</span>
-    <span style="font-size:13px;font-weight:700;color:var(--ink);">${esteAno.length} · ${fmtEuro(soma(esteAno))}</span>
+    <span style="font-size:13px;font-weight:700;color:var(--ink);">${esteAno.length} · ${fmtEuroPreciso(soma(esteAno))}</span>
   </div>
   <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
     <span style="font-size:12px;color:var(--ink-soft);">⚠️ Não conformes</span>
-    <span style="font-size:13px;font-weight:700;color:${naoConformes.length?'var(--red)':'var(--green)'};">${naoConformes.length} · ${fmtEuro(soma(naoConformes))}</span>
+    <span style="font-size:13px;font-weight:700;color:${naoConformes.length?'var(--red)':'var(--green)'};">${naoConformes.length} · ${fmtEuroPreciso(soma(naoConformes))}</span>
   </div>`;
 
   if(modoCompleto){
@@ -3721,7 +3721,7 @@ async function blocoNotasCredito(contextoId, modoCompleto){
       html += `<div class="card" style="padding:10px 12px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;">
           <span style="font-size:12.5px;color:var(--ink);">Fatura ${r.numero_factura} · ${new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT')}</span>
-          <span style="font-size:13px;font-weight:700;color:var(--red);">${fmtEuro(r.valor)}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--red);">${fmtEuroPreciso(r.valor)}</span>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px;">
           <button class="econ-btn filled" style="flex:1;" onclick="validarNotaCredito(${r.id}, true)">✓ Conforme</button>
@@ -3736,7 +3736,7 @@ async function blocoNotasCredito(contextoId, modoCompleto){
         html += `<div style="padding:8px 0;border-top:1px solid var(--line);">
           <div style="display:flex;justify-content:space-between;">
             <span style="font-size:12px;color:var(--ink);">Fatura ${r.numero_factura} · ${new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT')}</span>
-            <span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuro(r.valor)}</span>
+            <span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuroPreciso(r.valor)}</span>
           </div>
           ${r.observacao ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${r.observacao}</div>` : ''}
         </div>`;
@@ -10088,6 +10088,10 @@ async function toggleRastreabilidade(catalogoId){
 function fmtEuro(v){
   if(v === null || v === undefined) return '—';
   return Number(v).toLocaleString('pt-PT', {minimumFractionDigits:0, maximumFractionDigits:0}) + ' €';
+}
+function fmtEuroPreciso(v){
+  if(v === null || v === undefined) return '—';
+  return Number(v).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
 }
 function fmtNum(v){
   if(v === null || v === undefined) return '—';
