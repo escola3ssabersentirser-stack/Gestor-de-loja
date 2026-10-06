@@ -7890,24 +7890,42 @@ async function renderPainelCustos(){
   const resultado = (Number(r.vendas_mes)||0) - (Number(r.quebras_mes)||0) - totalCustos;
   const maiorValor = Math.max(...Object.values(custos).filter(v=>v!==null&&v!==undefined).map(Number), 1);
 
-  let html = `<div class="section-title">💰 Custos de Loja (mês)</div>`;
+  const custosMesAnterior = {
+    'Economato': r.economato_mes_anterior, 'Pessoal': r.pessoal_mes_anterior, 'Água': r.agua_mes_anterior,
+    'Luz': r.luz_mes_anterior, 'Manutenções/Reparações': r.manutencoes_mes_anterior,
+    'Lixo': r.lixo_mes_anterior, 'Seguros/Acidentes': r.seguros_acidentes_mes_anterior
+  };
+
+  let html = `<div class="section-title">💰 Custos de Loja — Mês com Mês</div>`;
   html += `<div class="card">
     <div style="font-size:10px;color:var(--amber);font-weight:700;margin-bottom:10px;">⚠️ Referência: ${r.mes_referencia_custos || 'sem data'} — pode estar desatualizado.</div>`;
-  Object.entries(custos).forEach(([label,v])=>{
-    const semDados = v===null || v===undefined;
-    const larguraPct = semDados ? 0 : Math.max((Number(v)/maiorValor*100),2);
-    html += `<div style="margin-bottom:9px;">
-      <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
-        <span style="font-size:11.5px;color:var(--ink-soft);">${label}</span>
-        <span style="font-size:11.5px;font-weight:700;color:${semDados?'var(--ink-soft)':'var(--ink)'};">${semDados?'sem dados':fmtEuro(v)}</span>
+  Object.entries(custos).forEach(([label,vAtual])=>{
+    const vAnterior = custosMesAnterior[label];
+    const semDados = vAtual===null || vAtual===undefined;
+    const temAnterior = vAnterior!==null && vAnterior!==undefined;
+    const variacaoPct = (!semDados && temAnterior && vAnterior>0) ? ((Number(vAtual)-Number(vAnterior))/Number(vAnterior)*100) : null;
+    const maior = temAnterior ? Math.max(Number(vAtual)||0, Number(vAnterior)) : (Number(vAtual)||1);
+    const pctAtual = semDados ? 0 : Math.max((Number(vAtual)/maior*100), 2);
+    const pctAnterior = temAnterior ? Math.max((Number(vAnterior)/maior*100), 2) : 0;
+
+    html += `<div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:12.5px;font-weight:700;color:var(--ink);">${label}</span>
+        ${variacaoPct!==null ? `<span style="font-size:12px;font-weight:700;color:${variacaoPct<=0?'var(--green)':'var(--red)'};">${variacaoPct>=0?'+':''}${variacaoPct.toFixed(1)}%</span>` : ''}
       </div>
+      <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-soft);margin-bottom:2px;"><span>Este mês</span><span>${semDados?'sem dados':fmtEuro(vAtual)}</span></div>
+      <div style="height:9px;background:var(--line);border-radius:5px;overflow:hidden;margin-bottom:6px;">
+        <div style="height:100%;width:${pctAtual}%;background:var(--red);border-radius:5px;"></div>
+      </div>
+      ${temAnterior ? `
+      <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-soft);margin-bottom:2px;"><span>Mês anterior</span><span>${fmtEuro(vAnterior)}</span></div>
       <div style="height:9px;background:var(--line);border-radius:5px;overflow:hidden;">
-        <div style="height:100%;width:${larguraPct}%;background:var(--red);border-radius:5px;"></div>
-      </div>
+        <div style="height:100%;width:${pctAnterior}%;background:var(--ink-soft);border-radius:5px;"></div>
+      </div>` : `<div style="font-size:10px;color:var(--ink-soft);">Sem valor do mês anterior para comparar.</div>`}
     </div>`;
   });
-  html += `<div style="display:flex;justify-content:space-between;padding-top:10px;margin-top:6px;border-top:1px solid var(--line);">
-    <span style="font-size:12.5px;font-weight:700;color:var(--ink);">Total de Custos</span>
+  html += `<div style="display:flex;justify-content:space-between;padding-top:4px;">
+    <span style="font-size:12.5px;font-weight:700;color:var(--ink);">Total de Custos (mês)</span>
     <span style="font-size:14px;font-weight:800;color:var(--red);">${fmtEuro(totalCustos)}</span>
   </div>`;
   html += `</div>`;
@@ -7929,7 +7947,7 @@ async function renderPainelCustos(){
     'Seguros/Acidentes': {atual: r.seguros_acidentes_ano, anterior: null},
   };
 
-  html += `<div class="section-title">📊 Custos ao Ano — vs Ano Anterior</div>`;
+  html += `<div class="section-title">📊 Custos — Ano com Ano</div>`;
   html += `<div class="card">`;
   Object.entries(custosAno).forEach(([label, d])=>{
     if(d.atual===null || d.atual===undefined) return;
@@ -9575,7 +9593,7 @@ async function renderMarkdownScreen(){
 
   const [semMarkdown, piorAceitacao] = await Promise.all([
     sb(`loja_markdown_artigo_detalhe?tipo=eq.sem_markdown&select=*&order=valor.desc&limit=10`),
-    sb(`loja_markdown_artigo_detalhe?tipo=eq.pior_aceitacao&select=*&order=valor.asc&limit=10`)
+    sb(`loja_markdown_artigo_detalhe?tipo=eq.pior_aceitacao&select=*&order=valor.desc&limit=100`)
   ]);
 
   html += `<div class="section-title">⚠️ Artigos que Deram Quebra Sem Etiqueta de Markdown</div>`;
@@ -9592,13 +9610,14 @@ async function renderMarkdownScreen(){
   }
   html += `</div>`;
 
-  html += `<div class="section-title">📉 Artigos com Pior % de Realização</div>`;
+  html += `<div class="section-title">🔴 Artigos com 100% Markdown Não Realizado — Outubro <span class="count">· ${piorAceitacao.length}</span></div>`;
   html += `<div class="card">`;
   if(piorAceitacao.length){
+    html += `<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">Todas as etiquetas impressas, nenhuma aceite — 0% de vendas com desconto.</div>`;
     piorAceitacao.forEach((a,i)=>{
       html += `<div style="padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};display:flex;justify-content:space-between;">
         <span style="font-size:12px;color:var(--ink);">${a.artigo} <span style="color:var(--ink-soft);font-size:10.5px;">(${a.divisao})</span></span>
-        <span style="font-size:12px;font-weight:700;color:var(--red);">${a.valor}%</span>
+        <span style="font-size:12px;font-weight:700;color:var(--red);">${a.valor} etiq.</span>
       </div>`;
     });
   } else {
