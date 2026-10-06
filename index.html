@@ -6011,79 +6011,46 @@ async function blocoRastreabilidadeSecao(secao, label){
   const itensHoje = amostraAleatoriaDoDia(itens, secao, 4);
 
   const catalogoIds = itensHoje.map(it=>it.id).join(',');
-  const verifRows = await sb(`loja_rastreabilidade_verificacoes?data=eq.${hoje}&catalogo_id=in.(${catalogoIds})&select=catalogo_id`);
-  const verificadosSet = new Set(verifRows.map(v=>v.catalogo_id));
+  const verifRows = await sb(`loja_rastreabilidade_verificacoes?data=eq.${hoje}&catalogo_id=in.(${catalogoIds})&select=catalogo_id,nao_conformidade`);
+  const verifMap = {};
+  verifRows.forEach(v=> verifMap[v.catalogo_id] = v);
 
-  let html = `<div class="section-title">🏷️ Rastreabilidades de Hoje <span class="count">· ${verificadosSet.size}/${itensHoje.length}</span></div><div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
+  let html = `<div class="section-title">🏷️ Rastreabilidades de Hoje <span class="count">· ${verifRows.length}/${itensHoje.length}</span></div><div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   itensHoje.forEach(it=>{
-    const checked = verificadosSet.has(it.id);
+    const v = verifMap[it.id];
+    const checked = !!v;
+    const naoOk = checked && v.nao_conformidade === 'NÃO OK';
     html += `<div class="econ-item">
       <div class="e-info">
         <div class="e-desc">${it.descricao}</div>
         <div class="e-meta">${it.material || ''}</div>
       </div>
-      <button class="econ-btn ${checked ? 'filled' : ''}" onclick="toggleRastreabilidadeNaSecao(${it.id}, '${secao.replace(/'/g,"\\'")}', '${label.replace(/'/g,"\\'")}', ${checked})">${checked ? '✓ OK' : 'Verificar'}</button>
+      <div style="display:flex;gap:6px;">
+        <button class="econ-btn ${checked && !naoOk ? 'filled' : ''}" onclick="marcarRastreabilidadeNaSecao(${it.id}, '${secao.replace(/'/g,"\\'")}', '${label.replace(/'/g,"\\'")}', true)">✓ OK</button>
+        <button class="econ-btn ${naoOk ? 'filled' : ''}" style="${naoOk?'background:var(--red);border-color:var(--red);':''}" onclick="marcarRastreabilidadeNaSecao(${it.id}, '${secao.replace(/'/g,"\\'")}', '${label.replace(/'/g,"\\'")}', false)">⚠️ Não OK</button>
+      </div>
     </div>`;
   });
   html += `</div>`;
   return html;
 }
 
-async function toggleRastreabilidadeNaSecao(catalogoId, secao, label, jaVerificado){
+async function marcarRastreabilidadeNaSecao(catalogoId, secao, label, ok){
   const hoje = dataLocalISO(new Date());
-
-  if(jaVerificado){
-    try{
-      const existing = await sb(`loja_rastreabilidade_verificacoes?catalogo_id=eq.${catalogoId}&data=eq.${hoje}&select=id`);
-      if(existing && existing.length){
-        await sb(`loja_rastreabilidade_verificacoes?id=eq.${existing[0].id}`, {method:"DELETE"});
-      }
-      showToast();
-      renderSecaoDetail(secao, label);
-    }catch(e){
-      console.error('Erro ao guardar', e);
-    }
-    return;
-  }
-
-  const idColaborador = prompt('Número de colaborador (ID) de quem verifica:', currentUser && currentUser.numero ? currentUser.numero : '');
-  if(idColaborador === null) return;
-  const lote = prompt('Lote:');
-  if(lote === null) return;
-  const validadeStr = prompt('Validade (DD/MM/AAAA):');
-  if(validadeStr === null) return;
-  let validadeISO = null;
-  const partes = validadeStr.trim().split('/');
-  if(partes.length === 3){
-    validadeISO = `${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}`;
-  }
-  const naoConformidade = prompt('Não conformidade encontrada (deixe em branco se estiver tudo OK):');
-
   try{
-    await sb('loja_rastreabilidade_verificacoes', {method:"POST", body: JSON.stringify({
+    const existing = await sb(`loja_rastreabilidade_verificacoes?catalogo_id=eq.${catalogoId}&data=eq.${hoje}&select=id`);
+    const payload = {
       catalogo_id: catalogoId, data: hoje, verificado: true,
       verificado_por: currentUser ? currentUser.name : null,
-      colaborador_numero: idColaborador.trim() || null,
-      lote: lote.trim() || null,
-      validade: validadeISO,
-      nao_conformidade: (naoConformidade && naoConformidade.trim()) ? naoConformidade.trim() : null
-    })});
+      nao_conformidade: ok ? null : 'NÃO OK'
+    };
+    if(existing && existing.length){
+      await sb(`loja_rastreabilidade_verificacoes?id=eq.${existing[0].id}`, {method:"PATCH", body: JSON.stringify(payload)});
+    } else {
+      await sb('loja_rastreabilidade_verificacoes', {method:"POST", body: JSON.stringify(payload)});
+    }
     showToast();
     renderSecaoDetail(secao, label);
-
-    let descricaoItem = '';
-    try{
-      const catRows = await sb(`loja_rastreabilidade_catalogo?id=eq.${catalogoId}&select=descricao,material`);
-      if(catRows && catRows.length) descricaoItem = `${catRows[0].descricao}${catRows[0].material ? ' ('+catRows[0].material+')' : ''}`;
-    }catch(e){}
-    gerarDocumentoEEmail(`Rastreabilidade verificada — ${label}`, [
-      {label:'Secção', valor: label},
-      {label:'Artigo', valor: descricaoItem},
-      {label:'Lote', valor: lote.trim()},
-      {label:'Validade', valor: validadeStr.trim()},
-      {label:'Quem verificou', valor: `${currentUser ? currentUser.name : ''} (nº ${idColaborador.trim()})`},
-      {label:'Não conformidade', valor: naoConformidade && naoConformidade.trim() ? naoConformidade.trim() : 'Sem não conformidades'},
-    ], currentUser ? currentUser.name : '');
   }catch(e){
     console.error('Erro ao guardar', e);
   }
@@ -9995,21 +9962,16 @@ async function carregarRastreabilidadeDia(){
     grupos[cat].forEach(c=>{
       const v = rastroVerificados[c.id];
       const checked = !!v;
-      let extraInfo = '';
-      if(checked && (v.lote || v.validade)){
-        const val = v.validade ? new Date(v.validade+'T00:00:00').toLocaleDateString('pt-PT') : '—';
-        extraInfo = `<div class="e-meta">Lote: ${v.lote || '—'} · Validade: ${val}</div>`;
-      }
-      if(checked && v.nao_conformidade){
-        extraInfo += `<div class="e-meta" style="color:var(--red);">⚠️ ${v.nao_conformidade}</div>`;
-      }
+      const naoOk = checked && v.nao_conformidade === 'NÃO OK';
       html += `<div class="econ-item">
         <div class="e-info">
           <div class="e-desc">${c.descricao}</div>
           <div class="e-meta">${c.material || ''}</div>
-          ${extraInfo}
         </div>
-        <button class="econ-btn ${checked ? 'filled' : ''}" onclick="toggleRastreabilidade(${c.id})">${checked ? '✓ OK' : 'Verificar'}</button>
+        <div style="display:flex;gap:6px;">
+          <button class="econ-btn ${checked && !naoOk ? 'filled' : ''}" onclick="marcarRastreabilidade(${c.id}, true)">✓ OK</button>
+          <button class="econ-btn ${naoOk ? 'filled' : ''}" style="${naoOk?'background:var(--red);border-color:var(--red);':''}" onclick="marcarRastreabilidade(${c.id}, false)">⚠️ Não OK</button>
+        </div>
       </div>`;
     });
     html += `</div></div>`;
@@ -10023,62 +9985,23 @@ function selecionarDiaRastro(dia){
   carregarRastreabilidadeDia();
 }
 
-async function toggleRastreabilidade(catalogoId){
-  const jaVerificado = rastroVerificados[catalogoId];
+async function marcarRastreabilidade(catalogoId, ok){
   const hoje = dataLocalISO(new Date());
-
-  if(jaVerificado){
-    try{
-      const existing = await sb(`loja_rastreabilidade_verificacoes?catalogo_id=eq.${catalogoId}&data=eq.${hoje}&select=id`);
-      if(existing && existing.length){
-        await sb(`loja_rastreabilidade_verificacoes?id=eq.${existing[0].id}`, {method:"DELETE"});
-      }
-      delete rastroVerificados[catalogoId];
-      showToast();
-      carregarRastreabilidadeDia();
-    }catch(e){
-      console.error('Erro ao guardar', e);
-    }
-    return;
-  }
-
-  const idColaborador = prompt('Número de colaborador (ID) de quem verifica:', currentUser && currentUser.numero ? currentUser.numero : '');
-  if(idColaborador === null) return;
-
-  const lote = prompt('Lote:');
-  if(lote === null) return;
-
-  const validadeStr = prompt('Validade (DD/MM/AAAA):');
-  if(validadeStr === null) return;
-  let validadeISO = null;
-  const partes = validadeStr.trim().split('/');
-  if(partes.length === 3){
-    validadeISO = `${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}`;
-  }
-
-  const naoConformidade = prompt('Não conformidade encontrada (deixe em branco se estiver tudo OK):');
-
   try{
-    await sb('loja_rastreabilidade_verificacoes', {method:"POST", body: JSON.stringify({
+    const existing = await sb(`loja_rastreabilidade_verificacoes?catalogo_id=eq.${catalogoId}&data=eq.${hoje}&select=id`);
+    const payload = {
       catalogo_id: catalogoId, data: hoje, verificado: true,
       verificado_por: currentUser ? currentUser.name : null,
-      colaborador_numero: idColaborador.trim() || null,
-      lote: lote.trim() || null,
-      validade: validadeISO,
-      nao_conformidade: (naoConformidade && naoConformidade.trim()) ? naoConformidade.trim() : null
-    })});
-    rastroVerificados[catalogoId] = true;
+      nao_conformidade: ok ? null : 'NÃO OK'
+    };
+    if(existing && existing.length){
+      await sb(`loja_rastreabilidade_verificacoes?id=eq.${existing[0].id}`, {method:"PATCH", body: JSON.stringify(payload)});
+    } else {
+      await sb('loja_rastreabilidade_verificacoes', {method:"POST", body: JSON.stringify(payload)});
+    }
+    rastroVerificados[catalogoId] = payload;
     showToast();
     carregarRastreabilidadeDia();
-
-    const item = rastroCatalogo.find(c=>c.id===catalogoId);
-    gerarDocumentoEEmail(`Rastreabilidade verificada — ${item ? item.categoria : ''}`, [
-      {label:'Artigo', valor: item ? `${item.descricao}${item.material ? ' ('+item.material+')' : ''}` : ''},
-      {label:'Lote', valor: lote.trim()},
-      {label:'Validade', valor: validadeStr.trim()},
-      {label:'Quem verificou', valor: `${currentUser ? currentUser.name : ''} (nº ${idColaborador.trim()})`},
-      {label:'Não conformidade', valor: naoConformidade && naoConformidade.trim() ? naoConformidade.trim() : 'Sem não conformidades'},
-    ], currentUser ? currentUser.name : '');
   }catch(e){
     console.error('Erro ao guardar', e);
   }
