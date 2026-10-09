@@ -1066,6 +1066,9 @@
 
         <div id="comm-edit-btn-wrap"></div>
 
+        <div class="section-title reuniao-parte">📊 Resumo automático para a reunião</div>
+        <div id="resumo-reuniao-wrap" class="reuniao-parte"></div>
+
         <div class="section-title reuniao-parte">📋 Ata da Reunião Semanal</div>
         <div id="ata-semanal-wrap" class="reuniao-parte"></div>
 
@@ -1081,7 +1084,7 @@
         <div class="card">
           <label>Semana (ex: 8 a 14 de setembro)</label>
           <input type="text" id="ata-edit-semana">
-          <button type="button" class="btn-primary" style="background:#1F7A33;margin:6px 0 14px;" onclick="preencherAtaComNumeros()">📊 Preencher com os números da semana</button>
+          <button type="button" class="btn-primary" style="background:#1F7A33;margin:6px 0 14px;" onclick="preencherAtaComNumeros(true)">🔄 Atualizar com os números de hoje</button>
           <label>Vendas</label>
           <textarea id="ata-edit-vendas" placeholder="Resultado de vendas da semana..."></textarea>
           <label>Quebras</label>
@@ -2486,7 +2489,7 @@ function selectMenu(id, label){
     document.getElementById('comunicacao-screen').classList.remove('hidden');
     const t = document.getElementById('comm-titulo'); if(t) t.textContent = id === 'reunioes-semanais' ? 'Reunião Semanal' : 'Comunicação Semanal';
     Promise.resolve().then(() => renderComunicacao()).catch(()=>{});
-    if(id === 'reunioes-semanais'){ renderAtaSemanal().catch(()=>{}); renderReunioesFormacoesSemana().catch(()=>{}); }
+    if(id === 'reunioes-semanais'){ renderResumoReuniao().catch(()=>{}); renderAtaSemanal().catch(()=>{}); renderReunioesFormacoesSemana().catch(()=>{}); }
   } else if(id === 'economato'){
     document.getElementById('economato-screen').classList.remove('hidden');
     renderEconomato();
@@ -6701,36 +6704,91 @@ async function renderAtaSemanal(){
 }
 
 
-function preencherAtaComNumeros(){
+let resumoReuniaoCache = null;
+async function gerarResumoReuniao(){
   const r = resumoPainel || RESUMO_PADRAO;
   const mc = {}; (r.mes_curso||[]).forEach(l => mc[l.ind] = l);
   const vb = mc['Vendas vs budget'] || {}, vaa = mc['Vendas vs ano passado'] || {}, qp = mc['Quebra em % das vendas'] || {};
   const cli = mc['Clientes (nº de tickets)'] || {}, tm = mc['Ticket médio (€)'] || {};
+  const anoP = r.ano_ant || 'ano passado';
   const secs = (r.secoes||[]).filter(s => s.bdg > 0);
-  const acima = secs.filter(s => s.vsb >= 0).map(s => s.sec);
+  const acima = secs.filter(s => s.vsb >= 0).map(s => `${s.sec} ${rpVarPct(s.vsb)}`);
   const abaixo = [...secs].sort((a,b)=>a.vsb-b.vsb).slice(0,3).map(s => `${s.sec} ${rpVarPct(s.vsb)}`);
-  const quebraSobe = secs.filter(s => s.qp != null && s.qp_aa != null && s.real > 1000).map(s => ({sec:s.sec, d:(s.qp - s.qp_aa)*100})).sort((a,b)=>b.d-a.d);
-  const pior = quebraSobe.filter(x => x.d > 0).slice(0,3).map(x => `${x.sec} ${rpVarPP(x.d)}`);
-  const melhor = quebraSobe.filter(x => x.d < 0).sort((a,b)=>a.d-b.d).slice(0,3).map(x => `${x.sec} ${rpVarPP(x.d)}`);
-  const per = r.data_relatorio ? ` (relatório de ${r.data_relatorio})` : '';
-  const vendas = `Vendas do mês${per}: ${rpEur(vb.atual)} — ${rpVarPct(vb.vari)} vs budget e ${rpVarPct(vaa.vari)} vs ${r.ano_ant||'ano passado'}.\n`
-    + `Clientes: ${rpNum(cli.atual)} (${rpVarPct(cli.vari)}) · Ticket médio: ${tm.atual != null ? Number(tm.atual).toLocaleString('pt-PT',{minimumFractionDigits:2}) + ' €' : '–'} (${rpVarPct(tm.vari)}).\n`
-    + (acima.length ? `Acima do budget: ${acima.join(', ')}.\n` : '')
-    + (abaixo.length ? `Mais abaixo do budget: ${abaixo.join(', ')}.` : '');
-  const quebras = `Quebra: ${rpPct(qp.atual,2)} das vendas (${r.ano_ant||'ano passado'}: ${rpPct(qp.comp,2)}; ${rpVarPP(qp.vari)}).\n`
-    + (pior.length ? `Quebra a subir: ${pior.join(', ')}.\n` : '')
-    + (melhor.length ? `Quebra a descer: ${melhor.join(', ')}.` : '');
+  const difQ = secs.filter(s => s.qp != null && s.qp_aa != null && s.real > 1000 && s.qp >= 0).map(s => ({sec:s.sec, d:(s.qp - s.qp_aa)*100}));
+  const sobe = difQ.filter(x => x.d > 0.3).sort((a,b)=>b.d-a.d).slice(0,3).map(x => `${x.sec} ${rpVarPP(x.d)}`);
+  const desce = difQ.filter(x => x.d < -0.3).sort((a,b)=>a.d-b.d).slice(0,3).map(x => `${x.sec} ${rpVarPP(x.d)}`);
   const auds = (r.auditorias||[]).filter(a => a.atual > 0);
-  const auditorias = auds.length ? 'Abaixo do objetivo: ' + (auds.filter(a => !a.aval.startsWith('▲')).map(a => `${a.area} ${rpPct(a.atual,0)} (obj. ${rpPct(a.obj,0)})`).join(', ') || 'nenhuma') + '.\nCumprem: ' + (auds.filter(a => a.aval.startsWith('▲')).map(a => a.area).join(', ') || '—') + '.' : '';
-  const put = (id, txt) => { const el = document.getElementById(id); if(el && txt && !el.value.trim()) el.value = txt; else if(el && txt) el.value = txt + '\n\n' + el.value; };
-  put('ata-edit-vendas', vendas);
-  put('ata-edit-quebras', quebras);
-  put('ata-edit-auditorias', auditorias);
+  const audAbaixo = auds.filter(a => !a.aval.startsWith('▲')).map(a => `${a.area} ${rpPct(a.atual,0)} (obj. ${rpPct(a.obj,0)})`);
+  const audCumpre = auds.filter(a => a.aval.startsWith('▲')).map(a => a.area);
+
+  // dados extra guardados pelos ficheiros do dia (se não houver, fica de fora)
+  let mkd = [], arts = [], cats = [];
+  try{
+    const [m, q, c] = await Promise.all([
+      sb('loja_markdown_pct_divisao?select=divisao,pct_nao_realizado_valor,mes_referencia&order=pct_nao_realizado_valor.desc&limit=3'),
+      sb('loja_alertas_quebra_artigo?select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10'),
+      sb('loja_categorias_perda_vendas?select=categoria,divisao,delta_pct&order=delta_pct.asc&limit=10')
+    ]);
+    mkd = (m||[]).filter(x => Number(x.pct_nao_realizado_valor) > 5);
+    const ult = (q||[])[0] && q[0].data; arts = (q||[]).filter(x => x.data === ult).slice(0,3);
+    cats = (c||[]).filter(x => !/natal|páscoa|pascoa|sazonais/i.test(x.categoria)).slice(0,3).map(x => ({...x, categoria: String(x.categoria).replace(/_bc$/i,' balcão').replace(/_/g,' ')}));
+  }catch(e){}
+
+  const v = {
+    vendas: `Vendas do mês: ${rpEur(vb.atual)} — ${rpVarPct(vb.vari)} vs budget e ${rpVarPct(vaa.vari)} vs ${anoP}.\n`
+      + `Clientes: ${rpNum(cli.atual)} (${rpVarPct(cli.vari)}) · Ticket médio: ${tm.atual != null ? Number(tm.atual).toLocaleString('pt-PT',{minimumFractionDigits:2}) + ' €' : '–'} (${rpVarPct(tm.vari)}).`
+      + (acima.length ? `\nAcima do budget: ${acima.join(', ')}.` : '')
+      + (abaixo.length ? `\nMais abaixo do budget: ${abaixo.join(', ')}.` : '')
+      + (cats.length ? `\nCategorias a perder vendas vs ${anoP}: ${cats.map(c => `${impTitulo ? impTitulo(c.categoria) : c.categoria} (${impTitulo ? impTitulo(c.divisao) : c.divisao}) ${Number(c.delta_pct).toLocaleString('pt-PT',{maximumFractionDigits:0})}%`).join(', ')}.` : ''),
+    quebras: `Quebra: ${rpPct(qp.atual,2)} das vendas (${anoP}: ${rpPct(qp.comp,2)}; ${rpVarPP(qp.vari)}).`
+      + (sobe.length ? `\nQuebra a subir: ${sobe.join(', ')}.` : '')
+      + (desce.length ? `\nQuebra a descer: ${desce.join(', ')}.` : '')
+      + (arts.length ? `\nArtigos com mais quebra: ${arts.map(a => `${impTitulo ? impTitulo(a.descricao) : a.descricao} ${rpEur(a.valor_quebra)}`).join(', ')}.` : '')
+      + (mkd.length ? `\nMarkdown não realizado: ${mkd.map(m => `${impTitulo ? impTitulo(m.divisao) : m.divisao} ${Number(m.pct_nao_realizado_valor).toLocaleString('pt-PT')}%`).join(', ')}.` : ''),
+    auditorias: auds.length ? `Abaixo do objetivo: ${audAbaixo.join(', ') || 'nenhuma'}.\nCumprem: ${audCumpre.join(', ') || '—'}.` : '',
+    pontos: []
+  };
+  // pontos a discutir, escritos a partir dos números
+  if(vb.vari < 0) v.pontos.push(`Vendas ${rpPct(Math.abs(vb.vari),1)} abaixo do budget${abaixo.length ? ' — começar por ' + abaixo[0].replace(/ [+−].*$/,'') : ''}.`);
+  if(cli.vari < -0.03 && tm.vari > 0) v.pontos.push(`Menos clientes (${rpVarPct(cli.vari)}) mas ticket médio a subir (${rpVarPct(tm.vari)}): como trazer mais clientes à loja?`);
+  if(qp.vari > 0) v.pontos.push(`Quebra acima de ${anoP} (${rpVarPP(qp.vari)})${sobe.length ? ': ' + sobe.slice(0,2).join(' e ') : ''}.`);
+  if(mkd.length) v.pontos.push(`Markdown: ${mkd.map(m => impTitulo(m.divisao)).join(' e ')} com muito markdown não realizado — marcar mais cedo.`);
+  if(audAbaixo.length) v.pontos.push(`Auditorias abaixo do objetivo: ${auds.filter(a => !a.aval.startsWith('▲')).map(a => a.area).join(', ')}.`);
+  if(desce.length) v.pontos.push(`A reconhecer: ${desce.map(x => x.replace(/ [+−].*$/,'')).join(', ')} baixaram a quebra.`);
+  v.data = r.data_relatorio || '';
+  resumoReuniaoCache = v;
+  return v;
+}
+
+async function renderResumoReuniao(){
+  const wrap = document.getElementById('resumo-reuniao-wrap');
+  if(!wrap) return;
+  wrap.innerHTML = `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">A preparar o resumo…</div></div>`;
+  const v = await gerarResumoReuniao();
+  const bloco = (tit, txt) => txt ? `<div style="margin-bottom:12px;"><div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:3px;">${tit}</div><div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.45;">${rpEsc(txt)}</div></div>` : '';
+  wrap.innerHTML = `<div class="card">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">Feito sozinho com os últimos ficheiros carregados${v.data ? ' · relatório de <b>' + rpEsc(v.data) + '</b>' : ''}</div>
+    ${bloco('📈 Vendas', v.vendas)}
+    ${bloco('📉 Quebras', v.quebras)}
+    ${bloco('🔍 Auditorias', v.auditorias)}
+    ${v.pontos.length ? `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px;">💬 Pontos a discutir</div><ol style="margin:0 0 4px 18px;padding:0;font-size:13px;line-height:1.5;color:var(--ink);">${v.pontos.map(p => `<li>${rpEsc(p)}</li>`).join('')}</ol>` : ''}
+  </div>`;
+}
+
+async function preencherAtaComNumeros(forcar){
+  const v = resumoReuniaoCache || await gerarResumoReuniao();
+  const put = (id, txt) => { const el = document.getElementById(id); if(!el || !txt) return; if(!el.value.trim() || forcar) el.value = txt; };
+  put('ata-edit-vendas', v.vendas);
+  put('ata-edit-quebras', v.quebras);
+  put('ata-edit-auditorias', v.auditorias);
   const pot = document.getElementById('ata-edit-potenciar');
   if(pot && !pot.value.trim()) pot.value = 'Artigo/secção: [ ]  ·  Objetivo: [ ]  ·  Responsável: [ ]\nArtigo/secção: [ ]  ·  Objetivo: [ ]  ·  Responsável: [ ]';
   const eq = document.getElementById('ata-edit-equipa');
   if(eq && !eq.value.trim()) eq.value = 'Trocas de horário: \nConflitos / pontos a resolver: \nEnergia geral da equipa: ';
+  const sem = document.getElementById('ata-edit-semana');
+  if(sem && !sem.value.trim() && v.data) sem.value = 'Relatório de ' + v.data;
 }
+
 function openEditAta(){
   document.getElementById('ata-edit-semana').value = ataAtual ? (ataAtual.semana || '') : (commData ? commData.semana : '');
   document.getElementById('ata-edit-vendas').value = ataAtual ? (ataAtual.vendas || '') : '';
@@ -6741,6 +6799,7 @@ function openEditAta(){
   document.getElementById('ata-edit-equipa').value = ataAtual ? (ataAtual.equipa || '') : '';
   document.getElementById('comm-view').classList.add('hidden');
   document.getElementById('ata-edit').classList.remove('hidden');
+  preencherAtaComNumeros(false);
 }
 
 function cancelEditAta(){
