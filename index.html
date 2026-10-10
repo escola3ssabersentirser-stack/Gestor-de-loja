@@ -3138,6 +3138,17 @@ async function lemRegistar(tipo, chave){
   try{ await sb('loja_lembretes_log', {method:'POST', body: JSON.stringify({tipo, chave: chave || null, semana: lemSemanaChave(), enviado_por: currentUser ? currentUser.name : null})}); }catch(e){}
 }
 
+function lemChaveBH(c){ return `${c.numero_pessoal}:${c.data_prevista_gozar_horas || 'sem-data'}:${Number(c.bh_positivo)||0}:${Number(c.bh_negativo)||0}`; }
+// parabéns já enviados para este aniversário (este ano)
+function lemAnosEnviado(logs, c){
+  const ano = c.dataAnos.getFullYear();
+  return (logs||[]).some(l => l.tipo === 'aniversario' && (l.chave === `${c.numero_pessoal}:${ano}` || (l.chave === String(c.numero_pessoal) && String(l.semana||'').startsWith(String(ano)) && Math.abs(numeroSemanaISO(c.dataAnos) - Number(String(l.semana).split('-S')[1])) <= 1)));
+}
+async function lemBHok(i){
+  const c = lemDados.bh[i]; if(!c) return;
+  try{ await lemRegistar('bh-ok', c.chaveOk); showToast(); }catch(e){}
+  renderLembretes(); renderFaixaLembretes();
+}
 async function carregarLembretes(){
   const hoje = lemHojeISO();
   const em14 = dataLocalISO(new Date(Date.now() + 14*864e5));
@@ -3150,10 +3161,13 @@ async function carregarLembretes(){
     sb('loja_ausencias?ativa=eq.true&select=*&order=data_inicio.asc').catch(()=>[]),
     sb(`loja_lembretes_log?semana=eq.${lemSemanaChave()}&select=tipo,chave`).catch(()=>[])
   ]);
+  const fixos = await sb(`loja_lembretes_log?tipo=in.(aniversario,bh-ok)&semana=gte.${new Date().getFullYear() - 1}&select=tipo,chave,semana`).catch(()=>[]);
   const tel = {}; (colabs||[]).forEach(c => { tel[c.numero_pessoal] = c.telefone; tel['n:' + c.nome] = c.telefone; });
+  const bhOk = new Set((fixos||[]).filter(l => l.tipo === 'bh-ok').map(l => l.chave));
+  // só aparece a partir do dia marcado para gozar (ou se não tem data / tem horas a compensar); some quando se dá OK
   const bh = (colabs||[]).filter(c => Number(c.bh_positivo) >= LEM_BH_MIN || Number(c.bh_negativo) < 0).map(c => ({
-    ...c, atrasado: c.data_prevista_gozar_horas && c.data_prevista_gozar_horas < hoje, semData: Number(c.bh_positivo) >= LEM_BH_MIN && !c.data_prevista_gozar_horas
-  })).sort((a,b) => (Number(b.bh_positivo)||0) - (Number(a.bh_positivo)||0));
+    ...c, chaveOk: lemChaveBH(c), atrasado: c.data_prevista_gozar_horas && c.data_prevista_gozar_horas < hoje, hoje: c.data_prevista_gozar_horas === hoje, semData: Number(c.bh_positivo) >= LEM_BH_MIN && !c.data_prevista_gozar_horas
+  })).filter(c => !bhOk.has(c.chaveOk) && (Number(c.bh_negativo) < 0 || !c.data_prevista_gozar_horas || c.data_prevista_gozar_horas <= hoje)).sort((a,b) => (Number(b.bh_positivo)||0) - (Number(a.bh_positivo)||0));
   const CAMPOS_COMPL = {codigo_conduta:'Código de Conduta', data_privacy:'Data Privacy', politica_anticorrupcao:'Política Anticorrupção', seguranca_protecao:'Segurança e Proteção'};
   const formacao = [];
   (compliance||[]).forEach(r => Object.entries(CAMPOS_COMPL).forEach(([k, nome]) => { const v = String(r[k]||'').trim(); if(v && !/^formad/i.test(v)) formacao.push({numero: r.numero_pessoal, nome: r.nome, curso: nome, estado: v, data: null}); }));
@@ -3167,7 +3181,7 @@ async function carregarLembretes(){
     let d = new Date(hojeD.getFullYear(), c.mes_aniversario - 1, c.dia_aniversario, 12);
     if(d < hojeD && !(d.getDate() === hojeD.getDate() && d.getMonth() === hojeD.getMonth())) d = new Date(hojeD.getFullYear() + 1, c.mes_aniversario - 1, c.dia_aniversario, 12);
     return {...c, faltam: Math.round((d - hojeD) / 864e5), dataAnos: d};
-  }).filter(c => c.faltam >= 0 && c.faltam <= 7).sort((a,b) => a.faltam - b.faltam);
+  }).filter(c => c.faltam >= 0 && c.faltam <= 7 && !lemAnosEnviado(fixos, c)).sort((a,b) => a.faltam - b.faltam);
   const semData = (colabs||[]).filter(c => !c.dia_aniversario || !c.mes_aniversario);
   lemDados = {bh, alteracoes: alteracoes||[], formacao, ausencias: ausencias||[], ausSemContacto, tel, colabs: colabs||[], enviados, anos, semDataAnos: semData};
   return lemDados;
@@ -3175,7 +3189,7 @@ async function carregarLembretes(){
 
 function lemContagem(d){
   d = d || lemDados; if(!d) return 0;
-  return d.anos.filter(a => a.faltam === 0 && !d.enviados.has('aniversario|' + a.numero_pessoal)).length + d.bh.filter(x => x.atrasado || x.semData || Number(x.bh_negativo) < 0).length + d.alteracoes.length + d.formacao.length + d.ausSemContacto.length
+  return d.anos.filter(a => a.faltam === 0).length + d.bh.length + d.alteracoes.length + d.formacao.length + d.ausSemContacto.length
     + (d.enviados.has('resumo-semanal|') ? 0 : 1) + (d.enviados.has('ata-semanal|') ? 0 : 1);
 }
 
@@ -3228,8 +3242,8 @@ async function renderLembretes(){
   // 4) banco de horas
   const bh = d.bh.map((c,i) => {
     const pos = Number(c.bh_positivo)||0, neg = Number(c.bh_negativo)||0;
-    const estado = neg < 0 ? `<b style="color:#9B1C14">${neg.toLocaleString('pt-PT')}h a compensar</b>` : c.atrasado ? `<b style="color:#9B1C14">data prevista ${lemFmtData(c.data_prevista_gozar_horas)} já passou</b>` : c.semData ? `<b style="color:#7A4A00">sem data marcada para gozar</b>` : `a gozar a ${lemFmtData(c.data_prevista_gozar_horas)}`;
-    return `<div class="card lem-item"><div><b>${rpEsc(c.nome)}</b><small>${pos ? pos.toLocaleString('pt-PT') + 'h de banco de horas · ' : ''}${estado}</small></div>${btnW(`lemMsgBH(${i})`,'Lembrar')}</div>`;
+    const estado = neg < 0 ? `<b style="color:#9B1C14">${neg.toLocaleString('pt-PT')}h a compensar</b>` : c.hoje ? `<b style="color:#1F7A33">hoje é o dia marcado para gozar</b>` : c.atrasado ? `<b style="color:#9B1C14">data prevista ${lemFmtData(c.data_prevista_gozar_horas)} já passou</b>` : c.semData ? `<b style="color:#7A4A00">sem data marcada para gozar</b>` : `a gozar a ${lemFmtData(c.data_prevista_gozar_horas)}`;
+    return `<div class="card lem-item"><div><b>${rpEsc(c.nome)}</b><small>${pos ? pos.toLocaleString('pt-PT') + 'h de banco de horas · ' : ''}${estado}</small></div><div class="lem-btns">${btnW(`lemMsgBH(${i})`,'Lembrar')}<button class="lem-x" style="background:#1F7A33;color:#fff;border-color:#1F7A33" onclick="lemBHok(${i})" title="Já gozou / resolvido">✓ OK</button></div></div>`;
   }).join('');
 
   // 5) formação
@@ -3242,11 +3256,11 @@ async function renderLembretes(){
     <div class="com-duo"><div><label class="com-lbl" for="anos-dia">Dia</label><input type="number" id="anos-dia" min="1" max="31"></div><div><label class="com-lbl" for="anos-mes">Mês</label><input type="number" id="anos-mes" min="1" max="12"></div></div>
     <button class="btn-primary" onclick="lemGuardarAnos()">Guardar</button></details>` : '';
   box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 12px;">Os botões abrem o WhatsApp com a mensagem já escrita — é só carregar em enviar. Semana ${numeroSemanaISO(new Date())}.</p>`
-    + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0 && !d.enviados.has('aniversario|' + a.numero_pessoal)).length, anosHtml, formAnos)
+    + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0).length, anosHtml, formAnos)
     + sec('📲','Envios da semana', ['resumo-semanal|','ata-semanal|','comunicacao-semanal|'].filter(k => !d.enviados.has(k)).length, semanal)
     + sec('💙','Baixas e ausências', d.ausSemContacto.length, aus, formAus)
     + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt)
-    + sec('🕐','Banco de horas', d.bh.filter(x => x.atrasado || x.semData || Number(x.bh_negativo) < 0).length, bh)
+    + sec('🕐','Banco de horas', d.bh.length, bh, `<p class="com-ajuda" style="margin:0 4px 8px;">Cada pessoa só aparece a partir do dia marcado para gozar. Depois de gozar, carregue em ✓ OK e sai da lista.</p>`)
     + sec('🎓','Formação pendente', d.formacao.length, form);
 }
 
@@ -3298,7 +3312,7 @@ function lemMsgAnos(numero){
     ? `Parabéns, ${n}! 🎂🎉 Muitas felicidades neste dia especial. Que este novo ano te traga muita saúde, alegria e tudo de bom. Um grande abraço de toda a equipa da loja!`
     : `Olá ${n} 😊 Sabemos que o teu aniversário está a chegar (${String(a.dia_aniversario).padStart(2,'0')}/${String(a.mes_aniversario).padStart(2,'0')}) — desde já, muitos parabéns de toda a equipa! 🎉`;
   lemWhats(a.telefone, txt);
-  lemRegistar('aniversario', numero); setTimeout(() => { renderLembretes(); renderFaixaLembretes(); }, 800);
+  lemRegistar('aniversario', `${numero}:${a.dataAnos.getFullYear()}`); setTimeout(() => { renderLembretes(); renderFaixaLembretes(); }, 800);
 }
 async function lemGuardarAnos(){
   const num = document.getElementById('anos-colab').value, dia = Number(document.getElementById('anos-dia').value), mes = Number(document.getElementById('anos-mes').value);
