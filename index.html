@@ -476,6 +476,7 @@
   .rp-svg .rp-eixo{font-size:11px;fill:#6B746E;}
   .rp-svg rect.rp-s-ant{fill:#C77F12;} .rp-svg rect.rp-s-atual{fill:#1F7A33;}
   .rp-svg .rp-budget{stroke:#141A16;stroke-width:2;}
+  .rp-svg rect.rp-p-aa{fill:#1F7A33;} .rp-svg rect.rp-p-aa.neg{fill:#B4231A;} .rp-svg rect.rp-p-bdg{fill:#8FA3B8;} .rp-dot.rp-p-aa{background:#1F7A33;} .rp-dot.rp-p-bdg{background:#8FA3B8;} .rp-svg .rp-zero{stroke:#141A16;stroke-width:1.2;} .rp-svg .rp-val{font-size:11px;font-weight:700;fill:#141A16;}
   .rp-svg .rp-linha{fill:none;stroke-width:2;} .rp-svg .rp-linha.rp-s-ant{stroke:#C77F12;} .rp-svg .rp-linha.rp-s-atual{stroke:#1F7A33;}
   .rp-svg .rp-ponto{stroke:#fff;stroke-width:2;} .rp-svg .rp-ponto.rp-s-ant{fill:#C77F12;} .rp-svg .rp-ponto.rp-s-atual{fill:#1F7A33;}
   .rp-svg rect:hover,.rp-svg .rp-ponto:hover{opacity:.8;}
@@ -705,10 +706,14 @@
           <a class="rp-nav-btn rp-nav-destaque" href="https://claude.ai/artifact/KNdgCvKFW7GUXJM4sE4N1G" target="_blank" rel="noopener"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>resultados, KPIs e pontos importantes</small></span></a>
         </div>
         <div id="rp-aud-lista" class="rp-pills" style="display:none">
+          <button class="h3s-pill" onclick="selectMenu('area:relatorios','Relatórios das auditorias')">📄 Todos os relatórios</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:HACCP','Auditoria HACCP')">🧪 HACCP</button>
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:SHT','Auditoria SHT')">🦺 SHT</button>
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:RH','Auditoria RH')">👤 RH</button>
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:Ambiental','Auditoria Ambiente')">🌱 Ambiente</button>
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:Controlo','Auditoria Controlo Operacional')">🎯 Controlo Operacional</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Distrito','Auditoria Distrito')">🗺️ Distrito</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Marketing','Auditoria Marketing')">📢 Marketing</button>
         </div>
         <div class="hidden" aria-hidden="true">
         <div id="h3s-areas">
@@ -1602,6 +1607,7 @@ async function sb(path, options={}){
     throw new Error('Modo demo: escrita bloqueada');
   }
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    cache: 'no-store',
     ...options,
     headers: {
       "apikey": SUPABASE_KEY,
@@ -1628,7 +1634,7 @@ async function loadStoreData(){
     sb("loja_auditorias?select=*&order=id.asc"),
     sb("loja_resumo?id=eq.1&select=*")
   ]);
-  const k = kpisRows[0];
+  const k = (kpisRows && kpisRows[0]) || {};
   const r = resumoRows && resumoRows[0] ? resumoRows[0] : null;
   const absentismoAno = r && r.absentismo_ano !== null
     ? (Number(r.absentismo_ano) * 100).toFixed(1) + '% (ano)'
@@ -2021,6 +2027,33 @@ function rpGraficoVendas(meses){
   return `<svg viewBox="0 0 ${W} ${H}" class="rp-svg" role="img" aria-label="Vendas mês a mês, ano anterior e ano atual">${g}</svg>`;
 }
 
+// Vendas: variação em % por mês (vs ano anterior e vs budget); o mês em curso vem do "Mês em curso"
+function rpGraficoVendasPct(meses, r){
+  const W = 640, H = 240, L = 46, B = 26, T = 18;
+  const dados = meses.filter(m => (m.v||0) > 0 && ((m.v_ant||0) > 0 || (m.budget||0) > 0)).map(m => ({mes: m.mes, aa: m.v_ant > 0 ? m.v/m.v_ant - 1 : null, bdg: m.budget > 0 ? m.v/m.budget - 1 : null}));
+  const mc = (r && r.mes_curso) || [];
+  const vAA = mc.find(x => x.ind === 'Vendas vs ano passado'), vB = mc.find(x => x.ind === 'Vendas vs budget');
+  if(r && r.mes && !dados.some(d => d.mes === r.mes) && ((vAA && vAA.vari != null) || (vB && vB.vari != null))) dados.push({mes: r.mes, aa: vAA ? vAA.vari : null, bdg: vB ? vB.vari : null, curso: true});
+  if(!dados.length) return '';
+  const vals = dados.flatMap(d => [d.aa, d.bdg]).filter(v => v != null);
+  const hi = Math.max(0.05, Math.max(0, ...vals) * 1.3), lo = Math.min(0, Math.min(0, ...vals) * 1.15);
+  const passo = (W - L - 8) / dados.length;
+  const bw = Math.min(16, passo/3);
+  const y = v => T + (H - T - B) * (hi - v) / (hi - lo);
+  const pct = v => (v*100).toLocaleString('pt-PT', {maximumFractionDigits:1}) + '%';
+  let g = '';
+  [lo, lo/2, 0, hi].filter((v,i,a) => a.indexOf(v) === i).forEach(v => { g += `<line x1="${L}" x2="${W-4}" y1="${y(v)}" y2="${y(v)}" class="${v === 0 ? 'rp-zero' : 'rp-grid'}"></line><text x="${L-6}" y="${y(v)+4}" text-anchor="end" class="rp-eixo">${Math.round(v*100)}%</text>`; });
+  dados.forEach((d, i) => {
+    const cx = L + passo*i + passo/2;
+    const bar = (v, x, cls, rot) => { if(v == null) return ''; const y0 = y(0), yv = y(v); return `<rect x="${x}" y="${Math.min(y0,yv)}" width="${bw}" height="${Math.max(1, Math.abs(yv-y0))}" rx="3" class="${cls}${v < 0 && cls === 'rp-p-aa' ? ' neg' : ''}"><title>${d.mes}${d.curso ? ' (até agora)' : ''} · ${rot}: ${v > 0 ? '+' : ''}${pct(v)}</title></rect>`; };
+    g += bar(d.aa, cx - bw - 1, 'rp-p-aa', 'vs ano anterior');
+    g += bar(d.bdg, cx + 1, 'rp-p-bdg', 'vs budget');
+    if(d.aa != null) g += `<text x="${cx - bw/2 - 1}" y="${d.aa >= 0 ? y(d.aa) - 4 : y(d.aa) + 12}" text-anchor="middle" class="rp-val">${d.aa > 0 ? '+' : ''}${Math.round(d.aa*100)}%</text>`;
+    g += `<text x="${cx}" y="${H-8}" text-anchor="middle" class="rp-eixo">${RP_MESES_CURTOS[d.mes]||d.mes}${d.curso ? '*' : ''}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" class="rp-svg" role="img" aria-label="Variação das vendas em percentagem, mês a mês">${g}</svg>`;
+}
+
 function rpGraficoQuebra(meses){
   const W = 640, H = 200, L = 46, B = 26, T = 14;
   const vals = meses.flatMap(m => [m.qp_ant, m.qp]).filter(v => v > 0);
@@ -2135,7 +2168,8 @@ function renderPainelResumo(){
   if((r.meses||[]).length){
     h += `<div class="rp-bloco-tit">Vendas e quebra mês a mês</div>
     <div class="rp-graficos">
-      <div class="h3s-card"><div class="rp-graf-tit">Vendas mês a mês</div>${legenda}<span><i class="rp-tick"></i>Budget</span></div>${rpGraficoVendas(r.meses)}</div>
+      <div class="h3s-card"><div class="rp-graf-tit">Vendas mês a mês (€)</div>${legenda}<span><i class="rp-tick"></i>Budget</span></div>${rpGraficoVendas(r.meses)}</div>
+      <div class="h3s-card"><div class="rp-graf-tit">Vendas mês a mês (variação em %)</div><div class="rp-legenda"><span><i class="rp-dot rp-p-aa"></i>vs ${anoP} (vermelho = abaixo)</span><span><i class="rp-dot rp-p-bdg"></i>vs budget</span></div>${rpGraficoVendasPct(r.meses, r)}<div class="rp-mini-sub">* mês em curso, até ${r.dados_ate ? impDDMM(r.dados_ate) : 'à data do relatório'}</div></div>
       <div class="h3s-card"><div class="rp-graf-tit">Quebra em % das vendas</div>${legenda}</div>${rpGraficoQuebra(r.meses)}</div>
     </div>
     <details class="h3s-card rp-det"><summary>Ver tabela mês a mês</summary><div class="rp-tabela-box"><table class="rp-tab"><thead><tr><th>Mês</th><th>Vendas ${anoP}</th><th>Budget</th><th>Vendas ${anoA}</th><th>vs budget</th><th>vs ${anoP}</th><th>Quebra % ${anoP}</th><th>Quebra % ${anoA}</th></tr></thead><tbody>`;
@@ -2644,7 +2678,7 @@ async function importarFicheirosDia(input){
     mostrar(false);
   }
   mostrar(true);
-  if(lidos.some(x => x.l.ok && x.tipo !== 'resumo')){ try{ storeData = await loadStoreData(); renderHome3S(); }catch(e){} }
+  if(lidos.some(x => x.l.ok)){ await atualizarTudo(false); const box = document.getElementById('rp-import-res'); if(box && !box.innerHTML){ box.innerHTML = impResHTML; box.style.display = 'block'; } }
 }
 
 
@@ -2981,7 +3015,7 @@ async function comDesenharHistorico(p){
 
 
 // ===================== ÁREAS: VALIDADES, NOTAS DE CRÉDITO, VENDA SUGESTIVA =====================
-const AREA_TITULOS = {validades:'Gestão de Validades', notas:'Notas de Crédito', vendasugestiva:'Venda Sugestiva'};
+const AREA_TITULOS = {validades:'Gestão de Validades', notas:'Notas de Crédito', vendasugestiva:'Venda Sugestiva', relatorios:'Relatórios das auditorias'};
 let areaAtual = null;
 async function renderArea(qual){
   areaAtual = qual;
@@ -2991,8 +3025,18 @@ async function renderArea(qual){
   try{
     if(qual === 'validades') box.innerHTML = await areaValidadesHtml();
     else if(qual === 'notas') box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 10px;">As notas chegam ao carregar o relatório "Notas de Crédito" nos ficheiros do dia. Valide cada uma aqui.</p><div class="card">${await blocoNotasCredito('area', true)}</div>`;
+    else if(qual === 'relatorios') box.innerHTML = await areaRelatoriosHtml();
     else if(qual === 'vendasugestiva') box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 10px;">Atualiza ao carregar o relatório "Venda Sugestiva" nos ficheiros do dia.</p>` + await blocoVendaSugestiva();
   }catch(e){ box.innerHTML = `<div class="card" style="color:var(--red);font-size:13px;">Não consegui carregar os dados.</div>`; }
+}
+async function areaRelatoriosHtml(){
+  const auds = await sb('loja_auditorias?select=nome,percentagem&order=id.asc').catch(()=>[]);
+  const rels = await sb('loja_auditoria_relatorios?select=auditoria,id&order=criado_em.desc').catch(()=>[]);
+  const nomes = {Ambiental:'Ambiente', Controlo:'Controlo Operacional'};
+  let h = `<p class="com-ajuda" style="margin:0 4px 10px;">Escolha a auditoria para ver ou carregar os relatórios (PDF ou foto).</p><div class="card">`;
+  (auds||[]).forEach(a => { const n = (rels||[]).filter(r => r.auditoria === a.nome).length; const nj = String(a.nome).replace(/'/g,"\\'");
+    h += `<div class="rel-linha"><span class="rel-ic">📄</span><div class="rel-info"><b>${rpEsc(nomes[a.nome] || a.nome)}</b><small>${n ? n + (n === 1 ? ' relatório' : ' relatórios') : 'sem relatórios ainda'}${a.percentagem != null ? ' · nota ' + a.percentagem + '%' : ''}</small></div><button class="lem-w" style="background:#1F7A33" onclick="selectMenu('auditoria:${nj}','Auditoria ${rpEsc(nomes[a.nome] || a.nome)}')">Abrir</button></div>`; });
+  return h + `</div>`;
 }
 async function areaValidadesHtml(){
   const [exec, tratar, rotina] = await Promise.all([
@@ -3363,8 +3407,9 @@ function renderHome3S(){
   if(senha) senha.classList.toggle('hidden', !(currentUser && currentUser.role === 'gestora'));
 }
 
+let currentLabel = 'Dashboard';
 function selectMenu(id, label){
-  currentScreen = id;
+  currentScreen = id; currentLabel = label || currentLabel;
   setTimeout(aplicarDatasAuto, 0);
   document.body.classList.toggle('modo-home', id === 'dashboard' || id.startsWith('dash:'));
   document.body.classList.toggle('so-resumo', id === 'dashboard');
@@ -4956,6 +5001,17 @@ function aplicarDatasAuto(){
   document.querySelectorAll('[data-auto]').forEach(el => { const v = valores[el.dataset.auto]; if(v !== undefined && el.textContent !== String(v)) el.textContent = v; });
   const hw = document.getElementById('header-week'); if(hw) hw.textContent = d.semanaLabel;
 }
+// Volta a ler os dados e redesenha o ecrã aberto (depois de carregar ficheiros, ou ao voltar à app)
+let _ultimaAtualizacao = Date.now();
+async function atualizarTudo(redesenharEcra){
+  _ultimaAtualizacao = Date.now();
+  try{ await carregarResumoPainel(); }catch(e){}
+  try{ storeData = await loadStoreData(); }catch(e){}
+  resumoReuniaoCache = null;
+  if(!currentUser) return;
+  if(currentScreen === 'dashboard'){ try{ renderHome3S(); renderDatasDados && renderDatasDados(); renderFaixaLembretes && renderFaixaLembretes(); }catch(e){} }
+  else if(redesenharEcra){ const y = window.scrollY; try{ selectMenu(currentScreen, currentLabel); setTimeout(()=>window.scrollTo(0,y), 400); }catch(e){} }
+}
 // Vigia: se a app ficar aberta e mudar o dia (ou a semana, ou o mês), volta a desenhar tudo com as datas novas
 let _diaVisto = new Date().toDateString();
 setInterval(() => {
@@ -4966,7 +5022,12 @@ setInterval(() => {
   if(typeof comMes !== 'undefined') comMes = null;
   if(currentUser && typeof currentScreen !== 'undefined'){ try{ selectMenu(currentScreen, document.title); }catch(e){} }
 }, 60000);
-document.addEventListener('visibilitychange', () => { if(!document.hidden){ aplicarDatasAuto(); } });
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden) return;
+  aplicarDatasAuto();
+  const editar = document.querySelector('.edit-form:not(.hidden) textarea:focus, .edit-form:not(.hidden) input:focus');
+  if(currentUser && Date.now() - _ultimaAtualizacao > 120000 && !editar) atualizarTudo(['dashboard','reunioes-semanais','comunicacao','lembretes'].includes(currentScreen) || currentScreen.startsWith('area:'));
+});
 
 function mesAtualNome(){
   return ORDEM_MESES[new Date().getMonth()];
@@ -7611,7 +7672,7 @@ async function renderInfoNegocioHistorico(){
     html += `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda não há informação de negócio desta semana.</div></div>`;
   } else {
     const r = rows[0];
-    const desatualizada = r.semana && semAtual && String(r.semana).replace(/\D/g,'') !== String(numeroSemanaISO(new Date()));
+    const nSem = Number(String(r.semana||'').replace(/\D/g,'')); const desatualizada = nSem > 0 && nSem < numeroSemanaISO(new Date());
     html += `<div class="card" style="border-left:5px solid var(--teal);margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">
         <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(r.titulo || r.semana)}</span>
@@ -7642,7 +7703,7 @@ async function renderInfoNegocioHistorico(){
 function infoNegForm(id){
   const box = document.getElementById('info-neg-form'); if(!box) return;
   const r = id ? (infoNegRows.find(x=>x.id===id) || {}) : {};
-  const sem = r.semana || ('Semana ' + numeroSemanaISO(new Date()));
+  const sem = r.semana || ('Semana ' + (numeroSemanaISO(new Date()) + 1));
   const hoje = new Date(); const iso = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
   box.innerHTML = `<div class="card edit-form" style="margin-bottom:10px;">
     <label>Semana</label><input id="inf-semana" value="${infoEsc(sem)}">
@@ -7711,15 +7772,20 @@ async function renderAtaSemanal(){
 
 let resumoReuniaoCache = null;
 async function gerarResumoReuniao(){
+  try{ await carregarResumoPainel(); }catch(e){}
   const r = resumoPainel || RESUMO_PADRAO;
   const mc = {}; (r.mes_curso||[]).forEach(l => mc[l.ind] = l);
   const vb = mc['Vendas vs budget'] || {}, vaa = mc['Vendas vs ano passado'] || {}, qp = mc['Quebra em % das vendas'] || {};
   const cli = mc['Clientes (nº de tickets)'] || {}, tm = mc['Ticket médio (€)'] || {};
   const anoP = r.ano_ant || 'ano passado';
-  const secs = (r.secoes||[]).filter(s => s.bdg > 0);
-  const acima = secs.filter(s => s.vsb >= 0).map(s => `${s.sec} ${rpVarPct(s.vsb)}`);
-  const abaixo = [...secs].sort((a,b)=>a.vsb-b.vsb).slice(0,3).map(s => `${s.sec} ${rpVarPct(s.vsb)}`);
-  const difQ = secs.filter(s => s.qp != null && s.qp_aa != null && s.real > 1000 && s.qp >= 0).map(s => ({sec:s.sec, d:(s.qp - s.qp_aa)*100}));
+  const todas = (r.secoes||[]);
+  const comBdg = todas.filter(s => s.bdg > 0 && s.vsb != null);
+  const usaBdg = comBdg.length >= Math.min(5, todas.length);
+  const secs = usaBdg ? comBdg : todas.filter(s => s.vsaa != null && (s.real||0) > 1000);
+  const k = usaBdg ? 'vsb' : 'vsaa', refTxt = usaBdg ? 'budget' : anoP;
+  const acima = secs.filter(s => s[k] >= 0).sort((a,b)=>b[k]-a[k]).slice(0,5).map(s => `${s.sec} ${rpVarPct(s[k])}`);
+  const abaixo = [...secs].filter(s => s[k] < 0).sort((a,b)=>a[k]-b[k]).slice(0,3).map(s => `${s.sec} ${rpVarPct(s[k])}`);
+  const difQ = todas.filter(s => s.qp != null && s.qp_aa != null && s.real > 1000 && s.qp >= 0).map(s => ({sec:s.sec, d:(s.qp - s.qp_aa)*100}));
   const sobe = difQ.filter(x => x.d > 0.3).sort((a,b)=>b.d-a.d).slice(0,3).map(x => `${x.sec} ${rpVarPP(x.d)}`);
   const desce = difQ.filter(x => x.d < -0.3).sort((a,b)=>a.d-b.d).slice(0,3).map(x => `${x.sec} ${rpVarPP(x.d)}`);
   const auds = (r.auditorias||[]).filter(a => a.atual > 0);
@@ -7742,9 +7808,9 @@ async function gerarResumoReuniao(){
 
   const v = {
     vendas: `Vendas do mês: ${rpEur(vb.atual)} — ${rpVarPct(vb.vari)} vs budget e ${rpVarPct(vaa.vari)} vs ${anoP}.\n`
-      + `Clientes: ${rpNum(cli.atual)} (${rpVarPct(cli.vari)}) · Ticket médio: ${tm.atual != null ? Number(tm.atual).toLocaleString('pt-PT',{minimumFractionDigits:2}) + ' €' : '–'} (${rpVarPct(tm.vari)}).`
-      + (acima.length ? `\nAcima do budget: ${acima.join(', ')}.` : '')
-      + (abaixo.length ? `\nMais abaixo do budget: ${abaixo.join(', ')}.` : '')
+      + `Clientes: ${rpNum(cli.atual)} (${rpVarPct(cli.vari)}) · Ticket médio: ${tm.atual != null ? Number(tm.atual).toLocaleString('pt-PT',{minimumFractionDigits:2}) + ' €' : '–'} (${rpVarPct(tm.vari)})${/dados até (\d\d\/\d\d)/.test(cli.nota||'') ? ' — até ' + (cli.nota||'').match(/dados até (\d\d\/\d\d)/)[1] : ''}.`
+      + (acima.length ? `\nAcima ${usaBdg ? 'do budget' : 'de ' + anoP}: ${acima.join(', ')}.` : '')
+      + (abaixo.length ? `\nMais abaixo ${usaBdg ? 'do budget' : 'de ' + anoP}: ${abaixo.join(', ')}.` : '')
       + (cats.length ? `\nCategorias a perder vendas vs ${anoP}: ${cats.map(c => `${impTitulo ? impTitulo(c.categoria) : c.categoria} (${impTitulo ? impTitulo(c.divisao) : c.divisao}) ${Number(c.delta_pct).toLocaleString('pt-PT',{maximumFractionDigits:0})}%`).join(', ')}.` : ''),
     quebras: `Quebra: ${rpPct(qp.atual,2)} das vendas (${anoP}: ${rpPct(qp.comp,2)}; ${rpVarPP(qp.vari)}).`
       + (sobe.length ? `\nQuebra a subir: ${sobe.join(', ')}.` : '')
@@ -7755,7 +7821,7 @@ async function gerarResumoReuniao(){
     pontos: []
   };
   // pontos a discutir, escritos a partir dos números
-  if(vb.vari < 0) v.pontos.push(`Vendas ${rpPct(Math.abs(vb.vari),1)} abaixo do budget${abaixo.length ? ' — começar por ' + abaixo[0].replace(/ [+−].*$/,'') : ''}.`);
+  if(vb.vari < 0) v.pontos.push(`Vendas ${rpPct(Math.abs(vb.vari),1)} abaixo do budget${abaixo.length ? ' — começar por ' + abaixo[0].replace(/ [+−].*$/,'') + (usaBdg ? '' : ' (a mais abaixo de ' + anoP + ')') : ''}.`);
   if(cli.vari < -0.03 && tm.vari > 0) v.pontos.push(`Menos clientes (${rpVarPct(cli.vari)}) mas ticket médio a subir (${rpVarPct(tm.vari)}): como trazer mais clientes à loja?`);
   if(qp.vari > 0) v.pontos.push(`Quebra acima de ${anoP} (${rpVarPP(qp.vari)})${sobe.length ? ': ' + sobe.slice(0,2).join(' e ') : ''}.`);
   if(mkd.length) v.pontos.push(`Markdown: ${mkd.map(m => impTitulo(m.divisao)).join(' e ')} com muito markdown não realizado — marcar mais cedo.`);
@@ -7784,7 +7850,7 @@ async function renderResumoReuniao(){
 }
 
 async function preencherAtaComNumeros(forcar){
-  const v = resumoReuniaoCache || await gerarResumoReuniao();
+  const v = (forcar ? null : resumoReuniaoCache) || await gerarResumoReuniao();
   const put = (id, txt) => { const el = document.getElementById(id); if(!el || !txt) return; if(!el.value.trim() || forcar) el.value = txt; };
   put('ata-edit-vendas', v.vendas);
   put('ata-edit-quebras', v.quebras);
