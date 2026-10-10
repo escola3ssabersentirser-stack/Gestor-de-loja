@@ -1157,6 +1157,9 @@
           <div class="msg" id="comm-mensagem">—</div>
         </div>
 
+        <div class="section-title">📰 Informação de Negócio</div>
+        <div id="info-negocio-historico-wrap"></div>
+
         <div class="card">
           <div class="comm-item">
             <div class="comm-icon">🎓</div>
@@ -1191,8 +1194,6 @@
         <div class="section-title reuniao-parte">🗓️ Reuniões e Formações Agendadas — Esta Semana</div>
         <div id="reunioes-formacoes-semana-wrap" class="reuniao-parte"></div>
 
-        <div class="section-title">📰 Informação de Negócio — Histórico</div>
-        <div id="info-negocio-historico-wrap"></div>
       </div>
 
       <!-- VISTA DE EDIÇÃO DA ATA (só Gestora) -->
@@ -3242,8 +3243,9 @@ async function lemEnviarAta(){
 async function lemEnviarComunicacao(){
   const rows = await sb('loja_comunicacao?select=*&order=id.desc&limit=1'); const c = rows && rows[0];
   if(!c){ alert('Ainda não há comunicação semanal guardada.'); return; }
+  let inf = null; try { const ir = await sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1'); inf = ir && ir[0]; } catch(e){}
   const parte = (t, v) => v && String(v).trim() ? `\n\n*${t}*\n${String(v).trim()}` : '';
-  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${c.periodo || c.semana || semanaAtualLabel()}` + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes));
+  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${c.periodo || c.semana || semanaAtualLabel()}` + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes) + parte('Informação de negócio' + (inf && inf.semana ? ' — ' + inf.semana : ''), inf && inf.resumo));
   await lemRegistar('comunicacao-semanal'); setTimeout(renderLembretes, 800);
 }
 
@@ -7552,26 +7554,77 @@ function gerarDocumentoEEmail(titulo, secoes, assinaturaNome){
 
 let ataAtual = null;
 
+function infoEsc(t){ return String(t==null?'':t).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+let infoNegRows = [];
 async function renderInfoNegocioHistorico(){
   const wrap = document.getElementById('info-negocio-historico-wrap');
   if(!wrap) return;
-  const rows = await sb('loja_informacao_negocio_historico?select=*&order=data_documento.desc&limit=20');
-  if(!rows.length){
-    wrap.innerHTML = `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Sem registos ainda.</div></div>`;
-    return;
-  }
+  let rows = [];
+  try { rows = await sb('loja_informacao_negocio_historico?select=*&order=data_documento.desc.nullslast,id.desc&limit=20') || []; } catch(e){ rows = []; }
+  infoNegRows = rows;
+  const gestora = currentUser && currentUser.role === 'gestora';
+  const semAtual = true;
+  const fmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-PT') : '';
   let html = '';
-  rows.forEach((r,i)=>{
-    const dataTxt = r.data_documento ? new Date(r.data_documento+'T00:00:00').toLocaleDateString('pt-PT') : '';
-    html += `<div class="card" style="margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-        <span style="font-size:13px;font-weight:700;color:var(--navy);">${r.semana || r.titulo}</span>
-        <span style="font-size:11px;color:var(--ink-soft);">${dataTxt}</span>
+  if(!rows.length){
+    html += `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda não há informação de negócio desta semana.</div></div>`;
+  } else {
+    const r = rows[0];
+    const desatualizada = r.semana && semAtual && String(r.semana).replace(/\D/g,'') !== String(numeroSemanaISO(new Date()));
+    html += `<div class="card" style="border-left:5px solid var(--teal);margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">
+        <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(r.titulo || r.semana)}</span>
+        <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${fmt(r.data_documento)}</span>
       </div>
-      <div style="font-size:12.5px;color:var(--ink);white-space:pre-line;line-height:1.5;">${r.resumo}</div>
+      ${desatualizada ? `<div style="font-size:11.5px;color:#B4231A;margin-bottom:6px;">⚠️ Esta é a informação da ${infoEsc(r.semana)}. A da semana atual ainda não foi colocada.</div>` : ''}
+      <div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(r.resumo)}</div>
+      ${gestora ? `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn-primary" style="margin-top:0;flex:1;padding:8px;font-size:12.5px;" onclick="infoNegForm(${r.id})">✏️ Editar</button></div>` : ''}
     </div>`;
-  });
+    if(rows.length > 1){
+      html += `<details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);padding:6px 2px;">Semanas anteriores (${rows.length-1})</summary>`;
+      rows.slice(1).forEach(o=>{
+        html += `<div class="card" style="margin:8px 0;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+            <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(o.semana || o.titulo)}</span>
+            <span style="font-size:11px;color:var(--ink-soft);">${fmt(o.data_documento)}</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(o.resumo)}</div>
+        </div>`;
+      });
+      html += `</details>`;
+    }
+  }
+  if(gestora) html += `<div id="info-neg-form"></div><button class="btn-primary" style="margin:0 0 16px;" onclick="infoNegForm()">➕ Nova informação de negócio</button>`;
   wrap.innerHTML = html;
+}
+
+function infoNegForm(id){
+  const box = document.getElementById('info-neg-form'); if(!box) return;
+  const r = id ? (infoNegRows.find(x=>x.id===id) || {}) : {};
+  const sem = r.semana || ('Semana ' + numeroSemanaISO(new Date()));
+  const hoje = new Date(); const iso = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  box.innerHTML = `<div class="card edit-form" style="margin-bottom:10px;">
+    <label>Semana</label><input id="inf-semana" value="${infoEsc(sem)}">
+    <label>Data do documento</label><input id="inf-data" type="date" value="${r.data_documento || iso}">
+    <label>Título</label><input id="inf-titulo" value="${infoEsc(r.titulo || ('Informação de Negócio ' + sem))}">
+    <label>Informação (campanhas, avisos, novidades…)</label><textarea id="inf-resumo" rows="9">${infoEsc(r.resumo || '')}</textarea>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-primary" style="flex:1;" onclick="infoNegGuardar(${id||0})">💾 Guardar</button>
+      <button class="btn-primary" style="flex:1;background:#8A938D;" onclick="document.getElementById('info-neg-form').innerHTML=''">Cancelar</button>
+    </div>
+  </div>`;
+  box.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+async function infoNegGuardar(id){
+  const v = k => document.getElementById(k).value.trim();
+  const dados = { semana: v('inf-semana'), data_documento: v('inf-data') || null, titulo: v('inf-titulo'), resumo: v('inf-resumo') };
+  if(!dados.resumo){ alert('Escreva a informação de negócio.'); return; }
+  try {
+    if(id) await sb('loja_informacao_negocio_historico?id=eq.'+id, { method:'PATCH', body: JSON.stringify(dados) });
+    else await sb('loja_informacao_negocio_historico', { method:'POST', body: JSON.stringify(dados) });
+  } catch(e){ alert('Não foi possível guardar: ' + e.message); return; }
+  renderInfoNegocioHistorico();
 }
 
 async function renderAtaSemanal(){
