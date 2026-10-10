@@ -2207,8 +2207,8 @@ function renderPainelResumo(){
   // ---- Score e auditorias
   const sc = (r.score||[]).filter(s => s.score != null);
   if(sc.length || (r.auditorias||[]).length){
-    h += `<div class="rp-bloco-tit">Score de loja e auditorias</div><div class="rp-graficos">`;
-    h += `<div class="h3s-card"><div class="rp-graf-tit">Score de loja (média das semanas)${r.score_media != null ? ' · média do ano ' + Number(r.score_media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="rp-score">`;
+    h += `<div class="rp-bloco-tit">Melhoria contínua: score e auditorias</div><div class="rp-graficos">`;
+    h += `<div class="h3s-card"><div class="rp-graf-tit">Score de Melhoria Contínua (média das semanas)${r.score_media != null ? ' · média do ano ' + Number(r.score_media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="rp-score">`;
     sc.forEach(s => {
       const v = Number(s.score);
       h += `<div class="rp-score-linha"><span class="rp-score-mes">${RP_MESES_CURTOS[s.mes]||s.mes}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT',{maximumFractionDigits:1})}%</span></div>`;
@@ -3217,8 +3217,7 @@ async function areaValidadesHtml(){
     sb(`loja_rotina_validades?data=eq.${dataLocalISO(new Date())}&select=*`).catch(()=>[])
   ]);
   const ref = (exec||[]).find(x => x.data_referencia) ;
-  let h = await blocoScoreValidades();
-  h += `<div class="rp-bloco-tit" style="margin-top:4px;">Taxa de execução da rotina de validades${ref ? ' · ' + rpEsc(ref.data_referencia) : ''}</div><div class="card">`;
+  let h = `<div class="rp-bloco-tit" style="margin-top:4px;">Taxa de execução da rotina de validades${ref ? ' · ' + rpEsc(ref.data_referencia) : ''}</div><div class="card">`;
   h += (exec||[]).length ? (exec||[]).map(x => { const v = Number(x.tx_execucao_pct); const cls = v >= 98 ? 'bom' : v >= 95 ? 'neutro' : 'mau';
     return `<div class="rp-score-linha" style="grid-template-columns:150px 1fr 60px;margin:6px 0;"><span class="rp-score-mes">${rpEsc(x.divisao)}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%;background:${cls==='mau'?'#B4231A':cls==='neutro'?'#C77F12':'#1F7A33'}"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT')}%</span></div>`; }).join('')
     : `<div style="font-size:13px;color:var(--ink-soft);">Sem dados de execução.</div>`;
@@ -11916,9 +11915,21 @@ async function renderMelhoriaContinua(){
 
   const editavel = currentUser && currentUser.role === 'gestora';
   let html = `<div class="vs-detail-grid" style="margin-bottom:16px;">
-    <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score da Loja${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
+    <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score de Melhoria Contínua${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
   </div>`;
+  // score de melhoria contínua mês a mês (do Resumo da loja)
+  try{
+    await carregarResumoPainel();
+    const sc = ((resumoPainel && resumoPainel.score) || []).filter(x => x.score != null);
+    if(sc.length){
+      const media = resumoPainel.score_media;
+      html += `<div class="section-title">📈 Score de Melhoria Contínua — mês a mês${media != null ? ' · média do ano ' + Number(media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="card"><div class="rp-score">`;
+      sc.forEach((x, i) => { const v = Number(x.score); const ant = i ? Number(sc[i-1].score) : null;
+        html += `<div class="rp-score-linha"><span class="rp-score-mes">${RP_MESES_CURTOS[x.mes]||x.mes}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%;background:${v >= 85 ? '#1F7A33' : v >= 75 ? '#C77F12' : '#B4231A'}"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT',{maximumFractionDigits:1})}%${ant != null ? (v >= ant ? ' <span style="color:#1F7A33">▲</span>' : ' <span style="color:#B4231A">▼</span>') : ''}</span></div>`; });
+      html += `</div><div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Média das semanas de cada mês. O score da rotina de validades está no cartão Quebras.</div></div>`;
+    }
+  }catch(e){}
 
   const porDiaListas = {};
   listas7dias.forEach(l=>{
@@ -12268,6 +12279,7 @@ async function renderControloQuebra(){
 
   let html = '';
 
+  html += await blocoScoreValidades();
   html += await blocoAlertasQuebraArtigo(null);
 
   const secoesComQuebra = vendasSecoes.filter(v=>v.quebras_mes !== null).sort((a,b)=>Number(b.quebras_mes)-Number(a.quebras_mes));
