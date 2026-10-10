@@ -1220,6 +1220,8 @@
           <label>Semana (ex: 8 a 14 de setembro)</label>
           <input type="text" id="ata-edit-semana">
           <button type="button" class="btn-primary" style="background:#1F7A33;margin:6px 0 14px;" onclick="preencherAtaComNumeros(true)">🔄 Atualizar com os números de hoje</button>
+          <label>Informação de negócio</label>
+          <textarea id="ata-edit-foco" placeholder="Campanhas, avisos e novidades da semana..."></textarea>
           <label>Vendas</label>
           <textarea id="ata-edit-vendas" placeholder="Resultado de vendas da semana..."></textarea>
           <label>Quebras</label>
@@ -3388,6 +3390,7 @@ async function renderFaixaLembretes(){
     const segunda = new Date().getDay() === 1;
     const anosHoje = d.anos.filter(a => a.faltam === 0);
     box.innerHTML = n ? `<button class="rp-lem" onclick="selectMenu('lembretes','Lembretes')">🔔 <b>${n} lembrete${n>1?'s':''}</b> <span>${[
+      [1,4].includes(new Date().getDay()) ? '🗓️ hoje há reunião semanal (ata já preenchida)' : '',
       anosHoje.length ? '🎂 hoje faz anos: ' + anosHoje.map(a => lemPrimeiroNome(a.nome)).join(', ') : '',
       d.alteracoes.length ? d.alteracoes.length + ' horários por assinar' : '',
       d.formacao.length ? d.formacao.length + ' formações pendentes' : '',
@@ -3519,7 +3522,7 @@ async function lemTextoAta(){
   const rows = await sb('loja_ata_semanal?select=*&order=id.desc&limit=1'); const a = rows && rows[0];
   if(!a) return null;
   const parte = (t, v) => v && v.trim() ? `\n\n*${t}*\n${v.trim()}` : '';
-  return `*Ata da reunião semanal — Loja Portuzelo*\n${a.semana || semanaAtualLabel()}` + parte('Vendas', a.vendas) + parte('Quebras', a.quebras) + parte('Vendas a potenciar', a.vendas_potenciar) + parte('Auditorias', a.auditorias) + parte('Custos', a.custos) + parte('Equipa', a.equipa);
+  return `*Ata da reunião semanal — Loja Portuzelo*\n${a.semana || semanaAtualLabel()}` + parte('Informação de negócio', a.foco ? (a.foco.length > 800 ? a.foco.slice(0,800) + '…' : a.foco) : '') + parte('Vendas', a.vendas) + parte('Quebras', a.quebras) + parte('Vendas a potenciar', a.vendas_potenciar) + parte('Auditorias', a.auditorias) + parte('Custos', a.custos) + parte('Equipa', a.equipa);
 }
 async function lemEnviarAta(){
   const t = await lemTextoAta(); if(!t){ alert('Ainda não há nenhuma ata guardada. Preencha-a em Reuniões Semanais.'); return; }
@@ -8219,24 +8222,108 @@ async function infoNegGuardar(id){
   renderInfoNegocioHistorico();
 }
 
+// ===== Reunião semanal: segundas e quintas, ata preenchida sozinha =====
+function proximaReuniao(base){
+  const d = new Date(base || new Date()); d.setHours(12,0,0,0);
+  while(d.getDay() !== 1 && d.getDay() !== 4) d.setDate(d.getDate() + 1);
+  return d;
+}
+function nomeReuniao(d){
+  const dia = d.getDay() === 1 ? 'Segunda' : 'Quinta';
+  return `Reunião de ${dia}, ${d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})} · Semana ${numeroSemanaISO(d)}`;
+}
+let ataPreview = null;
+async function gerarAtaAutomatica(dReun){
+  const segunda = dReun.getDay() === 1;
+  const iso = x => dataLocalISO(x); const f = x => x.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+  const pct = v => v == null || isNaN(v) ? '—' : (v >= 0 ? '+' : '−') + Math.abs(v*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%';
+  // período de vendas: segunda → semana passada (seg a dom); quinta → desde segunda até ontem
+  const ini = new Date(dReun), fim = new Date(dReun);
+  if(segunda){ ini.setDate(dReun.getDate() - 7); fim.setDate(dReun.getDate() - 1); } else { ini.setDate(dReun.getDate() - 3); fim.setDate(dReun.getDate() - 1); }
+  const [dias, cats, vs, ops, inf, lem] = await Promise.all([
+    sb(`loja_vendas_dia?data=gte.${iso(ini)}&data=lte.${iso(fim)}&select=data,vendas_real,vendas_budget&order=data.asc`).catch(()=>[]),
+    sb('loja_categorias_perda_vendas?select=categoria,divisao,delta_pct&order=delta_pct.asc&limit=8').catch(()=>[]),
+    sb('loja_venda_sugestiva?select=*&order=data_referencia.desc.nullslast,id.desc&limit=1').catch(()=>[]),
+    sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
+    sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1').catch(()=>[]),
+    carregarLembretes().catch(()=>null)
+  ]);
+  const r = await gerarResumoReuniao();
+  const comV = (dias||[]).filter(d => Number(d.vendas_real) > 0);
+  const real = comV.reduce((a,d) => a + Number(d.vendas_real), 0), bdg = comV.reduce((a,d) => a + (Number(d.vendas_budget)||0), 0);
+  const titulo = segunda ? `Semana passada (${f(ini)} a ${f(fim)})` : `Esta semana até ontem (${f(ini)} a ${f(fim)})`;
+  let vendas = comV.length ? `${titulo}: ${fmtEuro(real)} — ${pct(bdg ? real/bdg - 1 : null)} vs budget (${fmtEuro(bdg)}).` : `${titulo}: ainda sem vendas carregadas para estes dias.`;
+  // pior dia
+  if(comV.length > 1){ const pior = [...comV].filter(d => d.vendas_budget).sort((a,b) => (a.vendas_real/a.vendas_budget) - (b.vendas_real/b.vendas_budget))[0]; if(pior) vendas += `\nDia mais fraco: ${new Date(pior.data+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'long',day:'2-digit',month:'2-digit'})} (${pct(pior.vendas_real/pior.vendas_budget - 1)} vs budget).`; }
+  vendas += '\n' + (r.vendas || '');
+  // secções piores
+  const rp = resumoPainel || {}; const secs = (rp.secoes||[]).filter(s => (s.real||0) > 1000);
+  const k = secs.filter(s => s.vsb != null && s.bdg > 0).length >= 5 ? 'vsb' : 'vsaa';
+  const pioresSec = secs.filter(s => s[k] != null && s[k] < 0).sort((a,b) => a[k]-b[k]).slice(0,4);
+  if(pioresSec.length) vendas += `\nSecções piores (${k === 'vsb' ? 'vs budget' : 'vs ' + (rp.ano_ant || 'ano passado')}): ${pioresSec.map(s => s.sec + ' ' + pct(s[k])).join(', ')}.`;
+  const catsOk = (cats||[]).filter(c => !/natal|páscoa|pascoa|sazona/i.test(c.categoria)).slice(0,5);
+  if(catsOk.length) vendas = vendas.replace(/\nCategorias a perder vendas[^\n]*/,'') + `\nCategorias piores vs ${rp.ano_ant || 'ano passado'}: ${catsOk.map(c => `${impTitulo(String(c.categoria).replace(/_bc$/i,' balcão').replace(/_/g,' '))} (${impTitulo(c.divisao)}) ${Math.round(Number(c.delta_pct))}%`).join(', ')}.`;
+  // venda sugestiva
+  let pot = '';
+  const v = vs && vs[0];
+  if(v){
+    const pObj = v.objetivo ? v.vendas_un / v.objetivo : (v.vs_objetivo_pct != null ? 1 + Number(v.vs_objetivo_pct)/100 : null);
+    const art = v.artigo || v.semana;
+    const top = (ops||[]).filter(o => (o.artigo || '') === (v.artigo || '')).sort((a,b) => b.vendas_un - a.vendas_un).slice(0,3);
+    pot += `Venda sugestiva — ${art}: ${v.vendas_un} un${v.objetivo ? ' de ' + v.objetivo : ''}${pObj != null ? ' (' + Math.round(pObj*100) + '% do objetivo)' : ''}.`;
+    if(top.length) pot += `\nPódio: ${top.map((o,i) => ['🥇','🥈','🥉'][i] + ' ' + o.nome + ' ' + o.vendas_un + ' un').join(' · ')}.`;
+  }
+  if(catsOk.length) pot += `${pot ? '\n' : ''}Potenciar: ${catsOk.slice(0,3).map(c => impTitulo(String(c.categoria).replace(/_bc$/i,' balcão').replace(/_/g,' '))).join(', ')} — exposição, ruturas e venda sugestiva.`;
+  pot += `\nArtigo/secção: [ ]  ·  Objetivo: [ ]  ·  Responsável: [ ]`;
+  // equipa: formação e banco de horas
+  let equipa = '';
+  if(lem){
+    const form = lem.formacao || [];
+    if(form.length){ const pessoas = [...new Set(form.map(x => lemPrimeiroNome(x.nome)))]; equipa += `Formação pendente: ${form.length} (${pessoas.slice(0,8).join(', ')}${pessoas.length > 8 ? '…' : ''}).`; }
+    const bh = lem.bh || [];
+    if(bh.length) equipa += `${equipa ? '\n' : ''}Banco de horas: ${bh.slice(0,8).map(c => `${lemPrimeiroNome(c.nome)} ${Number(c.bh_negativo) < 0 ? Number(c.bh_negativo).toLocaleString('pt-PT') + 'h' : (Number(c.bh_positivo)||0).toLocaleString('pt-PT') + 'h'}`).join(', ')}${bh.length > 8 ? '…' : ''}.`;
+    const alt = lem.alteracoes || []; if(alt.length) equipa += `${equipa ? '\n' : ''}Alterações de horário por assinar: ${alt.length}.`;
+    const aus = lem.ausencias || []; if(aus.length) equipa += `${equipa ? '\n' : ''}Ausentes: ${aus.length}.`;
+  }
+  equipa += `${equipa ? '\n' : ''}Trocas de horário: \nConflitos / pontos a resolver: \nEnergia geral da equipa: `;
+  // informação de negócio
+  const i0 = inf && inf[0];
+  let foco = i0 ? `${i0.semana || 'Informação de negócio'}:\n${String(i0.resumo||'').slice(0, 900)}${String(i0.resumo||'').length > 900 ? '…' : ''}` : '';
+  return {semana: nomeReuniao(dReun), data_reuniao: iso(dReun), vendas, quebras: r.quebras || '', vendas_potenciar: pot, auditorias: r.auditorias || '', custos: '', equipa, foco, automatica: true};
+}
+
 async function renderAtaSemanal(){
   const wrap = document.getElementById('ata-semanal-wrap');
-  const rows = await sb('loja_ata_semanal?select=*&order=id.desc&limit=1');
+  const dReun = proximaReuniao(); const isoR = dataLocalISO(dReun);
+  const hojeReuniao = dataLocalISO(new Date()) === isoR;
+  const rows = await sb(`loja_ata_semanal?data_reuniao=eq.${isoR}&select=*&order=id.desc&limit=1`).catch(()=>[]);
   ataAtual = rows && rows.length ? rows[0] : null;
+  ataPreview = null;
+  if(!ataAtual){
+    try{
+      ataPreview = await gerarAtaAutomatica(dReun);
+      // no dia da reunião fica logo guardada (a gestora pode editar depois)
+      if(hojeReuniao && currentUser && currentUser.role === 'gestora'){
+        const g = await sb('loja_ata_semanal', {method:'POST', body: JSON.stringify({...ataPreview, criado_por: 'automático'})});
+        if(g && g[0]){ ataAtual = g[0]; ataPreview = null; }
+      }
+    }catch(e){ console.warn('ata automática', e); }
+  }
 
   let html = '';
   {
-    const ataAtualOuVazia = ataAtual || {};
+    const ataAtualOuVazia = ataAtual || ataPreview || {};
     const campos = [
+      ['📰 Informação de negócio', ataAtualOuVazia.foco],
       ['📈 Vendas', ataAtualOuVazia.vendas],
       ['📉 Quebras', ataAtualOuVazia.quebras],
-      ['🎯 Vendas a potenciar — semana seguinte', ataAtualOuVazia.vendas_potenciar],
+      ['🎯 Vendas a potenciar e venda sugestiva', ataAtualOuVazia.vendas_potenciar],
       ['🔍 Auditorias (secção e loja)', ataAtualOuVazia.auditorias],
       ['💶 Custos da loja', ataAtualOuVazia.custos],
-      ['👥 Equipa (horários, conflitos, energia geral)', ataAtualOuVazia.equipa],
+      ['👥 Equipa (formação, banco de horas, horários, energia)', ataAtualOuVazia.equipa],
     ];
     html += `<div class="card">
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">Semana: <b>${ataAtualOuVazia.semana || '—'}</b>${ataAtual ? '' : ' · <span style="color:var(--ink-soft)">modelo por preencher</span>'}</div>`;
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;"><b style="color:var(--navy);font-size:13px;">${rpEsc(ataAtualOuVazia.semana || nomeReuniao(dReun))}</b><br>${hojeReuniao ? '🟢 A reunião é hoje.' : 'Próxima reunião.'} As reuniões são às segundas e quintas. ${ataAtual ? (ataAtual.automatica ? '· preenchida automaticamente — pode editar' : '· guardada') : ataPreview ? '· preenchida automaticamente com os dados de hoje (fica guardada no dia da reunião)' : '· modelo por preencher'}</div>`;
     campos.forEach(([label, valor])=>{
       html += `<div style="margin-bottom:12px;">
         <div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:3px;">${label}</div>
@@ -8250,6 +8337,9 @@ async function renderAtaSemanal(){
   if(currentUser && currentUser.role === 'gestora'){
     html += `<button class="btn-primary" style="margin-top:0;flex:1;" onclick="openEditAta()">📝 Preencher / editar ata</button>`;
   }
+  if(ataAtual && ataAtual.automatica && currentUser && currentUser.role === 'gestora'){
+    html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#1F7A33;" onclick="ataRefazer()">🔄 Atualizar números</button>`;
+  }
   if(ataAtual){
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:var(--teal);" onclick="enviarAtaPorEmail()">📧 Enviar por email</button>`;
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#25D366;" onclick="lemEnviarAta()">📲 WhatsApp</button>`;
@@ -8260,6 +8350,12 @@ async function renderAtaSemanal(){
 }
 
 
+async function ataRefazer(){
+  if(!ataAtual) return;
+  try{ const n = await gerarAtaAutomatica(new Date(ataAtual.data_reuniao + 'T12:00:00')); const {semana, ...resto} = n;
+    await sb(`loja_ata_semanal?id=eq.${ataAtual.id}`, {method:'PATCH', body: JSON.stringify({...resto, equipa: ataAtual.equipa && !/^Formação pendente|^Banco de horas|^Trocas de horário/m.test(ataAtual.equipa) ? ataAtual.equipa : resto.equipa})}); showToast(); renderAtaSemanal(); }
+  catch(e){ alert('Não consegui atualizar.'); }
+}
 let resumoReuniaoCache = null;
 async function gerarResumoReuniao(){
   try{ await carregarResumoPainel(); }catch(e){}
@@ -8354,6 +8450,22 @@ async function preencherAtaComNumeros(forcar){
 }
 
 function openEditAta(){
+  const base = ataAtual || ataPreview;
+  if(!ataAtual && ataPreview) ataAtual = null;
+  const v = k => base ? (base[k] || '') : '';
+  document.getElementById('ata-edit-semana').value = base ? (base.semana || '') : (commData ? commData.semana : '');
+  document.getElementById('ata-edit-foco').value = v('foco');
+  document.getElementById('ata-edit-vendas').value = v('vendas');
+  document.getElementById('ata-edit-quebras').value = v('quebras');
+  document.getElementById('ata-edit-potenciar').value = v('vendas_potenciar');
+  document.getElementById('ata-edit-auditorias').value = v('auditorias');
+  document.getElementById('ata-edit-custos').value = v('custos');
+  document.getElementById('ata-edit-equipa').value = v('equipa');
+  document.getElementById('comm-view').classList.add('hidden');
+  document.getElementById('ata-edit').classList.remove('hidden');
+  preencherAtaComNumeros(false);
+}
+function openEditAtaAntigo(){
   document.getElementById('ata-edit-semana').value = ataAtual ? (ataAtual.semana || '') : (commData ? commData.semana : '');
   document.getElementById('ata-edit-vendas').value = ataAtual ? (ataAtual.vendas || '') : '';
   document.getElementById('ata-edit-quebras').value = ataAtual ? (ataAtual.quebras || '') : '';
@@ -8380,6 +8492,9 @@ async function saveAta(){
     auditorias: document.getElementById('ata-edit-auditorias').value.trim(),
     custos: document.getElementById('ata-edit-custos').value.trim(),
     equipa: document.getElementById('ata-edit-equipa').value.trim(),
+    foco: document.getElementById('ata-edit-foco').value.trim(),
+    data_reuniao: (ataAtual && ataAtual.data_reuniao) || (ataPreview && ataPreview.data_reuniao) || dataLocalISO(proximaReuniao()),
+    automatica: false,
     criado_por: currentUser ? currentUser.name : null
   };
   try{
