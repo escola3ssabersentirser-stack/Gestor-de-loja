@@ -7117,35 +7117,49 @@ async function numerosSemanaAtual(){
   try{ await carregarResumoPainel(); }catch(e){}
   const qp = (resumoPainel && (resumoPainel.mes_curso||[]).find(x => x.ind === 'Quebra em % das vendas')) || {};
   const ultimo = comVenda.length ? comVenda[comVenda.length-1].data : null;
-  return {intervalo: `${f(seg)} a ${f(dom)}`, label: `Semana ${numeroSemanaISO(hoje)} · ${f(seg)} a ${f(dom)}`, real, bdgAteHoje, bdgSemana, vsb: bdgAteHoje ? real/bdgAteHoje - 1 : null, quebraPct: qp.atual != null ? qp.atual*100 : null, ate: ultimo ? impDDMM(ultimo) : null};
+  // semana do plano: se já está na app a informação de negócio da semana seguinte, o plano passa a ser para essa semana
+  let info = null; try{ const ir = await sb('loja_informacao_negocio_historico?select=semana,resumo,data_documento&order=data_documento.desc.nullslast,id.desc&limit=1'); info = ir && ir[0]; }catch(e){}
+  const nInfo = info ? Number(String(info.semana||'').replace(/\D/g,'')) : 0;
+  const proxima = nInfo > numeroSemanaISO(hoje);
+  const pSeg = new Date(seg); if(proxima) pSeg.setDate(seg.getDate() + 7); const pDom = new Date(pSeg); pDom.setDate(pSeg.getDate() + 6);
+  return {intervalo: `${f(seg)} a ${f(dom)}`, label: `Semana ${numeroSemanaISO(hoje)} · ${f(seg)} a ${f(dom)}`, real, bdgAteHoje, bdgSemana, vsb: bdgAteHoje ? real/bdgAteHoje - 1 : null, quebraPct: qp.atual != null ? qp.atual*100 : null, ate: ultimo ? impDDMM(ultimo) : null,
+    plano: {proxima, intervalo: `${f(pSeg)} a ${f(pDom)}`, label: `Semana ${numeroSemanaISO(pSeg)} · ${f(pSeg)} a ${f(pDom)}`, info: proxima ? info : null}};
 }
 
+function planoLabelSemana(p){
+  const t = String(p.semana || '');
+  if(/Semana\s*\d+/i.test(t)) return rpEsc(t);
+  const m = t.match(/(\d{1,2})\/(\d{1,2})/); if(!m) return rpEsc(t || '—');
+  const ano = p.criado_em ? Number(String(p.criado_em).slice(0,4)) : new Date().getFullYear();
+  const d = new Date(ano, Number(m[2]) - 1, Number(m[1]), 12);
+  return `Semana ${numeroSemanaISO(d)} · ${rpEsc(t)}`;
+}
 async function renderPlanoSemanal(){
   const wrap = document.getElementById('plano-semanal-wrap');
   const [rows, ns] = await Promise.all([sb('loja_plano_semana?select=*&order=id.desc&limit=5'), numerosSemanaAtual()]);
   let html = '';
   const podeCriar = currentUser && (currentUser.role === 'gestora' || currentUser.role === 'responsavel' || currentUser.role === 'area');
-  const daSemana = (rows||[]).find(p => String(p.semana||'').includes(ns.intervalo));
+  const daSemana = (rows||[]).find(p => String(p.semana||'').includes(ns.plano.intervalo));
   html += `<div class="card" style="border-left:5px solid #1F7A33;margin-bottom:12px;">
-    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana em curso: <b>${ns.label}</b>${ns.ate ? ' · vendas até ' + ns.ate : ''}${daSemana ? ' · plano feito' : ' · <span style="color:#B4231A;font-weight:700;">plano por fazer</span>'}</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Plano para a <b>${ns.plano.label}</b>${ns.plano.proxima ? ' (próxima semana — a informação de negócio já está na app)' : ''}${daSemana ? ' · plano feito' : ' · <span style="color:#B4231A;font-weight:700;">plano por fazer</span>'}<br>Resultados da semana em curso (${ns.label})${ns.ate ? ', vendas até ' + ns.ate : ''}:</div>
     <div class="vs-detail-grid" style="margin-bottom:${podeCriar && !daSemana ? '10px' : '0'};">
       <div class="vs-box sales"><div class="vs-label">Vendas da semana / budget até hoje</div><div class="vs-value" style="font-size:14px;">${ns.real ? fmtEuro(ns.real) : '—'} / ${ns.bdgAteHoje ? fmtEuro(ns.bdgAteHoje) : '—'}${ns.vsb != null ? ` <span style="font-size:12px;color:${ns.vsb >= 0 ? '#1F7A33' : '#B4231A'}">(${ns.vsb >= 0 ? '+' : ''}${(ns.vsb*100).toFixed(1).replace('.',',')}%)</span>` : ''}</div><div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">budget da semana inteira: ${ns.bdgSemana ? fmtEuro(ns.bdgSemana) : '—'}</div></div>
       <div class="vs-box loss"><div class="vs-label">Quebra do mês</div><div class="vs-value" style="font-size:14px;">${ns.quebraPct != null ? ns.quebraPct.toFixed(2).replace('.',',') + '%' : '—'}</div></div>
     </div>
-    ${podeCriar && !daSemana ? `<button class="btn-primary" style="margin:0;" onclick="criarPlanoSemanal()">+ Fazer o plano da ${ns.label.split(' · ')[0]}</button>` : ''}
+    ${ns.plano.info ? `<div style="font-size:12px;color:var(--ink);margin:6px 0 10px;white-space:pre-line;"><b>📰 ${rpEsc(ns.plano.info.semana || 'Informação de negócio')}:</b> ${rpEsc(String(ns.plano.info.resumo||'').slice(0, 300))}${String(ns.plano.info.resumo||'').length > 300 ? '…' : ''}</div>` : ''}
+    ${podeCriar && !daSemana ? `<button class="btn-primary" style="margin:0;" onclick="criarPlanoSemanal()">+ Fazer o plano da ${ns.plano.label.split(' · ')[0]}</button>` : ''}
   </div>`;
   if(podeCriar && daSemana){
     html += `<button class="btn-primary" style="margin:0 0 10px;" onclick="criarPlanoSemanal()">+ Novo Plano da Semana</button>`;
   }
-  if(!rows.length){
-    html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda sem planos semanais registados.</div></div>`;
-    wrap.innerHTML = html;
-    return;
-  }
-  rows.forEach(p=>{
+  if(!rows.length){ wrap.innerHTML = html; return; }
+  // o plano da semana do plano fica em destaque; os das semanas anteriores ficam recolhidos
+  const doPlano = daSemana ? [daSemana] : [];
+  const anteriores = (rows||[]).filter(p => p !== daSemana);
+  const desenhar = lista => { let html = ''; lista.forEach(p=>{
     const acoes = p.acoes || [];
     html += `<div class="card">
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana: <b>${p.semana}</b>${p.assinatura_nome ? ' · Assinado por '+p.assinatura_nome : ''}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana: <b>${planoLabelSemana(p)}</b>${p.assinatura_nome ? ' · Assinado por '+p.assinatura_nome : ''}</div>
       <div class="vs-detail-grid" style="margin-bottom:10px;">
         <div class="vs-box sales"><div class="vs-label">Vendas obj. / real.</div><div class="vs-value" style="font-size:14px;">${fmtEuro(p.vendas_objetivo)} / ${fmtEuro(p.vendas_realizado)}</div></div>
         <div class="vs-box loss"><div class="vs-label">Quebra obj. / real.</div><div class="vs-value" style="font-size:14px;">${p.quebras_objetivo_pct ?? '—'}% / ${p.quebras_realizado_pct ?? '—'}%</div></div>
@@ -7158,7 +7172,9 @@ async function renderPlanoSemanal(){
       </div>`).join('')}
       <button class="econ-btn filled" style="margin-top:10px;width:100%;" onclick='enviarPlanoSemanalPorEmail(${p.id})'>📧 Gerar documento e enviar</button>
     </div>`;
-  });
+  }); return html; };
+  html += desenhar(doPlano);
+  if(anteriores.length) html += `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);padding:6px 2px;">Planos de semanas anteriores (${anteriores.length})</summary>${desenhar(anteriores)}</details>`;
   wrap.innerHTML = html;
 }
 
@@ -7291,7 +7307,8 @@ async function criarPlanoSemanal(){
   const quebraMesPct = r.vendas_mes && r.quebras_mes ? (Number(r.quebras_mes)/Number(r.vendas_mes)*100).toFixed(1) : null;
   const quebraAnoPct = r.vendas_ano && r.quebras_ano ? (Number(r.quebras_ano)/Number(r.vendas_ano)*100).toFixed(1) : null;
 
-  let contexto = `📅 Semana: ${semanaAtualLabel()}\n\n`;
+  let contexto = `📅 Plano para a ${ns.plano.label}${ns.plano.proxima ? ' (próxima semana)' : ''}\n\n`;
+  if(ns.plano.info) contexto += `📰 INFORMAÇÃO DE NEGÓCIO (${ns.plano.info.semana}):\n${String(ns.plano.info.resumo||'').slice(0, 1500)}\n\n`;
   contexto += `📆 VENDAS DIA A DIA (esta semana):\n`;
   if(vendasDiaSemana.length){
     vendasDiaSemana.forEach(v=>{
@@ -7327,7 +7344,7 @@ async function criarPlanoSemanal(){
   document.getElementById('modal-plano-semanal-campos').innerHTML = `
     <div style="margin-bottom:12px;">
       <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Semana</label>
-      <input id="ps-semana" type="text" value="${semanaAtualLabel()}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+      <input id="ps-semana" type="text" value="${ns.plano.label}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
     </div>
     <div style="display:flex;gap:10px;">
       <div style="flex:1;margin-bottom:12px;">
@@ -7500,7 +7517,17 @@ async function enviarPlanoSemanalPorEmail(id){
   ], p.assinatura_nome, `Plano_Semanal_${(p.semana||'').replace(/[^a-zA-Z0-9]/g,'_')}`);
 }
 
+let planoResponsaveis = [];
+const paNorm = t => String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z]/g,'');
+function paResponsaveisDe(area){ const a = paNorm(area); return planoResponsaveis.filter(c => paNorm(c.secao) === a || (a && paNorm(c.secao).startsWith(a.slice(0,6)))); }
+function paEnviar(area, idx){
+  const r = paResponsaveisDe(area)[idx]; const itens = (planoAcaoGestoresData||[]).filter(p => p.area === area);
+  const n = r ? lemPrimeiroNome(r.nome) : '';
+  const txt = `Olá${n ? ' ' + n : ''} 😊 Plano de ação da secção *${area}*:\n\n` + itens.map((p,i) => `${i+1}. *${p.ponto}*\n   Ação: ${p.acao}\n   Estado: ${p.estado}`).join('\n\n') + `\n\nConto contigo para pôr isto em prática esta semana. Qualquer dúvida, diz. Obrigada!`;
+  lemWhats(r ? r.telefone : '', txt);
+}
 async function renderPlanoAcaoGestores(){
+  try{ planoResponsaveis = await sb("loja_colaboradores?perfil=eq.responsavel&select=nome,secao,telefone") || []; }catch(e){ planoResponsaveis = []; }
   planoAcaoGestoresData = await sb('loja_plano_acao?select=*&order=area.asc');
   renderPlanoAcaoGestoresFiltro('');
 }
@@ -7528,7 +7555,8 @@ function renderPlanoAcaoGestoresFiltro(filtroArea){
       grupos[p.area].push(p);
     });
     Object.keys(grupos).sort().forEach(area=>{
-      html += `<div style="padding:8px 0 2px;font-size:12px;font-weight:700;color:var(--navy);">${area}</div>`;
+      const resp = paResponsaveisDe(area); const aj = String(area).replace(/'/g,"\\'");
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 0 2px;"><span style="font-size:12.5px;font-weight:700;color:var(--navy);">${area}</span><span style="display:flex;gap:4px;flex-wrap:wrap;">${resp.length ? resp.map((r,i) => `<button class="lem-w" onclick="paEnviar('${aj}', ${i})">📲 ${rpEsc(lemPrimeiroNome(r.nome))}</button>`).join('') : `<button class="lem-w" onclick="paEnviar('${aj}', 0)">📲 Enviar</button>`}</span></div>`;
       grupos[area].forEach(p=>{
         const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
         const dataP = p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-PT') : '';
@@ -7543,6 +7571,8 @@ function renderPlanoAcaoGestoresFiltro(filtroArea){
       });
     });
   } else {
+    const resp = paResponsaveisDe(filtroArea); const aj = String(filtroArea).replace(/'/g,"\\'");
+    html += `<div style="display:flex;gap:4px;flex-wrap:wrap;padding:8px 0;">${resp.length ? resp.map((r,i) => `<button class="lem-w" onclick="paEnviar('${aj}', ${i})">📲 Enviar a ${rpEsc(lemPrimeiroNome(r.nome))}</button>`).join('') : `<button class="lem-w" onclick="paEnviar('${aj}', 0)">📲 Enviar por WhatsApp</button>`}</div>`;
     itens.forEach(p=>{
       const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
       const dataP = p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-PT') : '';
