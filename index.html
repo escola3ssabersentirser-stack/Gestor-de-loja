@@ -476,6 +476,16 @@
   .rp-svg .rp-eixo{font-size:11px;fill:#6B746E;}
   .rp-svg rect.rp-s-ant{fill:#C77F12;} .rp-svg rect.rp-s-atual{fill:#1F7A33;}
   .rp-svg .rp-budget{stroke:#141A16;stroke-width:2;}
+  .vs-podio{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end;margin:14px 0 6px;}
+  .vs-pod{display:flex;flex-direction:column;align-items:center;text-align:center;min-width:0;}
+  .vs-pod-nome{font-size:12.5px;font-weight:700;color:var(--ink);line-height:1.2;margin-bottom:2px;overflow-wrap:anywhere;}
+  .vs-pod-un{font-size:12px;color:var(--ink-soft);margin-bottom:6px;}
+  .vs-pod-bloco{width:100%;border-radius:10px 10px 4px 4px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:8px;color:#fff;font-weight:800;}
+  .vs-pod-bloco .vs-pod-lugar{font-size:22px;line-height:1;} .vs-pod-bloco .vs-pod-med{font-size:20px;margin-top:4px;}
+  .vs-pod.p1 .vs-pod-bloco{height:130px;background:linear-gradient(180deg,#E3B341,#B8860B);} .vs-pod.p2 .vs-pod-bloco{height:100px;background:linear-gradient(180deg,#B9C2CB,#8A939C);}
+  .vs-pod.p3 .vs-pod-bloco{height:78px;background:linear-gradient(180deg,#D08A4E,#A0592A);} .vs-pod.p4 .vs-pod-bloco{height:58px;background:linear-gradient(180deg,#6FA17C,#1F7A33);}
+  .vs-barras{margin-top:8px;} .vs-barra-l{display:grid;grid-template-columns:22px minmax(0,1fr) 54px;gap:8px;align-items:center;padding:4px 0;font-size:12.5px;}
+  .vs-barra-t{height:10px;background:var(--line);border-radius:6px;overflow:hidden;} .vs-barra-t span{display:block;height:100%;border-radius:6px;background:#1F7A33;}
   .rp-svg rect.rp-p-aa{fill:#1F7A33;} .rp-svg rect.rp-p-aa.neg{fill:#B4231A;} .rp-svg rect.rp-p-bdg{fill:#8FA3B8;} .rp-dot.rp-p-aa{background:#1F7A33;} .rp-dot.rp-p-bdg{background:#8FA3B8;} .rp-svg .rp-zero{stroke:#141A16;stroke-width:1.2;} .rp-svg .rp-val{font-size:11px;font-weight:700;fill:#141A16;}
   .rp-svg .rp-linha{fill:none;stroke-width:2;} .rp-svg .rp-linha.rp-s-ant{stroke:#C77F12;} .rp-svg .rp-linha.rp-s-atual{stroke:#1F7A33;}
   .rp-svg .rp-ponto{stroke:#fff;stroke-width:2;} .rp-svg .rp-ponto.rp-s-ant{fill:#C77F12;} .rp-svg .rp-ponto.rp-s-atual{fill:#1F7A33;}
@@ -1164,6 +1174,9 @@
 
         <div class="section-title">📰 Informação de Negócio</div>
         <div id="info-negocio-historico-wrap"></div>
+
+        <div class="section-title">🏆 Pódio da Venda Sugestiva</div>
+        <div id="podio-comunicacao-wrap"></div>
 
         <div class="card">
           <div class="comm-item">
@@ -2612,13 +2625,18 @@ async function impVendaSugestiva(wb, nomeFicheiro){
     const m = String(nomeFicheiro||'').match(/(\d{4})-(\d{2})-(\d{2})/);
     const dataRef = impMenosUmDia(m ? `${m[1]}-${m[2]}-${m[3]}` : impISO(new Date()));
     const semana = `${impTitulo(artigo) || 'Venda sugestiva'} (${impDDMM(dataRef)})`;
-    const dados = {semana, vendas_un: Math.round(vLoja || 0), vs_objetivo_pct: obj ? impR2(((vLoja||0)/obj - 1)*100) : null, lojas_atingiram_objetivo: obj ? (vLoja||0) >= obj : false, atualizado_em: new Date().toISOString()};
+    const dados = {semana, artigo: impTitulo(artigo) || null, data_referencia: dataRef, objetivo: obj ? Math.round(obj) : null, vendas_un: Math.round(vLoja || 0), vs_objetivo_pct: obj ? impR2(((vLoja||0)/obj - 1)*100) : null, lojas_atingiram_objetivo: obj ? (vLoja||0) >= obj : false, atualizado_em: new Date().toISOString()};
     const ja = await impTodos(`loja_venda_sugestiva?semana=eq.${encodeURIComponent(semana)}&select=id`);
     if(ja.length) await sb(`loja_venda_sugestiva?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)});
     else await sb('loja_venda_sugestiva', {method:'POST', body: JSON.stringify(dados)});
     ops.sort((a,b)=>b.vendas_un-a.vendas_un);
-    await sb('loja_venda_sugestiva_operadores?id=gt.0', {method:'DELETE'});
-    await sb('loja_venda_sugestiva_operadores', {method:'POST', body: JSON.stringify(ops)});
+    // guarda por campanha (artigo): substitui só a desta campanha, e só se o ficheiro não for mais antigo
+    const nomeArt = impTitulo(artigo) || semana;
+    const jaOps = await impTodos(`loja_venda_sugestiva_operadores?artigo=eq.${encodeURIComponent(nomeArt)}&select=data_referencia&order=data_referencia.desc&limit=1`);
+    if(!(jaOps.length && jaOps[0].data_referencia && jaOps[0].data_referencia > dataRef)){
+      await sb(`loja_venda_sugestiva_operadores?artigo=eq.${encodeURIComponent(nomeArt)}`, {method:'DELETE'});
+      await sb('loja_venda_sugestiva_operadores', {method:'POST', body: JSON.stringify(ops.map(o => ({...o, artigo: nomeArt, data_referencia: dataRef})))});
+    }
     return `${impTitulo(artigo)}: ${Math.round(vLoja||0)} de ${Math.round(obj||0)} unidades, ${ops.length} operadoras`;
   }
   throw new Error('não encontrei a tabela das operadoras');
@@ -3138,6 +3156,17 @@ async function lemRegistar(tipo, chave){
   try{ await sb('loja_lembretes_log', {method:'POST', body: JSON.stringify({tipo, chave: chave || null, semana: lemSemanaChave(), enviado_por: currentUser ? currentUser.name : null})}); }catch(e){}
 }
 
+function lemChaveBH(c){ return `${c.numero_pessoal}:${c.data_prevista_gozar_horas || 'sem-data'}:${Number(c.bh_positivo)||0}:${Number(c.bh_negativo)||0}`; }
+// parabéns já enviados para este aniversário (este ano)
+function lemAnosEnviado(logs, c){
+  const ano = c.dataAnos.getFullYear();
+  return (logs||[]).some(l => l.tipo === 'aniversario' && (l.chave === `${c.numero_pessoal}:${ano}` || (l.chave === String(c.numero_pessoal) && String(l.semana||'').startsWith(String(ano)) && Math.abs(numeroSemanaISO(c.dataAnos) - Number(String(l.semana).split('-S')[1])) <= 1)));
+}
+async function lemBHok(i){
+  const c = lemDados.bh[i]; if(!c) return;
+  try{ await lemRegistar('bh-ok', c.chaveOk); showToast(); }catch(e){}
+  renderLembretes(); renderFaixaLembretes();
+}
 async function carregarLembretes(){
   const hoje = lemHojeISO();
   const em14 = dataLocalISO(new Date(Date.now() + 14*864e5));
@@ -3150,10 +3179,13 @@ async function carregarLembretes(){
     sb('loja_ausencias?ativa=eq.true&select=*&order=data_inicio.asc').catch(()=>[]),
     sb(`loja_lembretes_log?semana=eq.${lemSemanaChave()}&select=tipo,chave`).catch(()=>[])
   ]);
+  const fixos = await sb(`loja_lembretes_log?tipo=in.(aniversario,bh-ok)&semana=gte.${new Date().getFullYear() - 1}&select=tipo,chave,semana`).catch(()=>[]);
   const tel = {}; (colabs||[]).forEach(c => { tel[c.numero_pessoal] = c.telefone; tel['n:' + c.nome] = c.telefone; });
+  const bhOk = new Set((fixos||[]).filter(l => l.tipo === 'bh-ok').map(l => l.chave));
+  // só aparece a partir do dia marcado para gozar (ou se não tem data / tem horas a compensar); some quando se dá OK
   const bh = (colabs||[]).filter(c => Number(c.bh_positivo) >= LEM_BH_MIN || Number(c.bh_negativo) < 0).map(c => ({
-    ...c, atrasado: c.data_prevista_gozar_horas && c.data_prevista_gozar_horas < hoje, semData: Number(c.bh_positivo) >= LEM_BH_MIN && !c.data_prevista_gozar_horas
-  })).sort((a,b) => (Number(b.bh_positivo)||0) - (Number(a.bh_positivo)||0));
+    ...c, chaveOk: lemChaveBH(c), atrasado: c.data_prevista_gozar_horas && c.data_prevista_gozar_horas < hoje, hoje: c.data_prevista_gozar_horas === hoje, semData: Number(c.bh_positivo) >= LEM_BH_MIN && !c.data_prevista_gozar_horas
+  })).filter(c => !bhOk.has(c.chaveOk) && (Number(c.bh_negativo) < 0 || !c.data_prevista_gozar_horas || c.data_prevista_gozar_horas <= hoje)).sort((a,b) => (Number(b.bh_positivo)||0) - (Number(a.bh_positivo)||0));
   const CAMPOS_COMPL = {codigo_conduta:'Código de Conduta', data_privacy:'Data Privacy', politica_anticorrupcao:'Política Anticorrupção', seguranca_protecao:'Segurança e Proteção'};
   const formacao = [];
   (compliance||[]).forEach(r => Object.entries(CAMPOS_COMPL).forEach(([k, nome]) => { const v = String(r[k]||'').trim(); if(v && !/^formad/i.test(v)) formacao.push({numero: r.numero_pessoal, nome: r.nome, curso: nome, estado: v, data: null}); }));
@@ -3167,7 +3199,7 @@ async function carregarLembretes(){
     let d = new Date(hojeD.getFullYear(), c.mes_aniversario - 1, c.dia_aniversario, 12);
     if(d < hojeD && !(d.getDate() === hojeD.getDate() && d.getMonth() === hojeD.getMonth())) d = new Date(hojeD.getFullYear() + 1, c.mes_aniversario - 1, c.dia_aniversario, 12);
     return {...c, faltam: Math.round((d - hojeD) / 864e5), dataAnos: d};
-  }).filter(c => c.faltam >= 0 && c.faltam <= 7).sort((a,b) => a.faltam - b.faltam);
+  }).filter(c => c.faltam >= 0 && c.faltam <= 7 && !lemAnosEnviado(fixos, c)).sort((a,b) => a.faltam - b.faltam);
   const semData = (colabs||[]).filter(c => !c.dia_aniversario || !c.mes_aniversario);
   lemDados = {bh, alteracoes: alteracoes||[], formacao, ausencias: ausencias||[], ausSemContacto, tel, colabs: colabs||[], enviados, anos, semDataAnos: semData};
   return lemDados;
@@ -3175,7 +3207,7 @@ async function carregarLembretes(){
 
 function lemContagem(d){
   d = d || lemDados; if(!d) return 0;
-  return d.anos.filter(a => a.faltam === 0 && !d.enviados.has('aniversario|' + a.numero_pessoal)).length + d.bh.filter(x => x.atrasado || x.semData || Number(x.bh_negativo) < 0).length + d.alteracoes.length + d.formacao.length + d.ausSemContacto.length
+  return d.anos.filter(a => a.faltam === 0).length + d.bh.length + d.alteracoes.length + d.formacao.length + d.ausSemContacto.length
     + (d.enviados.has('resumo-semanal|') ? 0 : 1) + (d.enviados.has('ata-semanal|') ? 0 : 1);
 }
 
@@ -3228,8 +3260,8 @@ async function renderLembretes(){
   // 4) banco de horas
   const bh = d.bh.map((c,i) => {
     const pos = Number(c.bh_positivo)||0, neg = Number(c.bh_negativo)||0;
-    const estado = neg < 0 ? `<b style="color:#9B1C14">${neg.toLocaleString('pt-PT')}h a compensar</b>` : c.atrasado ? `<b style="color:#9B1C14">data prevista ${lemFmtData(c.data_prevista_gozar_horas)} já passou</b>` : c.semData ? `<b style="color:#7A4A00">sem data marcada para gozar</b>` : `a gozar a ${lemFmtData(c.data_prevista_gozar_horas)}`;
-    return `<div class="card lem-item"><div><b>${rpEsc(c.nome)}</b><small>${pos ? pos.toLocaleString('pt-PT') + 'h de banco de horas · ' : ''}${estado}</small></div>${btnW(`lemMsgBH(${i})`,'Lembrar')}</div>`;
+    const estado = neg < 0 ? `<b style="color:#9B1C14">${neg.toLocaleString('pt-PT')}h a compensar</b>` : c.hoje ? `<b style="color:#1F7A33">hoje é o dia marcado para gozar</b>` : c.atrasado ? `<b style="color:#9B1C14">data prevista ${lemFmtData(c.data_prevista_gozar_horas)} já passou</b>` : c.semData ? `<b style="color:#7A4A00">sem data marcada para gozar</b>` : `a gozar a ${lemFmtData(c.data_prevista_gozar_horas)}`;
+    return `<div class="card lem-item"><div><b>${rpEsc(c.nome)}</b><small>${pos ? pos.toLocaleString('pt-PT') + 'h de banco de horas · ' : ''}${estado}</small></div><div class="lem-btns">${btnW(`lemMsgBH(${i})`,'Lembrar')}<button class="lem-x" style="background:#1F7A33;color:#fff;border-color:#1F7A33" onclick="lemBHok(${i})" title="Já gozou / resolvido">✓ OK</button></div></div>`;
   }).join('');
 
   // 5) formação
@@ -3242,11 +3274,11 @@ async function renderLembretes(){
     <div class="com-duo"><div><label class="com-lbl" for="anos-dia">Dia</label><input type="number" id="anos-dia" min="1" max="31"></div><div><label class="com-lbl" for="anos-mes">Mês</label><input type="number" id="anos-mes" min="1" max="12"></div></div>
     <button class="btn-primary" onclick="lemGuardarAnos()">Guardar</button></details>` : '';
   box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 12px;">Os botões abrem o WhatsApp com a mensagem já escrita — é só carregar em enviar. Semana ${numeroSemanaISO(new Date())}.</p>`
-    + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0 && !d.enviados.has('aniversario|' + a.numero_pessoal)).length, anosHtml, formAnos)
+    + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0).length, anosHtml, formAnos)
     + sec('📲','Envios da semana', ['resumo-semanal|','ata-semanal|','comunicacao-semanal|'].filter(k => !d.enviados.has(k)).length, semanal)
     + sec('💙','Baixas e ausências', d.ausSemContacto.length, aus, formAus)
     + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt)
-    + sec('🕐','Banco de horas', d.bh.filter(x => x.atrasado || x.semData || Number(x.bh_negativo) < 0).length, bh)
+    + sec('🕐','Banco de horas', d.bh.length, bh, `<p class="com-ajuda" style="margin:0 4px 8px;">Cada pessoa só aparece a partir do dia marcado para gozar. Depois de gozar, carregue em ✓ OK e sai da lista.</p>`)
     + sec('🎓','Formação pendente', d.formacao.length, form);
 }
 
@@ -3298,7 +3330,7 @@ function lemMsgAnos(numero){
     ? `Parabéns, ${n}! 🎂🎉 Muitas felicidades neste dia especial. Que este novo ano te traga muita saúde, alegria e tudo de bom. Um grande abraço de toda a equipa da loja!`
     : `Olá ${n} 😊 Sabemos que o teu aniversário está a chegar (${String(a.dia_aniversario).padStart(2,'0')}/${String(a.mes_aniversario).padStart(2,'0')}) — desde já, muitos parabéns de toda a equipa! 🎉`;
   lemWhats(a.telefone, txt);
-  lemRegistar('aniversario', numero); setTimeout(() => { renderLembretes(); renderFaixaLembretes(); }, 800);
+  lemRegistar('aniversario', `${numero}:${a.dataAnos.getFullYear()}`); setTimeout(() => { renderLembretes(); renderFaixaLembretes(); }, 800);
 }
 async function lemGuardarAnos(){
   const num = document.getElementById('anos-colab').value, dia = Number(document.getElementById('anos-dia').value), mes = Number(document.getElementById('anos-mes').value);
@@ -3330,7 +3362,7 @@ async function lemEnviarComunicacao(){
   if(!c){ alert('Ainda não há comunicação semanal guardada.'); return; }
   let inf = null; try { const ir = await sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1'); inf = ir && ir[0]; } catch(e){}
   const parte = (t, v) => v && String(v).trim() ? `\n\n*${t}*\n${String(v).trim()}` : '';
-  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${c.periodo || c.semana || semanaAtualLabel()}` + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes) + parte('Informação de negócio' + (inf && inf.semana ? ' — ' + inf.semana : ''), inf && inf.resumo));
+  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${c.periodo || c.semana || semanaAtualLabel()}` + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes) + parte('Informação de negócio' + (inf && inf.semana ? ' — ' + inf.semana : ''), inf && inf.resumo ? (inf.resumo.length > 1500 ? inf.resumo.slice(0,1500) + '…\n(ver o resto na app)' : inf.resumo) : ''));
   await lemRegistar('comunicacao-semanal'); setTimeout(renderLembretes, 800);
 }
 
@@ -6900,11 +6932,38 @@ function lembrarReuniaoWhatsApp(r){
   window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
 }
 
+// números da semana em curso (segunda a domingo), sempre calculados a partir dos dados do dia
+async function numerosSemanaAtual(){
+  const hoje = new Date(); const dia = (hoje.getDay()+6)%7;
+  const seg = new Date(hoje); seg.setDate(hoje.getDate()-dia); const dom = new Date(seg); dom.setDate(seg.getDate()+6);
+  const f = d => d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+  let dias = [];
+  try{ dias = await sb(`loja_vendas_dia?data=gte.${dataLocalISO(seg)}&data=lte.${dataLocalISO(dom)}&select=data,vendas_real,vendas_budget&order=data.asc`) || []; }catch(e){}
+  const comVenda = dias.filter(d => Number(d.vendas_real) > 0);
+  const real = comVenda.reduce((a,d)=>a+Number(d.vendas_real),0);
+  const bdgAteHoje = comVenda.reduce((a,d)=>a+(Number(d.vendas_budget)||0),0);
+  const bdgSemana = dias.reduce((a,d)=>a+(Number(d.vendas_budget)||0),0);
+  try{ await carregarResumoPainel(); }catch(e){}
+  const qp = (resumoPainel && (resumoPainel.mes_curso||[]).find(x => x.ind === 'Quebra em % das vendas')) || {};
+  const ultimo = comVenda.length ? comVenda[comVenda.length-1].data : null;
+  return {intervalo: `${f(seg)} a ${f(dom)}`, label: `Semana ${numeroSemanaISO(hoje)} · ${f(seg)} a ${f(dom)}`, real, bdgAteHoje, bdgSemana, vsb: bdgAteHoje ? real/bdgAteHoje - 1 : null, quebraPct: qp.atual != null ? qp.atual*100 : null, ate: ultimo ? impDDMM(ultimo) : null};
+}
+
 async function renderPlanoSemanal(){
   const wrap = document.getElementById('plano-semanal-wrap');
-  const rows = await sb('loja_plano_semana?select=*&order=id.desc&limit=5');
+  const [rows, ns] = await Promise.all([sb('loja_plano_semana?select=*&order=id.desc&limit=5'), numerosSemanaAtual()]);
   let html = '';
-  if(currentUser && (currentUser.role === 'gestora' || currentUser.role === 'responsavel' || currentUser.role === 'area')){
+  const podeCriar = currentUser && (currentUser.role === 'gestora' || currentUser.role === 'responsavel' || currentUser.role === 'area');
+  const daSemana = (rows||[]).find(p => String(p.semana||'').includes(ns.intervalo));
+  html += `<div class="card" style="border-left:5px solid #1F7A33;margin-bottom:12px;">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana em curso: <b>${ns.label}</b>${ns.ate ? ' · vendas até ' + ns.ate : ''}${daSemana ? ' · plano feito' : ' · <span style="color:#B4231A;font-weight:700;">plano por fazer</span>'}</div>
+    <div class="vs-detail-grid" style="margin-bottom:${podeCriar && !daSemana ? '10px' : '0'};">
+      <div class="vs-box sales"><div class="vs-label">Vendas da semana / budget até hoje</div><div class="vs-value" style="font-size:14px;">${ns.real ? fmtEuro(ns.real) : '—'} / ${ns.bdgAteHoje ? fmtEuro(ns.bdgAteHoje) : '—'}${ns.vsb != null ? ` <span style="font-size:12px;color:${ns.vsb >= 0 ? '#1F7A33' : '#B4231A'}">(${ns.vsb >= 0 ? '+' : ''}${(ns.vsb*100).toFixed(1).replace('.',',')}%)</span>` : ''}</div><div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">budget da semana inteira: ${ns.bdgSemana ? fmtEuro(ns.bdgSemana) : '—'}</div></div>
+      <div class="vs-box loss"><div class="vs-label">Quebra do mês</div><div class="vs-value" style="font-size:14px;">${ns.quebraPct != null ? ns.quebraPct.toFixed(2).replace('.',',') + '%' : '—'}</div></div>
+    </div>
+    ${podeCriar && !daSemana ? `<button class="btn-primary" style="margin:0;" onclick="criarPlanoSemanal()">+ Fazer o plano da ${ns.label.split(' · ')[0]}</button>` : ''}
+  </div>`;
+  if(podeCriar && daSemana){
     html += `<button class="btn-primary" style="margin:0 0 10px;" onclick="criarPlanoSemanal()">+ Novo Plano da Semana</button>`;
   }
   if(!rows.length){
@@ -7049,6 +7108,7 @@ async function criarPlanoSemanal(){
     sb(`loja_vendas_dia?data=gte.${segISO}&data=lte.${domISO}&select=*&order=data.asc`)
   ]);
   const r = resumoRows[0] || {};
+  const ns = await numerosSemanaAtual();
 
   const bhNegativo = colaboradores.filter(c => Number(c.bh_negativo) < -1);
   const pendComplianceCount = formacaoRows.filter(f => f.codigo_conduta==='a formar' || f.data_privacy==='a formar' || f.politica_anticorrupcao==='a formar' || f.seguranca_protecao==='a formar').length;
@@ -7073,7 +7133,7 @@ async function criarPlanoSemanal(){
   contexto += `\n📊 SEMANA ANTERIOR (${r.semana_anterior_referencia || '—'}):\n`;
   contexto += `  Vendas: ${r.vendas_semana_anterior!=null ? fmtEuro(r.vendas_semana_anterior) : 'sem dados'} · Quebra: ${r.quebras_semana_anterior!=null ? fmtEuro(r.quebras_semana_anterior) : 'sem dados'}\n\n`;
   contexto += `🎯 OBJETIVOS:\n`;
-  contexto += `  Vendas — Semana atual: ${fmtEuro(r.budget_semana_vendas)}\n`;
+  contexto += `  Vendas — Semana atual: ${fmtEuro(ns.bdgSemana)} (até hoje: ${fmtEuro(ns.real)} de ${fmtEuro(ns.bdgAteHoje)} previstos)\n`;
   contexto += `  Vendas — Mês: ${fmtEuro(r.budget_mes_vendas)}\n`;
   contexto += `  Quebra — Objetivo do ano: 1,9%\n\n`;
   contexto += `💰 ACUMULADO:\n`;
@@ -7101,11 +7161,11 @@ async function criarPlanoSemanal(){
     <div style="display:flex;gap:10px;">
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Vendas — Objetivo (€)</label>
-        <input id="ps-vendas-obj" type="number" value="${r.budget_semana_vendas ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-vendas-obj" type="number" value="${ns.bdgSemana ? Math.round(ns.bdgSemana*100)/100 : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Vendas — Realizado (€)</label>
-        <input id="ps-vendas-real" type="number" value="${r.vendas_semana ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-vendas-real" type="number" value="${ns.real ? Math.round(ns.real*100)/100 : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
     </div>
     <div style="display:flex;gap:10px;">
@@ -7115,7 +7175,7 @@ async function criarPlanoSemanal(){
       </div>
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Quebras — Realizado (%)</label>
-        <input id="ps-quebra-real" type="number" step="0.1" value="${quebraSemanaPct ?? quebraMesPct ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-quebra-real" type="number" step="0.1" value="${ns.quebraPct != null ? ns.quebraPct.toFixed(2) : (quebraSemanaPct ?? quebraMesPct ?? '')}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
     </div>
     <div style="margin-bottom:12px;padding:10px;background:var(--bg-soft,#f4f4f4);border-radius:8px;">
@@ -7585,6 +7645,7 @@ async function renderComunicacao(){
   renderAtaSemanal();
   renderReunioesFormacoesSemana();
   renderInfoNegocioHistorico();
+  renderPodioComunicacao();
 }
 
 async function renderReunioesFormacoesSemana(){
@@ -7658,6 +7719,16 @@ let ataAtual = null;
 
 function infoEsc(t){ return String(t==null?'':t).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 let infoNegRows = [];
+async function renderPodioComunicacao(){
+  const wrap = document.getElementById('podio-comunicacao-wrap'); if(!wrap) return;
+  let ops = [];
+  try{ ops = await sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=200') || []; }catch(e){}
+  const camp = []; ops.forEach(o => { const k = o.artigo || '—'; let c = camp.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; camp.push(c); } c.ops.push(o); });
+  if(!camp.length){ wrap.innerHTML = `<div class="card" style="font-size:13px;color:var(--ink-soft);">Sem dados da venda sugestiva.</div>`; return; }
+  const a = camp[0].ops.sort((x,y) => y.vendas_un - x.vendas_un), b = camp[1] ? camp[1].ops.sort((x,y) => y.vendas_un - x.vendas_un) : null;
+  wrap.innerHTML = `<div class="card" style="padding:6px 12px;"><div style="font-size:12px;color:var(--ink-soft);">${rpEsc(camp[0].k)}${camp[0].data ? ' · até ' + camp[0].data.slice(8,10) + '/' + camp[0].data.slice(5,7) : ''} — parabéns a todos! 👏</div>${podioVendaSugestivaHtml(a, b)}</div>`;
+}
+
 async function renderInfoNegocioHistorico(){
   const wrap = document.getElementById('info-negocio-historico-wrap');
   if(!wrap) return;
@@ -7679,7 +7750,8 @@ async function renderInfoNegocioHistorico(){
         <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${fmt(r.data_documento)}</span>
       </div>
       ${desatualizada ? `<div style="font-size:11.5px;color:#B4231A;margin-bottom:6px;">⚠️ Esta é a informação da ${infoEsc(r.semana)}. A da semana atual ainda não foi colocada.</div>` : ''}
-      <div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(r.resumo)}</div>
+      ${infoTexto(r.resumo)}
+      ${r.caminho ? `<button class="econ-btn" style="margin-top:10px;" onclick="infoNegAbrir(${r.id})">📄 Abrir documento original</button>` : ''}
       ${gestora ? `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn-primary" style="margin-top:0;flex:1;padding:8px;font-size:12.5px;" onclick="infoNegForm(${r.id})">✏️ Editar</button></div>` : ''}
     </div>`;
     if(rows.length > 1){
@@ -7690,14 +7762,88 @@ async function renderInfoNegocioHistorico(){
             <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(o.semana || o.titulo)}</span>
             <span style="font-size:11px;color:var(--ink-soft);">${fmt(o.data_documento)}</span>
           </div>
-          <div style="font-size:12.5px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(o.resumo)}</div>
+          ${infoTexto(o.resumo)}${o.caminho ? `<button class="econ-btn" style="margin-top:8px;" onclick="infoNegAbrir(${o.id})">📄 Abrir documento</button>` : ''}
         </div>`;
       });
       html += `</details>`;
     }
   }
-  if(gestora) html += `<div id="info-neg-form"></div><button class="btn-primary" style="margin:0 0 16px;" onclick="infoNegForm()">➕ Nova informação de negócio</button>`;
+  if(gestora || (currentUser && ['area','responsavel'].includes(currentUser.role))) html = `<input type="file" id="info-neg-ficheiro" accept=".pdf,.docx,.txt" class="hidden" onchange="infoNegCarregar(this)">
+    <button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('info-neg-ficheiro').click()">📎 Carregar Informação de Negócio (PDF ou Word)</button>
+    <div id="info-neg-estado" style="font-size:12.5px;color:var(--ink-soft);margin:0 0 10px;"></div>` + html;
+  if(gestora) html += `<div id="info-neg-form"></div><button class="btn-primary" style="margin:0 0 16px;background:#8A938D;" onclick="infoNegForm()">✏️ Escrever à mão</button>`;
   wrap.innerHTML = html;
+}
+
+function infoTexto(t){
+  t = String(t||'');
+  if(t.length <= 900) return `<div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(t)}</div>`;
+  return `<div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(t.slice(0,900))}…</div><details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--navy);font-weight:700;">Ver tudo</summary><div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;margin-top:6px;">${infoEsc(t.slice(900))}</div></details>`;
+}
+function infoCarregarScript(src){ return new Promise((ok, falha) => { if(document.querySelector(`script[src="${src}"]`)) return ok(); const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => falha(new Error('sem internet para ler o ficheiro')); document.head.appendChild(sc); }); }
+async function infoLerTexto(f){
+  const nome = f.name.toLowerCase();
+  if(nome.endsWith('.txt')) return await f.text();
+  if(nome.endsWith('.docx')){
+    await infoCarregarScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+    const r = await window.mammoth.extractRawText({arrayBuffer: await f.arrayBuffer()});
+    return r.value || '';
+  }
+  if(nome.endsWith('.pdf')){
+    await infoCarregarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf = await lib.getDocument({data: await f.arrayBuffer()}).promise;
+    let out = [];
+    for(let i=1;i<=pdf.numPages;i++){
+      const pg = await pdf.getPage(i); const c = await pg.getTextContent();
+      let linha = '', yAnt = null; const linhas = [];
+      c.items.forEach(it => { const y = Math.round(it.transform[5]); if(yAnt !== null && Math.abs(y - yAnt) > 3){ linhas.push(linha); linha = ''; } linha += (linha && !linha.endsWith(' ') && !it.str.startsWith(' ') ? ' ' : '') + it.str; yAnt = y; });
+      if(linha) linhas.push(linha);
+      out.push(linhas.join('\n'));
+    }
+    return out.join('\n\n');
+  }
+  throw new Error('use um ficheiro PDF ou Word (.docx)');
+}
+async function infoNegCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f) return;
+  const est = document.getElementById('info-neg-estado');
+  const msg = t => { if(est) est.textContent = t; };
+  try{
+    msg('A ler o documento…');
+    let texto = (await infoLerTexto(f)).replace(/\r/g,'').replace(/[ \t]+/g,' ').replace(/ *\n */g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+    if(!texto) throw new Error('não encontrei texto no documento (pode ser uma imagem digitalizada)');
+    const mSem = texto.match(/semana[l]?\s*(?:n\.?\s*º?\s*)?(\d{1,2})\b/i) || f.name.match(/(?:semana|sem|s)[\s_-]*(\d{1,2})\b/i);
+    const nSem = mSem ? Number(mSem[1]) : numeroSemanaISO(new Date()) + 1;
+    const mData = texto.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})\b/);
+    const hoje = new Date();
+    const dataDoc = mData ? `${mData[3]}-${mData[2].padStart(2,'0')}-${mData[1].padStart(2,'0')}` : dataLocalISO(hoje);
+    const semana = 'Semana ' + nSem;
+    msg('A guardar…');
+    const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+    const caminho = `informacao-negocio/${Date.now()}_${limpo}`;
+    let guardouFicheiro = false;
+    try{
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      guardouFicheiro = res.ok;
+    }catch(e){}
+    const dados = {semana, titulo: 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
+    const ja = await sb(`loja_informacao_negocio_historico?semana=eq.${encodeURIComponent(semana)}&select=id`);
+    if(ja && ja.length) await sb(`loja_informacao_negocio_historico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)});
+    else await sb('loja_informacao_negocio_historico', {method:'POST', body: JSON.stringify(dados)});
+    await renderInfoNegocioHistorico();
+    const e2 = document.getElementById('info-neg-estado'); if(e2) e2.textContent = `✓ ${semana} carregada${mSem ? '' : ' (não encontrei o número da semana no documento — confirme e corrija em Editar)'}.`;
+  }catch(e){ msg('✕ Não consegui carregar: ' + (e && e.message || e)); }
+}
+async function infoNegAbrir(id){
+  const janela = window.open('', '_blank');
+  try{
+    const r = (infoNegRows||[]).find(x => x.id === id); if(!r || !r.caminho) throw new Error('sem ficheiro');
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
+    if(!res.ok) throw new Error('erro');
+    const url = URL.createObjectURL(await res.blob());
+    if(janela) janela.location.href = url; else window.location.href = url;
+  }catch(e){ if(janela) janela.close(); alert('Não consegui abrir o documento.'); }
 }
 
 function infoNegForm(id){
@@ -8024,10 +8170,68 @@ async function blocoIndicadoresFrenteLoja(){
   return html;
 }
 
+// Histórico: as últimas 4 campanhas semanais (o último dia carregado de cada artigo)
+async function historicoVendaSugestiva(){
+  let rows = [];
+  try{ rows = await sb('loja_venda_sugestiva?data_referencia=not.is.null&select=id,semana,artigo,data_referencia,vendas_un,objetivo,vs_objetivo_pct&order=data_referencia.desc&limit=60') || []; }catch(e){ return ''; }
+  const camp = [];
+  rows.forEach(r => {
+    const chave = r.artigo || r.semana;
+    let c = camp.find(x => x.chave === chave);
+    if(!c){ c = {chave, nome: r.artigo || r.semana, ult: r, inicio: r.data_referencia}; camp.push(c); }
+    else if(r.data_referencia < c.inicio) c.inicio = r.data_referencia;
+  });
+  const ult4 = camp.slice(0, 4);
+  if(!ult4.length) return '';
+  const fmt = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) : '';
+  const pctAting = c => c.ult.objetivo ? c.ult.vendas_un / c.ult.objetivo : (c.ult.vs_objetivo_pct != null ? 1 + Number(c.ult.vs_objetivo_pct)/100 : null);
+  let h = `<div class="card" style="padding:4px 12px;margin-bottom:12px;"><h3 style="margin:10px 0 4px;">Histórico — últimas 4 semanas</h3>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">% do objetivo atingido em cada campanha (a mais recente em cima)</div>`;
+  ult4.forEach((c, i) => {
+    const p = pctAting(c); const w = p == null ? 0 : Math.max(2, Math.min(100, p*100));
+    const cor = p == null ? '#8A938D' : p >= 1 ? '#1F7A33' : p >= 0.7 ? '#C77F12' : '#B4231A';
+    const ant = ult4[i+1] ? pctAting(ult4[i+1]) : null;
+    const seta = (p != null && ant != null) ? (p > ant + 0.005 ? ' <span style="color:#1F7A33">▲</span>' : p < ant - 0.005 ? ' <span style="color:#B4231A">▼</span>' : ' <span style="color:var(--ink-soft)">=</span>') : '';
+    h += `<div style="padding:8px 0;border-top:${i ? '1px solid var(--line)' : 'none'};">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+        <span style="font-size:12.5px;font-weight:700;color:var(--ink);">${rpEsc(c.nome)}</span>
+        <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${c.inicio !== c.ult.data_referencia ? fmt(c.inicio) + ' a ' : 'até '}${fmt(c.ult.data_referencia)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
+        <span style="flex:1;height:10px;background:var(--line);border-radius:6px;overflow:hidden;"><span style="display:block;height:100%;width:${w}%;background:${cor};border-radius:6px;"></span></span>
+        <span style="font-size:12.5px;font-weight:700;color:${cor};min-width:46px;text-align:right;">${p == null ? '—' : Math.round(p*100) + '%'}</span>${seta}
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;">${c.ult.vendas_un ?? 0} un${c.ult.objetivo ? ' de ' + c.ult.objetivo + ' (objetivo)' : ''}</div>
+    </div>`;
+  });
+  return h + `</div>`;
+}
+
+// Pódio da venda sugestiva: 1.º ao centro, 2.º à esquerda, 3.º e 4.º à direita + barras para todos
+function podioVendaSugestivaHtml(ops, anterior){
+  if(!ops || !ops.length) return '';
+  const top = ops.slice(0, 4);
+  const nomeCurto = n => { const p = String(n||'').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length-1] : (p[0]||''); };
+  const med = ['🥇','🥈','🥉','🏅'];
+  const ordem = [1, 0, 2, 3].filter(i => top[i]);
+  let h = `<div class="vs-podio" role="img" aria-label="Pódio: ${top.map((o,i) => (i+1) + '.º ' + nomeCurto(o.nome) + ' ' + o.vendas_un + ' unidades').join(', ')}">`;
+  ordem.forEach(i => { const o = top[i];
+    h += `<div class="vs-pod p${i+1}"><div class="vs-pod-nome">${rpEsc(nomeCurto(o.nome))}</div><div class="vs-pod-un">${o.vendas_un} un</div><div class="vs-pod-bloco"><span class="vs-pod-lugar">${i+1}.º</span><span class="vs-pod-med">${med[i]}</span></div></div>`; });
+  h += `</div>`;
+  const max = Math.max(1, ...ops.map(o => Number(o.vendas_un)||0));
+  h += `<div class="vs-barras">` + ops.map((o,i) => {
+    const antes = anterior ? anterior.find(x => (x.numero_pessoal && x.numero_pessoal === o.numero_pessoal) || x.nome === o.nome) : null;
+    const lugarAnt = antes ? anterior.indexOf(antes) + 1 : null;
+    const mov = lugarAnt == null ? '<span style="color:var(--ink-soft)" title="não vendeu na semana anterior">novo</span>' : lugarAnt > i+1 ? `<span style="color:#1F7A33" title="estava em ${lugarAnt}.º">▲${lugarAnt-(i+1)}</span>` : lugarAnt < i+1 ? `<span style="color:#B4231A" title="estava em ${lugarAnt}.º">▼${(i+1)-lugarAnt}</span>` : '<span style="color:var(--ink-soft)">=</span>';
+    return `<div class="vs-barra-l"><b>${i+1}.º</b><div><div style="display:flex;justify-content:space-between;gap:6px;"><span>${rpEsc(o.nome)}</span><span style="font-size:11px;">${anterior ? mov : ''}</span></div><div class="vs-barra-t"><span style="width:${Math.max(3, (Number(o.vendas_un)||0)/max*100)}%;${i < 3 ? '' : 'background:#8FA3B8;'}"></span></div></div><b style="text-align:right;">${o.vendas_un} un</b></div>`;
+  }).join('') + `</div>`;
+  return h;
+}
+
 async function blocoVendaSugestiva(){
   const [rows, operadores] = await Promise.all([
-    sb('loja_venda_sugestiva?select=*&order=id.desc&limit=1'),
-    sb('loja_venda_sugestiva_operadores?select=*&order=id.desc')
+    sb('loja_venda_sugestiva?select=*&order=data_referencia.desc.nullslast,id.desc&limit=1'),
+    sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=200')
   ]);
   const v = rows && rows.length ? rows[0] : null;
   let html = `<div class="section-title">🛍️ Venda Sugestiva</div>`;
@@ -8044,17 +8248,20 @@ async function blocoVendaSugestiva(){
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Vs Melhor Semana</span><span style="font-size:13px;font-weight:700;color:var(--navy);">${v.vs_melhor_semana_pct != null ? v.vs_melhor_semana_pct + '%' : '—'}</span></div>
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">${v.semana || ''}</span><span style="font-size:12px;color:${v.lojas_atingiram_objetivo?'var(--green)':'var(--red)'};font-weight:700;">${v.lojas_atingiram_objetivo?'✓ Objetivo atingido':'Objetivo não atingido'}</span></div>
   </div>`;
-  if(operadores.length){
-    html += `<div class="card" style="padding:4px 12px;">
-      <h3 style="margin:10px 0 6px;">Ranking de Operadores</h3>`;
-    operadores.forEach((o,i)=>{
-      html += `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};">
-        <span style="font-size:12.5px;color:var(--ink);">${i+1}. ${o.nome}</span>
-        <span style="font-size:13px;font-weight:700;color:var(--navy);">${o.vendas_un} un</span>
-      </div>`;
-    });
-    html += `</div>`;
-  }
+  html += await historicoVendaSugestiva();
+  // ranking por campanha: esta semana e a semana anterior
+  const campanhas = [];
+  (operadores||[]).forEach(o => { const k = o.artigo || '—'; let c = campanhas.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; campanhas.push(c); } c.ops.push(o); });
+  campanhas.slice(0, 2).forEach((c, ci) => {
+    const ops = c.ops.sort((a,b) => b.vendas_un - a.vendas_un);
+    const total = ops.reduce((a,o) => a + (Number(o.vendas_un)||0), 0);
+    const outra = ci === 0 && campanhas[1] ? [...campanhas[1].ops].sort((a,b) => b.vendas_un - a.vendas_un) : null;
+    html += `<div class="card" style="padding:4px 12px;margin-bottom:12px;">
+      <h3 style="margin:10px 0 2px;">🏆 Pódio — ${ci === 0 ? 'esta semana' : 'semana anterior'}</h3>
+      <div style="font-size:11.5px;color:var(--ink-soft);">${rpEsc(c.k)}${c.data ? ' · até ' + c.data.slice(8,10) + '/' + c.data.slice(5,7) : ''} · total ${total} un${ci === 0 && outra ? ' · ▲▼ = lugares ganhos ou perdidos face à semana anterior' : ''}</div>
+      ${podioVendaSugestivaHtml(ops, outra)}
+    </div>`;
+  });
   return html;
 }
 
