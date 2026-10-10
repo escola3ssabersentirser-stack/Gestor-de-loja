@@ -2464,6 +2464,46 @@ async function impMarkdown(wb){
   return `dados até ${impDDMM(dataRef)} · ${bloco.mes}: ${divisoes.length} divisões${pior && pior.pct > 0 ? ' (pior: ' + impTitulo(pior.divisao) + ' ' + pior.pct.toLocaleString('pt-PT') + '%)' : ''}, ${nArtigos} artigos`;
 }
 
+// O "Vendas e Quebras Mensal" também traz o total e as secções do mês: atualiza o painel se for mais recente
+const IMP_VQ_SECOES = {'Flores':['d','FLORES'],'Take-Away':['d','TAKE-AWAY'],'Peixaria':['d','PEIXARIA'],'Bacalhau':['d','BACALHAU'],'Talho':['d','TALHO'],'Padaria/Pastelaria':['d','PADARIA/PASTELARIA'],'Frutas E Vegetais':['d','FRUTAS E VEGETAIS'],'Mercearia + Pet Food':['a','MERCEARIA + PET FOOD'],'Bebidas':['a','BEBIDAS'],'Deterg. E Prod. Limpeza':['a','DETERG. E PROD. LIMPEZA'],'Produtos Pessoais':['a','PRODUTOS PESSOAIS'],'Bazar':['a','BAZAR'],'Charcutaria':['d','CHARCUTARIA'],'Congelados':['d','CONGELADOS'],'Leite':['d','LEITE'],'Produtos Lacteos':['d','PRODUTOS LACTEOS'],'Ovos':['d','OVOS'],'Queijos':['d','QUEIJOS'],'Pronto A Comer':['d','PRONTO A COMER'],'Parafarmacia':['a','PARAFARMÁCIA']};
+async function impPainelDoVQ(wb, dataRef){
+  const ler = (folha, colNome) => {
+    const R = impLinhas(wb.Sheets[folha]); const out = {}; if(!R.length) return out;
+    const h = impCabecalho(R, [colNome, 'Venda AA']); if(!h) return out;
+    const row = (R[h.i]||[]).map(impTxt); const c = t => row.indexOf(t);
+    const cN = c(colNome), cAC = c('Venda AC'), cAA = c('Venda AA'), cQ = c('Quebra € AC'), cQp = c('Quebra AC %'), cQpAA = c('Quebra AA %');
+    for(let i=h.i+1;i<R.length;i++){ const r = R[i]||[]; let nome = impTxt(r[cN]).toUpperCase(); if(!nome && impTxt(r[cN-1]).toLowerCase() === 'total') nome = 'TOTAL'; if(!nome) continue;
+      out[nome] = {ac: impNum(r[cAC]), aa: impNum(r[cAA]), q: impNum(r[cQ]), qp: impNum(r[cQp]), qpAA: impNum(r[cQpAA])}; }
+    return out;
+  };
+  const area = ler('Sumario por loja', 'Area'), div = ler('Sumario por Divisão', 'Divisão');
+  const T = area['TOTAL']; if(!T || !T.ac) return false;
+  let base = null;
+  try{ const rows = await sb('loja_resumo_painel?id=eq.1&select=dados'); base = rows && rows[0] && rows[0].dados; }catch(e){}
+  base = base || resumoPainel || RESUMO_PADRAO;
+  const ateAtual = base.dados_ate || (base.data_relatorio ? (p => impMenosUmDia(`${p[2]}-${p[1]}-${p[0]}`))(base.data_relatorio.split('/')) : null);
+  if(ateAtual && dataRef <= ateAtual) return false; // o painel já está igual ou mais recente (o Bom Dia é mais completo)
+  let bdgT = null;
+  try{ const ini = dataRef.slice(0,8) + '01'; const dias = await impTodos(`loja_vendas_dia?data=gte.${ini}&data=lte.${dataRef}&select=vendas_budget`); const s = dias.reduce((a,d)=>a+(Number(d.vendas_budget)||0),0); bdgT = s ? Math.round(s*100)/100 : null; }catch(e){}
+  const r4 = v => v == null || isNaN(v) ? null : Math.round(v*10000)/10000, r2 = v => v == null || isNaN(v) ? null : Math.round(v*100)/100;
+  const linha = (sec, x, bdg, o) => ({sec, bdg: bdg || null, real: r2(x.ac), vsb: bdg ? r4(x.ac/bdg - 1) : null, vsaa: x.aa ? r4(x.ac/x.aa - 1) : null, vsaa_ano: o ? o.vsaa_ano : null, q: x.q == null ? null : r2(-x.q), qp: x.qp == null ? null : r4(-x.qp), qp_aa: x.qpAA == null ? null : r4(-x.qpAA)});
+  const secoes = (base.secoes || []).map(o => { const m = IMP_VQ_SECOES[o.sec]; const x = m && (m[0] === 'd' ? div[m[1]] : area[m[1]]); return x ? linha(o.sec, x, null, o) : null; }).filter(Boolean);
+  const tot = linha('Total', T, bdgT, base.secoes_total);
+  const mesCurso = (base.mes_curso || []).map(m => {
+    if(m.ind === 'Vendas vs budget') return {...m, atual: tot.real, comp: bdgT, vari: tot.vsb};
+    if(m.ind === 'Vendas vs ano passado') return {...m, atual: tot.real, comp: r2(T.aa), vari: tot.vsaa};
+    if(m.ind === 'Quebra (€)') return {...m, atual: tot.q};
+    if(m.ind === 'Quebra em % das vendas') return {...m, atual: tot.qp, comp: tot.qp_aa, vari: (tot.qp != null && tot.qp_aa != null) ? (tot.qp - tot.qp_aa)*100 : null};
+    return {...m, nota: String(m.nota||'').replace(/ · dados até .*$/,'') + ' · dados até ' + impDDMM(ateAtual || dataRef)};
+  });
+  const dRel = new Date(dataRef + 'T12:00:00'); dRel.setDate(dRel.getDate() + 1);
+  const dados = {...base, mes_curso: mesCurso, secoes, secoes_total: tot, data_relatorio: impDDMMAAAA(impISO(dRel)), dados_ate: dataRef};
+  resumoPainel = dados;
+  await sb('loja_resumo_painel?on_conflict=id', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({id:1, dados, atualizado_em: new Date().toISOString()})});
+  renderPainelResumo();
+  return true;
+}
+
 // ---------- VENDAS E QUEBRAS MENSAL (categorias que mais perdem vendas) ----------
 async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   const R = impLinhas(wb.Sheets['Detalhes por Categoria']);
@@ -2494,7 +2534,8 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   await sb('loja_categorias_perda_vendas?id=gt.0', {method:'DELETE'});
   await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top)});
   await impGuardarData('categorias', dataRef);
-  return `dados até ${impDDMM(dataRef)}${estimada ? ' (data estimada)' : ''} · 10 categorias que mais perdem vendas (pior: ${top[0].categoria} ${top[0].delta_pct.toLocaleString('pt-PT')}%)`;
+  let painelOk = false; if(!estimada){ try{ painelOk = await impPainelDoVQ(wb, dataRef); }catch(e){} }
+  return `dados até ${impDDMM(dataRef)}${estimada ? ' (data estimada)' : ''}${painelOk ? ' · painel atualizado' : ''} · 10 categorias que mais perdem vendas (pior: ${top[0].categoria} ${top[0].delta_pct.toLocaleString('pt-PT')}%)`;
 }
 
 // ---------- NOTAS DE CRÉDITO ----------
