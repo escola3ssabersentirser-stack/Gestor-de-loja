@@ -2207,8 +2207,8 @@ function renderPainelResumo(){
   // ---- Score e auditorias
   const sc = (r.score||[]).filter(s => s.score != null);
   if(sc.length || (r.auditorias||[]).length){
-    h += `<div class="rp-bloco-tit">Score de loja e auditorias</div><div class="rp-graficos">`;
-    h += `<div class="h3s-card"><div class="rp-graf-tit">Score de loja (média das semanas)${r.score_media != null ? ' · média do ano ' + Number(r.score_media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="rp-score">`;
+    h += `<div class="rp-bloco-tit">Melhoria contínua: score e auditorias</div><div class="rp-graficos">`;
+    h += `<div class="h3s-card"><div class="rp-graf-tit">Score de Melhoria Contínua (média das semanas)${r.score_media != null ? ' · média do ano ' + Number(r.score_media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="rp-score">`;
     sc.forEach(s => {
       const v = Number(s.score);
       h += `<div class="rp-score-linha"><span class="rp-score-mes">${RP_MESES_CURTOS[s.mes]||s.mes}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT',{maximumFractionDigits:1})}%</span></div>`;
@@ -2363,7 +2363,8 @@ async function impBomDia(wb){
     const col = t => row.findIndex(x => x.replace(/\s/g,'') === t);
     const linha = {nome, budget:impNum(r[cBudgetMTD]), vendas:impNum(r[realMTD[0]]), quebra:impNum(r[realMTD[1]]),
       vsb: impNum(r[col('VarvsBDGMêsMTD(%)')]), vsaa: impNum(r[col('VarvsAAMTD(%)')]), vsaaAno: impNum(r[col('VarvsAAYTD(%)')]),
-      qp: impNum(r[col('RealMTD(%)')]), qpAA: impNum(r[col('RealMTDHomologo(%)')])};
+      qp: impNum(r[col('RealMTD(%)')]), qpAA: impNum(r[col('RealMTDHomologo(%)')]),
+      diaReal: impNum(r[col('Realontem(€)')]), diaBdg: impNum(r[col('Budgetontem(€)')]), diaVsb: impNum(r[col('VarvsBDGontem(%)')]), vsbAno: impNum(r[col('VarvsBDGAnoYTD(%)')])};
     if(nome === 'TOTAL'){ total = linha; break; }
     secoes.push(linha);
   }
@@ -2437,6 +2438,14 @@ async function impBomDia(wb){
     }
   }
   await impPainelDoBomDia(R, total, secoes, dataOntem, mesNome);
+  // indicadores de vendas (dia / mês / ano) para o cartão Vendas
+  try{
+    const atual = await sb('loja_resumo_painel?id=eq.3&select=dados'); const a = atual && atual[0] && atual[0].dados;
+    if(!(a && a.data && a.data > dataOntem)){
+      const kv = {data: dataOntem, dia: {real: total.diaReal, bdg: total.diaBdg, vsb: total.diaVsb, vsaa: null}, mes: {real: total.vendas, bdg: total.budget, vsb: total.vsb, vsaa: total.vsaa}, ano: {vsb: total.vsbAno, vsaa: total.vsaaAno}};
+      await sb('loja_resumo_painel?on_conflict=id', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({id:3, dados: kv, atualizado_em: new Date().toISOString()})});
+    }
+  }catch(e){}
   await impGuardarData('bomdia', dataOntem);
   return `dados até ${impDDMM(dataOntem)} · painel atualizado · vendas do mês (${Math.round(total.vendas).toLocaleString('pt-PT')} € no mês), ${dias} dias, ${alertas} artigos com quebra`;
 }
@@ -2455,6 +2464,28 @@ function impBlocoMes(R, hIdx){
   }
   const cVal = titulos ? titulos.findIndex((t,i) => i >= col && t.toUpperCase().includes('NÃO REALIZADO (VALOR)')) : -1;
   return {col, cVal, mes: impTitulo(mes), dataRef};
+}
+// Etiquetas do mês: impressas, vendidas, sem venda e % de aceitação (por divisão e por artigo)
+function impEtiquetasMes(R, hIdx, bloco, extra){
+  let titulos = null;
+  for(let k = hIdx; k >= Math.max(0, hIdx-4); k--){ const row = (R[k]||[]).map(impTxt); if(row.some(t => t.toUpperCase().includes('ETIQUETAS IMPRESSAS'))){ titulos = row; break; } }
+  if(!titulos || bloco.col < 0) return [];
+  const c = txt => titulos.findIndex((t,i) => i >= bloco.col && t.toUpperCase().includes(txt));
+  const cImp = c('ETIQUETAS IMPRESSAS'), cAc = c('% ACEITA'), cVv = c('VENDAS MARKDOWN (VALOR)'), cQv = c('QUEBRA IDENTIFICADA (VALOR)'), cNr = bloco.cVal;
+  const row = (R[hIdx]||[]).map(impTxt);
+  const cLoja = row.indexOf('Cód Retail') >= 0 ? row.indexOf('Cód Retail') : 0;
+  const cDiv = row.indexOf('Divisão (txt)'), cArt = row.indexOf('Artigo (txt)'), cCod = row.indexOf('Artigo (cód)');
+  const out = [];
+  for(let i=hIdx+1;i<R.length;i++){
+    const r = R[i]||[]; if(impTxt(r[cLoja]).replace(/\.0$/,'') !== IMP_LOJA) continue;
+    const imp = impNum(r[cImp]); if(!(imp > 0)) continue;
+    const ac = impNum(r[cAc]); const vend = ac == null ? null : Math.round(ac * imp);
+    const dv = impTxt(r[cDiv]).toUpperCase();
+    out.push({nivel: cArt >= 0 ? 'artigo' : 'divisao', divisao: dv, secao_app: IMP_SECAO_MKD[dv] || null, artigo: cArt >= 0 ? impTxt(r[cArt]) : null, artigo_cod: cCod >= 0 ? impTxt(r[cCod]).replace(/\.0$/,'') : null,
+      impressas: imp, vendidas: vend, sem_venda: vend == null ? null : Math.max(0, imp - vend), pct_aceitacao: ac == null ? null : impR2(ac*100),
+      vendas_valor: impR2(impNum(r[cVv]) || 0), quebra_valor: impR2(impNum(r[cQv]) || 0), pct_nao_realizado: cNr >= 0 ? impR2(impNum(r[cNr]) || 0) : null, ...extra});
+  }
+  return out;
 }
 async function impMarkdown(wb){
   const nDiv = wb.SheetNames.find(n => n.trim() === 'Markdown da Loja por Divisão');
@@ -2506,6 +2537,16 @@ async function impMarkdown(wb){
       }
     }
   }
+  // etiquetas do mês (divisões + artigos)
+  try{
+    const extra = {mes_referencia: bloco.mes, data_referencia: dataRef};
+    let etq = impEtiquetasMes(D, h.i, bloco, extra);
+    if(nArt){ const A = impLinhas(wb.Sheets[nArt]); const ha = impCabecalho(A, ['Artigo (txt)']); if(ha) etq = etq.concat(impEtiquetasMes(A, ha.i, impBlocoMes(A, ha.i), extra)); }
+    if(etq.length){
+      await sb('loja_markdown_etiquetas?id=gt.0', {method:'DELETE'});
+      for(let i=0;i<etq.length;i+=200) await sb('loja_markdown_etiquetas', {method:'POST', body: JSON.stringify(etq.slice(i,i+200))});
+    }
+  }catch(e){ console.warn('etiquetas', e); }
   const pior = [...divisoes].sort((a,b)=>b.pct-a.pct)[0];
   await impGuardarData('markdown', dataRef);
   return `dados até ${impDDMM(dataRef)} · ${bloco.mes}: ${divisoes.length} divisões${pior && pior.pct > 0 ? ' (pior: ' + impTitulo(pior.divisao) + ' ' + pior.pct.toLocaleString('pt-PT') + '%)' : ''}, ${nArtigos} artigos`;
@@ -3056,6 +3097,119 @@ async function areaRelatoriosHtml(){
     h += `<div class="rel-linha"><span class="rel-ic">📄</span><div class="rel-info"><b>${rpEsc(nomes[a.nome] || a.nome)}</b><small>${n ? n + (n === 1 ? ' relatório' : ' relatórios') : 'sem relatórios ainda'}${a.percentagem != null ? ' · nota ' + a.percentagem + '%' : ''}</small></div><button class="lem-w" style="background:#1F7A33" onclick="selectMenu('auditoria:${nj}','Auditoria ${rpEsc(nomes[a.nome] || a.nome)}')">Abrir</button></div>`; });
   return h + `</div>`;
 }
+// ===== Score mensal da Rotina Diária de Validades (email "Score Mensal") =====
+function valNum(t){
+  let s = String(t == null ? '' : t).replace(/[€%\s]/g,'').replace(/pp$/i,'');
+  if(!s) return null;
+  if(/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g,'');
+  else if(/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g,'').replace(',','.');
+  else if(s.includes(',') && !s.includes('.')) s = s.replace(',','.');
+  const n = Number(s); return isNaN(n) ? null : n;
+}
+function lerScoreValidades(texto){
+  const L = String(texto||'').replace(/\r/g,'').split('\n').map(l => l.replace(/\u00a0/g,' ').trim());
+  const idx = re => L.findIndex(l => re.test(l));
+  const depois = re => { const i = idx(re); if(i < 0) return null; for(let k=i+1;k<Math.min(L.length,i+4);k++) if(L[k]) return L[k]; return null; };
+  const cols = l => (l.includes('\t') ? l.split('\t') : l.split(/\s{2,}/)).map(x => x.trim());
+  const t = L.join('\n');
+  const mMes = t.match(/M[êe]s:\s*([A-Za-zÀ-ÿ]+)/);
+  if(!mMes || idx(/^SCORE$/i) < 0) throw new Error('não parece o email do Score Mensal da Rotina de Validades');
+  const mPos = t.match(/(\d+)\s+de\s+(\d+)/);
+  const mAt = (depois(/^[ÚU]ltima Atualiza/i)||'').match(/(\d{2})-(\d{2})-(\d{4})/);
+  const fin = re => { const l = L.find(x => re.test(x)); if(!l) return null; const m = l.match(/([\d.,]+)\s*€/); return m ? valNum(m[1]) : null; };
+  const d = {
+    mes: mMes[1].charAt(0).toUpperCase() + mMes[1].slice(1).toLowerCase(),
+    score: valNum(depois(/^SCORE$/i)),
+    posicao: mPos ? Number(mPos[1]) : null, total_lojas: mPos ? Number(mPos[2]) : null,
+    vs_mes_anterior_pp: valNum(depois(/^Vs M[êe]s Anterior/i)),
+    atualizacao: mAt ? `${mAt[3]}-${mAt[2]}-${mAt[1]}` : null,
+    execucao: valNum(depois(/^Execu[çc][ãa]o Rotina Di[áa]ria$/i)),
+    aceitacao: valNum(depois(/^Taxa de Aceita[çc][ãa]o$/i)),
+    mnr_pct: valNum(depois(/^Markdown N[ãa]o Realizado %$/i)),
+    quebra_evitada: fin(/Quebra Evitada\s.*€/i), mnr_valor: fin(/Markdown N[ãa]o Realizado\s+[\d.,]+\s*€/i), mnv_valor: fin(/Markdown N[ãa]o Vendido\s+[\d.,]+\s*€/i),
+    secoes: [], artigos: [], area: [], top3: [], bottom3: []
+  };
+  // tabela por secção
+  let i = idx(/^Sec[çc][ãa]o\s+N Tarefas/i);
+  if(i >= 0) for(let k=i+1;k<L.length && !/^Top 15/i.test(L[k]);k++){
+    const c = cols(L[k]); if(!c[0] || c.length < 2) continue;
+    d.secoes.push({secao: c[0], tarefas: valNum(c[1]), execucao: valNum(c[2]), aceitacao: valNum(c[3]), nao_realizado: valNum(c[4]), quebra_evitada: valNum(c[5]), mnr_valor: valNum(c[6]), md_quebrado: valNum(c[7])});
+  }
+  // top artigos
+  L.forEach(l => { const m = l.match(/^(\d{5,8})\s+(.+?)\s+([\d.,]+)\s*€\s+([\d.,]+)\s*€\s+([\d.,]+)\s*€$/); if(m) d.artigos.push({codigo: m[1], artigo: m[2], quebra_evitada: valNum(m[3]), mnr_valor: valNum(m[4]), md_quebrado: valNum(m[5])}); });
+  // lojas da área
+  L.forEach(l => { const m = l.match(/^(\d{3})\s+(.+?)\s+([\d.]+)\s*%\s+(\d+)\s+([\d.,]+)\s+([\d.]+)\s*%\s+([\d.]+)\s*%\s+([\d.]+)\s*%\s+([\d.,]+)\s*€\s+([\d.,]+)\s*€\s+([\d.,]+)\s*€/);
+    if(m) d.area.push({loja: m[1], nome: m[2], score: valNum(m[3]), posicao: Number(m[4]), tarefas: valNum(m[5]), execucao: valNum(m[6]), aceitacao: valNum(m[7]), nao_realizado: valNum(m[8]), quebra_evitada: valNum(m[9]), mnr_valor: valNum(m[10]), md_quebrado: valNum(m[11])}); });
+  // top 3 / bottom 3
+  const bloco = (ini, fim) => { const a = idx(ini); if(a < 0) return []; const out = []; for(let k=a+1;k<L.length && !fim.test(L[k]);k++){ const m = L[k].match(/(\d{3})\s+(.+?)\s+([\d.]+)\s*%$/); if(m) out.push({loja: m[1], nome: m[2], score: valNum(m[3])}); } return out; };
+  d.top3 = bloco(/TOP 3 LOJAS/i, /BOTTOM 3|Lojas da [áa]rea/i);
+  d.bottom3 = bloco(/BOTTOM 3 LOJAS/i, /Lojas da [áa]rea/i);
+  return d;
+}
+async function valGuardarScore(texto){
+  const est = document.getElementById('val-score-estado'); const msg = t => { if(est) est.textContent = t; };
+  try{
+    const d = lerScoreValidades(texto);
+    const ano = d.atualizacao ? (d.mes.toLowerCase() === 'dezembro' && d.atualizacao.slice(5,7) === '01' ? Number(d.atualizacao.slice(0,4)) - 1 : Number(d.atualizacao.slice(0,4))) : new Date().getFullYear();
+    await sb('loja_validades_score?on_conflict=ano,mes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({ano, mes: d.mes, data_atualizacao: d.atualizacao, dados: d})});
+    msg(`✓ Score de ${d.mes} guardado.`);
+    renderArea('validades');
+  }catch(e){ msg('✕ ' + (e && e.message || e)); }
+}
+async function valCarregarFicheiro(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f) return;
+  const est = document.getElementById('val-score-estado'); if(est) est.textContent = 'A ler…';
+  try{ const t = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); await valGuardarScore(t); }catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
+}
+async function blocoScoreValidades(){
+  let rows = [];
+  try{ rows = await sb('loja_validades_score?select=*&order=ano.desc,data_atualizacao.desc.nullslast&limit=6') || []; }catch(e){}
+  const pode = currentUser && ['gestora','area','responsavel'].includes(currentUser.role);
+  const carregar = pode ? `<details class="card lem-novo" style="margin-top:8px;"><summary>📥 Atualizar com o email do Score Mensal</summary>
+      <p class="com-ajuda" style="margin:6px 0;">Abra o email "Score Mensal - Rotina Diária Validades", copie tudo e cole aqui. Também pode carregar o email guardado (PDF, Word ou .txt).</p>
+      <textarea id="val-score-texto" rows="6" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12px;" placeholder="Colar aqui o texto do email…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;"><button class="btn-primary" style="flex:1;margin:0;" onclick="valGuardarScore(document.getElementById('val-score-texto').value)">Guardar</button>
+      <input type="file" id="val-score-fich" class="hidden" accept=".txt,.eml,.pdf,.docx" onchange="valCarregarFicheiro(this)"><button class="btn-primary" style="flex:1;margin:0;background:#1F7A33;" onclick="document.getElementById('val-score-fich').click()">📎 Ficheiro</button></div>
+      <div id="val-score-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></details>` : '';
+  if(!rows.length) return `<div class="rp-bloco-tit" style="margin-top:4px;">🏅 Score mensal da rotina de validades</div><div class="card" style="font-size:13px;color:var(--ink-soft);">Ainda sem score guardado.</div>${carregar}`;
+  const d = rows[0].dados || {}; const ant = rows[1] && rows[1].dados;
+  const pct = (v, c=1) => v == null ? '—' : Number(v).toLocaleString('pt-PT', {minimumFractionDigits:c, maximumFractionDigits:c}) + '%';
+  const eur = v => v == null ? '—' : Math.round(v).toLocaleString('pt-PT') + ' €';
+  const cor = (v, bom, medio) => v == null ? 'var(--ink-soft)' : v >= bom ? '#1F7A33' : v >= medio ? '#C77F12' : '#B4231A';
+  const corInv = (v, bom, medio) => v == null ? 'var(--ink-soft)' : v <= bom ? '#1F7A33' : v <= medio ? '#C77F12' : '#B4231A';
+  const ddmm = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4) : '';
+  const pp = d.vs_mes_anterior_pp;
+  let h = `<div class="rp-bloco-tit" style="margin-top:4px;">🏅 Score mensal da rotina de validades — ${rpEsc(d.mes || '')}${d.atualizacao ? ' · atualizado a ' + ddmm(d.atualizacao) : ''}</div>`;
+  h += `<div class="card" style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px;align-items:center;">
+    <div style="text-align:center;"><div style="font-size:12px;color:var(--ink-soft);">Score da loja</div><div style="font-size:40px;font-weight:800;line-height:1.1;color:${cor(d.score, 90, 85)};">${pct(d.score, 2)}</div>
+      <div style="font-size:12.5px;margin-top:4px;">${pp == null ? '' : `<b style="color:${pp >= 0 ? '#1F7A33' : '#B4231A'}">${pp >= 0 ? '▲ +' : '▼ '}${Number(pp).toLocaleString('pt-PT')} pp</b> vs mês anterior`}</div></div>
+    <div style="text-align:center;border-left:1px solid var(--line);padding-left:8px;"><div style="font-size:12px;color:var(--ink-soft);">Posição nacional</div><div style="font-size:30px;font-weight:800;color:var(--navy);">${d.posicao ? d.posicao + '.º' : '—'}</div><div style="font-size:12px;color:var(--ink-soft);">${d.total_lojas ? 'de ' + d.total_lojas + ' lojas' : ''}</div></div>
+  </div>`;
+  h += `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0;">
+    ${[['Execução da rotina', pct(d.execucao, 2), cor(d.execucao, 98, 95), '25% do score'], ['Taxa de aceitação', pct(d.aceitacao, 2), cor(d.aceitacao, 75, 60), 'etiquetas vendidas ÷ impressas'], ['Markdown não realizado', pct(d.mnr_pct, 2), corInv(d.mnr_pct, 5, 10), 'quanto menos, melhor']].map(([t,v,c,s]) => `<div class="card" style="margin:0;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--ink-soft);">${t}</div><div style="font-size:19px;font-weight:800;color:${c};">${v}</div><div style="font-size:10px;color:var(--ink-soft);">${s}</div></div>`).join('')}
+  </div>`;
+  h += `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px;">
+    ${[['🟢 Quebra evitada', eur(d.quebra_evitada), '#1F7A33'], ['🔴 Markdown não realizado', eur(d.mnr_valor), '#B4231A'], ['🟡 Markdown não vendido', eur(d.mnv_valor), '#C77F12']].map(([t,v,c]) => `<div class="card" style="margin:0;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--ink-soft);">${t}</div><div style="font-size:17px;font-weight:800;color:${c};">${v}</div></div>`).join('')}
+  </div>`;
+  if((d.secoes||[]).length){
+    h += `<div class="card rp-tabela-box" style="padding:4px 8px;"><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">Secção</th><th>Execução</th><th>Aceitação</th><th>Não realiz.</th><th>Quebra evitada</th><th>MD não vendido</th></tr></thead><tbody>`
+      + d.secoes.filter(x => x.tarefas || x.aceitacao != null).sort((a,b) => (a.aceitacao ?? 999) - (b.aceitacao ?? 999)).map(x => `<tr><td style="text-align:left;">${rpEsc(x.secao)}</td><td style="color:${cor(x.execucao,98,95)};font-weight:700;">${pct(x.execucao)}</td><td style="color:${cor(x.aceitacao,75,60)};font-weight:800;">${pct(x.aceitacao)}</td><td style="color:${corInv(x.nao_realizado,5,10)};font-weight:700;">${pct(x.nao_realizado)}</td><td>${eur(x.quebra_evitada)}</td><td style="color:#C77F12;font-weight:700;">${eur(x.md_quebrado)}</td></tr>`).join('')
+      + `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);padding:4px 2px;">Ordenado pela aceitação, da pior para a melhor.</div></div>`;
+  }
+  if((d.area||[]).length){
+    h += `<div class="rp-bloco-tit">Lojas da área</div><div class="card rp-tabela-box" style="padding:4px 8px;"><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">Loja</th><th>Score</th><th>Posição</th><th>Aceitação</th><th>Não realiz.</th></tr></thead><tbody>`
+      + [...d.area].sort((a,b) => b.score - a.score).map(x => `<tr${x.loja === IMP_LOJA ? ' style="background:#E3F2E6;font-weight:800;"' : ''}><td style="text-align:left;">${x.loja} ${rpEsc(impTitulo(x.nome))}</td><td>${pct(x.score,2)}</td><td>${x.posicao}.º</td><td>${pct(x.aceitacao)}</td><td>${pct(x.nao_realizado)}</td></tr>`).join('') + `</tbody></table></div>`;
+  }
+  if((d.artigos||[]).length){
+    h += `<details class="card" style="margin-top:10px;"><summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:13px;">Top ${d.artigos.length} artigos com maior quebra</summary><div class="rp-tabela-box"><table class="rp-tab" style="font-size:12px;margin-top:6px;"><thead><tr><th style="text-align:left;">Artigo</th><th>Quebra evitada</th><th>MD não realiz.</th><th>MD quebrado</th></tr></thead><tbody>`
+      + d.artigos.map(x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}</td><td>${eur(x.quebra_evitada)}</td><td style="color:${x.mnr_valor > 0 ? '#B4231A' : 'inherit'}">${eur(x.mnr_valor)}</td><td style="color:${x.md_quebrado > 0 ? '#C77F12' : 'inherit'}">${eur(x.md_quebrado)}</td></tr>`).join('') + `</tbody></table></div></details>`;
+  }
+  if(rows.length > 1){
+    h += `<div class="card" style="margin-top:10px;"><div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px;">Evolução do score</div>` + [...rows].reverse().map(r => { const s = r.dados && r.dados.score; return `<div class="rp-score-linha" style="grid-template-columns:90px 1fr 60px;margin:5px 0;"><span class="rp-score-mes">${rpEsc(r.mes)}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,s||0))}%;background:${cor(s,90,85)}"></span></span><span class="rp-score-num">${pct(s,1)}</span></div>`; }).join('') + `</div>`;
+  }
+  return h + carregar;
+}
+
 async function areaValidadesHtml(){
   const [exec, tratar, rotina] = await Promise.all([
     sb('loja_validades_execucao_pct?select=*&order=tx_execucao_pct.asc').catch(()=>[]),
@@ -10149,6 +10303,42 @@ function pedirFormacao(){
   });
 }
 
+// Dia · Mês · Ano: vendas face ao budget e ao ano passado (LFL)
+async function blocoVendasDiaMesAno(r){
+  let kv = null, dia = null;
+  try{ const x = await sb('loja_resumo_painel?id=eq.3&select=dados'); kv = x && x[0] && x[0].dados; }catch(e){}
+  try{ const d = await sb('loja_vendas_dia?vendas_real=gt.0&select=data,vendas_real,vendas_budget&order=data.desc&limit=1'); dia = d && d[0]; }catch(e){}
+  try{ await carregarResumoPainel(); }catch(e){}
+  const rp = resumoPainel || {};
+  const mc = {}; (rp.mes_curso||[]).forEach(l => mc[l.ind] = l);
+  const anoP = rp.ano_ant || (new Date().getFullYear() - 1);
+  // o mais recente ganha: dados do Bom Dia (id 3) ou dias/painel
+  const D = (kv && kv.dia && kv.data && (!dia || kv.data >= dia.data)) ? {data: kv.data, real: kv.dia.real, vsb: kv.dia.vsb, vsaa: kv.dia.vsaa}
+          : dia ? {data: dia.data, real: Number(dia.vendas_real), vsb: dia.vendas_budget ? dia.vendas_real/dia.vendas_budget - 1 : null, vsaa: null} : {};
+  const ateP = rp.dados_ate || null;
+  const M = (kv && kv.mes && kv.data && (!ateP || kv.data >= ateP)) ? {data: kv.data, real: kv.mes.real, vsb: kv.mes.vsb, vsaa: kv.mes.vsaa}
+          : {data: ateP, real: (mc['Vendas vs budget']||{}).atual, vsb: (mc['Vendas vs budget']||{}).vari, vsaa: (mc['Vendas vs ano passado']||{}).vari};
+  const A = (kv && kv.ano && kv.data) ? {data: kv.data, real: Number(r && r.vendas_ano) || null, vsb: kv.ano.vsb, vsaa: kv.ano.vsaa}
+          : {data: ateP, real: Number(r && r.vendas_ano) || null, vsb: null, vsaa: rp.secoes_total ? rp.secoes_total.vsaa_ano : null};
+  const pct = v => v == null || isNaN(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v*100).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
+  const chip = v => `<span style="display:inline-block;min-width:64px;text-align:center;padding:3px 8px;border-radius:999px;font-weight:800;font-size:14px;${v == null || isNaN(v) ? 'background:var(--line);color:var(--ink-soft);' : v >= 0 ? 'background:#E3F2E6;color:#1F7A33;' : 'background:#FBE7E4;color:#B4231A;'}">${pct(v)}</span>`;
+  const dd = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) : '';
+  const cartao = (tit, sub, X, notaLfl) => `<div class="card" style="margin:0;padding:12px;">
+      <div style="font-size:13px;font-weight:800;color:var(--navy);">${tit}</div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">${sub}</div>
+      <div style="font-size:19px;font-weight:800;color:var(--ink);margin-bottom:8px;">${X.real ? fmtEuro(X.real) : '—'}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid var(--line);"><span style="font-size:12px;color:var(--ink-soft);">vs budget</span>${chip(X.vsb)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid var(--line);"><span style="font-size:12px;color:var(--ink-soft);">LFL ${anoP}</span>${chip(X.vsaa)}</div>
+      ${notaLfl ? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">${notaLfl}</div>` : ''}
+    </div>`;
+  return `<div class="section-title">📊 Vendas — dia, mês e ano</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;">
+      ${cartao('Dia', D.data ? 'ontem, ' + dd(D.data) : 'último dia', D, D.vsaa == null ? 'O Bom Dia não traz o dia do ano passado.' : '')}
+      ${cartao('Mês', M.data ? 'até ' + dd(M.data) : 'mês em curso', M)}
+      ${cartao('Ano', A.data ? 'até ' + dd(A.data) : 'acumulado do ano', A, A.vsb == null ? 'Budget do ano: aparece ao carregar o próximo Bom Dia.' : '')}
+    </div>`;
+}
+
 async function renderPainelVendas(){
   const content = document.getElementById('painel-vendas-content');
   const [resumoRows, vendasSecoes, vendasDia, categoriasPerda] = await Promise.all([
@@ -10161,7 +10351,8 @@ async function renderPainelVendas(){
   const calc = await calcularVendasPorPeriodo();
   const vendasSemana = calc && calc.semana.vendas!==null ? calc.semana.vendas : null;
 
-  let html = `<div class="section-title">💶 Vendas</div>`;
+  let html = await blocoVendasDiaMesAno(r);
+  html += `<div class="section-title">💶 Vendas</div>`;
   html += `<div class="card">
     <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12.5px;color:var(--ink-soft);">Ontem</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasDia.length?fmtEuro(vendasDia[0].vendas_real):'—'}</span></div>
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Semana</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasSemana!==null?fmtEuro(vendasSemana):'—'}</span></div>
@@ -11724,9 +11915,21 @@ async function renderMelhoriaContinua(){
 
   const editavel = currentUser && currentUser.role === 'gestora';
   let html = `<div class="vs-detail-grid" style="margin-bottom:16px;">
-    <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score da Loja${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
+    <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score de Melhoria Contínua${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
   </div>`;
+  // score de melhoria contínua mês a mês (do Resumo da loja)
+  try{
+    await carregarResumoPainel();
+    const sc = ((resumoPainel && resumoPainel.score) || []).filter(x => x.score != null);
+    if(sc.length){
+      const media = resumoPainel.score_media;
+      html += `<div class="section-title">📈 Score de Melhoria Contínua — mês a mês${media != null ? ' · média do ano ' + Number(media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="card"><div class="rp-score">`;
+      sc.forEach((x, i) => { const v = Number(x.score); const ant = i ? Number(sc[i-1].score) : null;
+        html += `<div class="rp-score-linha" style="grid-template-columns:34px 1fr 72px;"><span class="rp-score-mes">${RP_MESES_CURTOS[x.mes]||x.mes}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%;background:${v >= 85 ? '#1F7A33' : v >= 75 ? '#C77F12' : '#B4231A'}"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT',{maximumFractionDigits:1})}%${ant != null ? (v >= ant ? ' <span style="color:#1F7A33">▲</span>' : ' <span style="color:#B4231A">▼</span>') : ''}</span></div>`; });
+      html += `</div><div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Média das semanas de cada mês. O score da rotina de validades está no cartão Quebras.</div></div>`;
+    }
+  }catch(e){}
 
   const porDiaListas = {};
   listas7dias.forEach(l=>{
@@ -11955,22 +12158,30 @@ async function renderMarkdownScreen(){
   }
   html += `</div>`;
 
-  html += `<div class="section-title">🔴 Artigos com 100% Markdown Não Realizado — ${mesAtualNome()} <span class="count">· ${piorAceitacao.length}</span></div>`;
-  html += `<div class="card">`;
-  if(piorAceitacao.length){
-    html += `<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">Todas as etiquetas impressas, nenhuma aceite — 0% de vendas com desconto.</div>`;
-    piorAceitacao.forEach((a,i)=>{
-      html += `<div style="padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};display:flex;justify-content:space-between;">
-        <span style="font-size:12px;color:var(--ink);">${a.artigo} <span style="color:var(--ink-soft);font-size:10.5px;">(${a.divisao})</span></span>
-        <span style="font-size:12px;font-weight:700;color:var(--red);">${a.valor} etiq.</span>
-      </div>`;
-    });
-  } else {
-    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
-  }
-  html += `</div>`;
-
+  html += await blocoEtiquetasMarkdown();
   content.innerHTML = html;
+}
+
+async function blocoEtiquetasMarkdown(){
+  let rows = [];
+  try{ rows = await sb('loja_markdown_etiquetas?select=*&order=sem_venda.desc.nullslast&limit=2000') || []; }catch(e){}
+  const div = rows.filter(r => r.nivel === 'divisao'), art = rows.filter(r => r.nivel === 'artigo');
+  if(!rows.length) return `<div class="section-title">🏷️ Etiquetas de markdown</div><div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Aparece ao carregar o relatório de markdown nos ficheiros do dia.</div></div>`;
+  const ref = rows[0];
+  const n = v => v == null ? '—' : Number(v).toLocaleString('pt-PT', {maximumFractionDigits:0});
+  const corAc = v => v == null ? 'var(--ink-soft)' : v >= 70 ? '#1F7A33' : v >= 50 ? '#C77F12' : '#B4231A';
+  const tot = div.reduce((a,d) => ({imp: a.imp + Number(d.impressas||0), vend: a.vend + Number(d.vendidas||0)}), {imp:0, vend:0});
+  const acLoja = tot.imp ? tot.vend / tot.imp * 100 : null;
+  let h = `<div class="section-title">🏷️ Etiquetas de markdown — ${rpEsc(ref.mes_referencia || '')}${ref.data_referencia ? ' · até ' + ref.data_referencia.slice(8,10) + '/' + ref.data_referencia.slice(5,7) : ''}</div>`;
+  h += `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px;">
+    ${[['Impressas', n(tot.imp), 'var(--navy)'], ['Vendidas', n(tot.vend), '#1F7A33'], ['Sem venda', n(Math.max(0, tot.imp - tot.vend)), '#B4231A'], ['Aceitação', acLoja == null ? '—' : Math.round(acLoja) + '%', corAc(acLoja)]].map(([t,v,c]) => `<div class="card" style="margin:0;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--ink-soft);">${t}</div><div style="font-size:18px;font-weight:800;color:${c};">${v}</div></div>`).join('')}
+  </div>
+  <div style="font-size:11.5px;color:var(--ink-soft);margin:0 4px 8px;">Aceitação = etiquetas vendidas ÷ etiquetas impressas. O que interessa é <b>vender</b>: quanto mais etiquetas sem venda, mais quebra.</div>`;
+  const tabela = (lista, comArtigo) => `<div class="card rp-tabela-box" style="padding:4px 8px;"><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">${comArtigo ? 'Artigo' : 'Divisão'}</th><th>Impressas</th><th>Vendidas</th><th>Sem venda</th><th>Aceitação</th></tr></thead><tbody>${lista.map(r => `<tr><td style="text-align:left;">${rpEsc(comArtigo ? r.artigo : impTitulo(r.divisao))}${comArtigo ? `<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(impTitulo(r.divisao))}</div>` : ''}</td><td>${n(r.impressas)}</td><td>${n(r.vendidas)}</td><td style="font-weight:800;color:${Number(r.sem_venda) > 0 ? '#B4231A' : 'var(--ink)'};">${n(r.sem_venda)}</td><td style="font-weight:800;color:${corAc(r.pct_aceitacao)};">${r.pct_aceitacao == null ? '—' : Math.round(r.pct_aceitacao) + '%'}</td></tr>`).join('')}</tbody></table></div>`;
+  if(div.length) h += `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin:6px 4px;">Por divisão</div>` + tabela([...div].sort((a,b) => (b.sem_venda||0) - (a.sem_venda||0)), false);
+  const piores = art.filter(r => Number(r.sem_venda) > 0).slice(0, 30);
+  if(piores.length) h += `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin:12px 4px 6px;">Artigos com mais etiquetas sem venda (top ${piores.length})</div>` + tabela(piores, true);
+  return h;
 }
 
 async function blocoSupervisaoResumo(){
@@ -12068,6 +12279,7 @@ async function renderControloQuebra(){
 
   let html = '';
 
+  html += await blocoScoreValidades();
   html += await blocoAlertasQuebraArtigo(null);
 
   const secoesComQuebra = vendasSecoes.filter(v=>v.quebras_mes !== null).sort((a,b)=>Number(b.quebras_mes)-Number(a.quebras_mes));
