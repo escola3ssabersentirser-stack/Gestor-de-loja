@@ -2363,7 +2363,8 @@ async function impBomDia(wb){
     const col = t => row.findIndex(x => x.replace(/\s/g,'') === t);
     const linha = {nome, budget:impNum(r[cBudgetMTD]), vendas:impNum(r[realMTD[0]]), quebra:impNum(r[realMTD[1]]),
       vsb: impNum(r[col('VarvsBDGMêsMTD(%)')]), vsaa: impNum(r[col('VarvsAAMTD(%)')]), vsaaAno: impNum(r[col('VarvsAAYTD(%)')]),
-      qp: impNum(r[col('RealMTD(%)')]), qpAA: impNum(r[col('RealMTDHomologo(%)')])};
+      qp: impNum(r[col('RealMTD(%)')]), qpAA: impNum(r[col('RealMTDHomologo(%)')]),
+      diaReal: impNum(r[col('Realontem(€)')]), diaBdg: impNum(r[col('Budgetontem(€)')]), diaVsb: impNum(r[col('VarvsBDGontem(%)')]), vsbAno: impNum(r[col('VarvsBDGAnoYTD(%)')])};
     if(nome === 'TOTAL'){ total = linha; break; }
     secoes.push(linha);
   }
@@ -2437,6 +2438,14 @@ async function impBomDia(wb){
     }
   }
   await impPainelDoBomDia(R, total, secoes, dataOntem, mesNome);
+  // indicadores de vendas (dia / mês / ano) para o cartão Vendas
+  try{
+    const atual = await sb('loja_resumo_painel?id=eq.3&select=dados'); const a = atual && atual[0] && atual[0].dados;
+    if(!(a && a.data && a.data > dataOntem)){
+      const kv = {data: dataOntem, dia: {real: total.diaReal, bdg: total.diaBdg, vsb: total.diaVsb, vsaa: null}, mes: {real: total.vendas, bdg: total.budget, vsb: total.vsb, vsaa: total.vsaa}, ano: {vsb: total.vsbAno, vsaa: total.vsaaAno}};
+      await sb('loja_resumo_painel?on_conflict=id', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({id:3, dados: kv, atualizado_em: new Date().toISOString()})});
+    }
+  }catch(e){}
   await impGuardarData('bomdia', dataOntem);
   return `dados até ${impDDMM(dataOntem)} · painel atualizado · vendas do mês (${Math.round(total.vendas).toLocaleString('pt-PT')} € no mês), ${dias} dias, ${alertas} artigos com quebra`;
 }
@@ -10149,6 +10158,42 @@ function pedirFormacao(){
   });
 }
 
+// Dia · Mês · Ano: vendas face ao budget e ao ano passado (LFL)
+async function blocoVendasDiaMesAno(r){
+  let kv = null, dia = null;
+  try{ const x = await sb('loja_resumo_painel?id=eq.3&select=dados'); kv = x && x[0] && x[0].dados; }catch(e){}
+  try{ const d = await sb('loja_vendas_dia?vendas_real=gt.0&select=data,vendas_real,vendas_budget&order=data.desc&limit=1'); dia = d && d[0]; }catch(e){}
+  try{ await carregarResumoPainel(); }catch(e){}
+  const rp = resumoPainel || {};
+  const mc = {}; (rp.mes_curso||[]).forEach(l => mc[l.ind] = l);
+  const anoP = rp.ano_ant || (new Date().getFullYear() - 1);
+  // o mais recente ganha: dados do Bom Dia (id 3) ou dias/painel
+  const D = (kv && kv.dia && kv.data && (!dia || kv.data >= dia.data)) ? {data: kv.data, real: kv.dia.real, vsb: kv.dia.vsb, vsaa: kv.dia.vsaa}
+          : dia ? {data: dia.data, real: Number(dia.vendas_real), vsb: dia.vendas_budget ? dia.vendas_real/dia.vendas_budget - 1 : null, vsaa: null} : {};
+  const ateP = rp.dados_ate || null;
+  const M = (kv && kv.mes && kv.data && (!ateP || kv.data >= ateP)) ? {data: kv.data, real: kv.mes.real, vsb: kv.mes.vsb, vsaa: kv.mes.vsaa}
+          : {data: ateP, real: (mc['Vendas vs budget']||{}).atual, vsb: (mc['Vendas vs budget']||{}).vari, vsaa: (mc['Vendas vs ano passado']||{}).vari};
+  const A = (kv && kv.ano && kv.data) ? {data: kv.data, real: Number(r && r.vendas_ano) || null, vsb: kv.ano.vsb, vsaa: kv.ano.vsaa}
+          : {data: ateP, real: Number(r && r.vendas_ano) || null, vsb: null, vsaa: rp.secoes_total ? rp.secoes_total.vsaa_ano : null};
+  const pct = v => v == null || isNaN(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v*100).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
+  const chip = v => `<span style="display:inline-block;min-width:64px;text-align:center;padding:3px 8px;border-radius:999px;font-weight:800;font-size:14px;${v == null || isNaN(v) ? 'background:var(--line);color:var(--ink-soft);' : v >= 0 ? 'background:#E3F2E6;color:#1F7A33;' : 'background:#FBE7E4;color:#B4231A;'}">${pct(v)}</span>`;
+  const dd = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) : '';
+  const cartao = (tit, sub, X, notaLfl) => `<div class="card" style="margin:0;padding:12px;">
+      <div style="font-size:13px;font-weight:800;color:var(--navy);">${tit}</div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">${sub}</div>
+      <div style="font-size:19px;font-weight:800;color:var(--ink);margin-bottom:8px;">${X.real ? fmtEuro(X.real) : '—'}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid var(--line);"><span style="font-size:12px;color:var(--ink-soft);">vs budget</span>${chip(X.vsb)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px solid var(--line);"><span style="font-size:12px;color:var(--ink-soft);">LFL ${anoP}</span>${chip(X.vsaa)}</div>
+      ${notaLfl ? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">${notaLfl}</div>` : ''}
+    </div>`;
+  return `<div class="section-title">📊 Vendas — dia, mês e ano</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;">
+      ${cartao('Dia', D.data ? 'ontem, ' + dd(D.data) : 'último dia', D, D.vsaa == null ? 'O Bom Dia não traz o dia do ano passado.' : '')}
+      ${cartao('Mês', M.data ? 'até ' + dd(M.data) : 'mês em curso', M)}
+      ${cartao('Ano', A.data ? 'até ' + dd(A.data) : 'acumulado do ano', A, A.vsb == null ? 'Budget do ano: aparece ao carregar o próximo Bom Dia.' : '')}
+    </div>`;
+}
+
 async function renderPainelVendas(){
   const content = document.getElementById('painel-vendas-content');
   const [resumoRows, vendasSecoes, vendasDia, categoriasPerda] = await Promise.all([
@@ -10161,7 +10206,8 @@ async function renderPainelVendas(){
   const calc = await calcularVendasPorPeriodo();
   const vendasSemana = calc && calc.semana.vendas!==null ? calc.semana.vendas : null;
 
-  let html = `<div class="section-title">💶 Vendas</div>`;
+  let html = await blocoVendasDiaMesAno(r);
+  html += `<div class="section-title">💶 Vendas</div>`;
   html += `<div class="card">
     <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12.5px;color:var(--ink-soft);">Ontem</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasDia.length?fmtEuro(vendasDia[0].vendas_real):'—'}</span></div>
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">Semana</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasSemana!==null?fmtEuro(vendasSemana):'—'}</span></div>
