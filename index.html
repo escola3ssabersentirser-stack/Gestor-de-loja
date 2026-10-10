@@ -3330,7 +3330,7 @@ async function lemEnviarComunicacao(){
   if(!c){ alert('Ainda não há comunicação semanal guardada.'); return; }
   let inf = null; try { const ir = await sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1'); inf = ir && ir[0]; } catch(e){}
   const parte = (t, v) => v && String(v).trim() ? `\n\n*${t}*\n${String(v).trim()}` : '';
-  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${c.periodo || c.semana || semanaAtualLabel()}` + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes) + parte('Informação de negócio' + (inf && inf.semana ? ' — ' + inf.semana : ''), inf && inf.resumo));
+  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${c.periodo || c.semana || semanaAtualLabel()}` + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes) + parte('Informação de negócio' + (inf && inf.semana ? ' — ' + inf.semana : ''), inf && inf.resumo ? (inf.resumo.length > 1500 ? inf.resumo.slice(0,1500) + '…\n(ver o resto na app)' : inf.resumo) : ''));
   await lemRegistar('comunicacao-semanal'); setTimeout(renderLembretes, 800);
 }
 
@@ -7707,7 +7707,8 @@ async function renderInfoNegocioHistorico(){
         <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${fmt(r.data_documento)}</span>
       </div>
       ${desatualizada ? `<div style="font-size:11.5px;color:#B4231A;margin-bottom:6px;">⚠️ Esta é a informação da ${infoEsc(r.semana)}. A da semana atual ainda não foi colocada.</div>` : ''}
-      <div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(r.resumo)}</div>
+      ${infoTexto(r.resumo)}
+      ${r.caminho ? `<button class="econ-btn" style="margin-top:10px;" onclick="infoNegAbrir(${r.id})">📄 Abrir documento original</button>` : ''}
       ${gestora ? `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn-primary" style="margin-top:0;flex:1;padding:8px;font-size:12.5px;" onclick="infoNegForm(${r.id})">✏️ Editar</button></div>` : ''}
     </div>`;
     if(rows.length > 1){
@@ -7718,14 +7719,88 @@ async function renderInfoNegocioHistorico(){
             <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(o.semana || o.titulo)}</span>
             <span style="font-size:11px;color:var(--ink-soft);">${fmt(o.data_documento)}</span>
           </div>
-          <div style="font-size:12.5px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(o.resumo)}</div>
+          ${infoTexto(o.resumo)}${o.caminho ? `<button class="econ-btn" style="margin-top:8px;" onclick="infoNegAbrir(${o.id})">📄 Abrir documento</button>` : ''}
         </div>`;
       });
       html += `</details>`;
     }
   }
-  if(gestora) html += `<div id="info-neg-form"></div><button class="btn-primary" style="margin:0 0 16px;" onclick="infoNegForm()">➕ Nova informação de negócio</button>`;
+  if(gestora || (currentUser && ['area','responsavel'].includes(currentUser.role))) html = `<input type="file" id="info-neg-ficheiro" accept=".pdf,.docx,.txt" class="hidden" onchange="infoNegCarregar(this)">
+    <button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('info-neg-ficheiro').click()">📎 Carregar Informação de Negócio (PDF ou Word)</button>
+    <div id="info-neg-estado" style="font-size:12.5px;color:var(--ink-soft);margin:0 0 10px;"></div>` + html;
+  if(gestora) html += `<div id="info-neg-form"></div><button class="btn-primary" style="margin:0 0 16px;background:#8A938D;" onclick="infoNegForm()">✏️ Escrever à mão</button>`;
   wrap.innerHTML = html;
+}
+
+function infoTexto(t){
+  t = String(t||'');
+  if(t.length <= 900) return `<div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(t)}</div>`;
+  return `<div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;">${infoEsc(t.slice(0,900))}…</div><details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--navy);font-weight:700;">Ver tudo</summary><div style="font-size:13px;color:var(--ink);white-space:pre-line;line-height:1.5;margin-top:6px;">${infoEsc(t.slice(900))}</div></details>`;
+}
+function infoCarregarScript(src){ return new Promise((ok, falha) => { if(document.querySelector(`script[src="${src}"]`)) return ok(); const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => falha(new Error('sem internet para ler o ficheiro')); document.head.appendChild(sc); }); }
+async function infoLerTexto(f){
+  const nome = f.name.toLowerCase();
+  if(nome.endsWith('.txt')) return await f.text();
+  if(nome.endsWith('.docx')){
+    await infoCarregarScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+    const r = await window.mammoth.extractRawText({arrayBuffer: await f.arrayBuffer()});
+    return r.value || '';
+  }
+  if(nome.endsWith('.pdf')){
+    await infoCarregarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf = await lib.getDocument({data: await f.arrayBuffer()}).promise;
+    let out = [];
+    for(let i=1;i<=pdf.numPages;i++){
+      const pg = await pdf.getPage(i); const c = await pg.getTextContent();
+      let linha = '', yAnt = null; const linhas = [];
+      c.items.forEach(it => { const y = Math.round(it.transform[5]); if(yAnt !== null && Math.abs(y - yAnt) > 3){ linhas.push(linha); linha = ''; } linha += (linha && !linha.endsWith(' ') && !it.str.startsWith(' ') ? ' ' : '') + it.str; yAnt = y; });
+      if(linha) linhas.push(linha);
+      out.push(linhas.join('\n'));
+    }
+    return out.join('\n\n');
+  }
+  throw new Error('use um ficheiro PDF ou Word (.docx)');
+}
+async function infoNegCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f) return;
+  const est = document.getElementById('info-neg-estado');
+  const msg = t => { if(est) est.textContent = t; };
+  try{
+    msg('A ler o documento…');
+    let texto = (await infoLerTexto(f)).replace(/\r/g,'').replace(/[ \t]+/g,' ').replace(/ *\n */g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+    if(!texto) throw new Error('não encontrei texto no documento (pode ser uma imagem digitalizada)');
+    const mSem = texto.match(/semana[l]?\s*(?:n\.?\s*º?\s*)?(\d{1,2})\b/i) || f.name.match(/(?:semana|sem|s)[\s_-]*(\d{1,2})\b/i);
+    const nSem = mSem ? Number(mSem[1]) : numeroSemanaISO(new Date()) + 1;
+    const mData = texto.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})\b/);
+    const hoje = new Date();
+    const dataDoc = mData ? `${mData[3]}-${mData[2].padStart(2,'0')}-${mData[1].padStart(2,'0')}` : dataLocalISO(hoje);
+    const semana = 'Semana ' + nSem;
+    msg('A guardar…');
+    const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+    const caminho = `informacao-negocio/${Date.now()}_${limpo}`;
+    let guardouFicheiro = false;
+    try{
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      guardouFicheiro = res.ok;
+    }catch(e){}
+    const dados = {semana, titulo: 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
+    const ja = await sb(`loja_informacao_negocio_historico?semana=eq.${encodeURIComponent(semana)}&select=id`);
+    if(ja && ja.length) await sb(`loja_informacao_negocio_historico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)});
+    else await sb('loja_informacao_negocio_historico', {method:'POST', body: JSON.stringify(dados)});
+    await renderInfoNegocioHistorico();
+    const e2 = document.getElementById('info-neg-estado'); if(e2) e2.textContent = `✓ ${semana} carregada${mSem ? '' : ' (não encontrei o número da semana no documento — confirme e corrija em Editar)'}.`;
+  }catch(e){ msg('✕ Não consegui carregar: ' + (e && e.message || e)); }
+}
+async function infoNegAbrir(id){
+  const janela = window.open('', '_blank');
+  try{
+    const r = (infoNegRows||[]).find(x => x.id === id); if(!r || !r.caminho) throw new Error('sem ficheiro');
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
+    if(!res.ok) throw new Error('erro');
+    const url = URL.createObjectURL(await res.blob());
+    if(janela) janela.location.href = url; else window.location.href = url;
+  }catch(e){ if(janela) janela.close(); alert('Não consegui abrir o documento.'); }
 }
 
 function infoNegForm(id){
