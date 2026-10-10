@@ -1220,6 +1220,8 @@
           <label>Semana (ex: 8 a 14 de setembro)</label>
           <input type="text" id="ata-edit-semana">
           <button type="button" class="btn-primary" style="background:#1F7A33;margin:6px 0 14px;" onclick="preencherAtaComNumeros(true)">🔄 Atualizar com os números de hoje</button>
+          <label>Informação de negócio</label>
+          <textarea id="ata-edit-foco" placeholder="Campanhas, avisos e novidades da semana..."></textarea>
           <label>Vendas</label>
           <textarea id="ata-edit-vendas" placeholder="Resultado de vendas da semana..."></textarea>
           <label>Quebras</label>
@@ -3091,10 +3093,13 @@ async function renderArea(qual){
 async function areaRelatoriosHtml(){
   const auds = await sb('loja_auditorias?select=nome,percentagem&order=id.asc').catch(()=>[]);
   const rels = await sb('loja_auditoria_relatorios?select=auditoria,id&order=criado_em.desc').catch(()=>[]);
+  const anoA = new Date().getFullYear();
+  const dets = await sb(`loja_auditoria_detalhe?data_auditoria=gte.${anoA}-01-01&resultado_final=not.is.null&select=tipo,resultado_final`).catch(()=>[]) || [];
+  const mediaDe = n => { const r = dets.filter(x => x.tipo === n); return r.length ? (r.reduce((a,x) => a + Number(x.resultado_final), 0) / r.length) : null; };
   const nomes = {Ambiental:'Ambiente', Controlo:'Controlo Operacional'};
   let h = `<p class="com-ajuda" style="margin:0 4px 10px;">Escolha a auditoria para ver ou carregar os relatórios (PDF ou foto).</p><div class="card">`;
   (auds||[]).forEach(a => { const n = (rels||[]).filter(r => r.auditoria === a.nome).length; const nj = String(a.nome).replace(/'/g,"\\'");
-    h += `<div class="rel-linha"><span class="rel-ic">📄</span><div class="rel-info"><b>${rpEsc(nomes[a.nome] || a.nome)}</b><small>${n ? n + (n === 1 ? ' relatório' : ' relatórios') : 'sem relatórios ainda'}${a.percentagem != null ? ' · nota ' + a.percentagem + '%' : ''}</small></div><button class="lem-w" style="background:#1F7A33" onclick="selectMenu('auditoria:${nj}','Auditoria ${rpEsc(nomes[a.nome] || a.nome)}')">Abrir</button></div>`; });
+    h += `<div class="rel-linha"><span class="rel-ic">📄</span><div class="rel-info"><b>${rpEsc(nomes[a.nome] || a.nome)}</b><small>${n ? n + (n === 1 ? ' relatório' : ' relatórios') : 'sem relatórios ainda'}${a.percentagem != null ? ' · última nota ' + String(a.percentagem).replace('.', ',') + '%' : ''}${mediaDe(a.nome) != null ? ' · média ' + anoA + ': ' + mediaDe(a.nome).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</small></div><button class="lem-w" style="background:#1F7A33" onclick="selectMenu('auditoria:${nj}','Auditoria ${rpEsc(nomes[a.nome] || a.nome)}')">Abrir</button></div>`; });
   return h + `</div>`;
 }
 // ===== Score mensal da Rotina Diária de Validades (email "Score Mensal") =====
@@ -3246,7 +3251,7 @@ async function renderRelatoriosAuditoria(nome){
   const nomeJs = String(nome).replace(/'/g,"\\'");
   box.innerHTML = (rows.length ? rows.map(r => `<div class="rel-linha">
       <span class="rel-ic">${/pdf/i.test(r.tipo_ficheiro||r.nome_ficheiro) ? '📕' : /image/i.test(r.tipo_ficheiro||'') ? '🖼️' : '📄'}</span>
-      <div class="rel-info"><b>${rpEsc(r.titulo || r.nome_ficheiro)}</b><small>${r.data_auditoria ? new Date(r.data_auditoria+'T12:00:00').toLocaleDateString('pt-PT') + ' · ' : ''}${rpEsc(r.nome_ficheiro||'')}${r.carregado_por ? ' · ' + rpEsc(r.carregado_por) : ''}</small></div>
+      <div class="rel-info"><b>${rpEsc(r.titulo || r.nome_ficheiro)}</b><small>${r.data_auditoria ? new Date(r.data_auditoria+'T12:00:00').toLocaleDateString('pt-PT') + ' · ' : ''}${r.resultado_pct != null ? '<b>' + String(r.resultado_pct).replace('.', ',') + '%</b> · ' : ''}${rpEsc(r.nome_ficheiro||'')}${r.carregado_por ? ' · ' + rpEsc(r.carregado_por) : ''}</small></div>
       <button class="lem-w" style="background:#1F7A33" onclick="abrirRelatorioAuditoria(${r.id})">Abrir</button>
       ${currentUser && currentUser.role === 'gestora' ? `<button class="lem-x" onclick="apagarRelatorioAuditoria(${r.id}, '${nomeJs}')" aria-label="Apagar">Apagar</button>` : ''}
     </div>`).join('') : `<div style="font-size:13px;color:var(--ink-soft);">Ainda não há relatórios guardados para esta auditoria.</div>`)
@@ -3267,8 +3272,19 @@ async function carregarRelatorioAuditoria(input, nome){
     if(est) est.textContent = 'A carregar…';
     const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false'}, body: f});
     if(!res.ok) throw new Error(await res.text());
-    await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: (document.getElementById('rel-titulo')||{}).value || null, data_auditoria: (document.getElementById('rel-data')||{}).value || null, caminho, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
-    showToast(); renderRelatoriosAuditoria(nome);
+    const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: (document.getElementById('rel-titulo')||{}).value || null, data_auditoria: (document.getElementById('rel-data')||{}).value || null, caminho, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
+    const relId = novo && novo[0] && novo[0].id;
+    // ler o relatório: data, resultado, técnico e pontos a melhorar → liga à auditoria e atualiza a nota e a média do ano
+    if(relId && /\.(pdf|docx)$/i.test(f.name)){
+      try{
+        if(est) est.textContent = 'A ler o relatório…';
+        const d = await audLigarRelatorio(nome, relId, await infoLerTexto(f));
+        alert(d.resultado != null && d.data
+          ? `Relatório lido ✓\n\nData: ${d.data.split('-').reverse().join('/')}\nResultado: ${String(d.resultado).replace('.', ',')}%${d.tecnico ? '\nTécnico: ' + d.tecnico : ''}\nPontos a melhorar: ${d.ncs.length}\n\nA nota da auditoria e a média do ano foram atualizadas.`
+          : 'O relatório foi guardado, mas não encontrei a data e/ou o resultado no documento. Pode editar a nota à mão.');
+      }catch(e){ console.warn(e); }
+    }
+    showToast(); abrirDetalheAuditoria(nome);
   }catch(e){ if(est) est.textContent = ''; alert('Não consegui carregar o relatório. Tente novamente.'); }
 }
 async function abrirRelatorioAuditoria(id){
@@ -3374,6 +3390,7 @@ async function renderFaixaLembretes(){
     const segunda = new Date().getDay() === 1;
     const anosHoje = d.anos.filter(a => a.faltam === 0);
     box.innerHTML = n ? `<button class="rp-lem" onclick="selectMenu('lembretes','Lembretes')">🔔 <b>${n} lembrete${n>1?'s':''}</b> <span>${[
+      [1,4].includes(new Date().getDay()) ? '🗓️ hoje há reunião semanal (ata já preenchida)' : '',
       anosHoje.length ? '🎂 hoje faz anos: ' + anosHoje.map(a => lemPrimeiroNome(a.nome)).join(', ') : '',
       d.alteracoes.length ? d.alteracoes.length + ' horários por assinar' : '',
       d.formacao.length ? d.formacao.length + ' formações pendentes' : '',
@@ -3505,7 +3522,7 @@ async function lemTextoAta(){
   const rows = await sb('loja_ata_semanal?select=*&order=id.desc&limit=1'); const a = rows && rows[0];
   if(!a) return null;
   const parte = (t, v) => v && v.trim() ? `\n\n*${t}*\n${v.trim()}` : '';
-  return `*Ata da reunião semanal — Loja Portuzelo*\n${a.semana || semanaAtualLabel()}` + parte('Vendas', a.vendas) + parte('Quebras', a.quebras) + parte('Vendas a potenciar', a.vendas_potenciar) + parte('Auditorias', a.auditorias) + parte('Custos', a.custos) + parte('Equipa', a.equipa);
+  return `*Ata da reunião semanal — Loja Portuzelo*\n${a.semana || semanaAtualLabel()}` + parte('Informação de negócio', a.foco ? (a.foco.length > 800 ? a.foco.slice(0,800) + '…' : a.foco) : '') + parte('Vendas', a.vendas) + parte('Quebras', a.quebras) + parte('Vendas a potenciar', a.vendas_potenciar) + parte('Auditorias', a.auditorias) + parte('Custos', a.custos) + parte('Equipa', a.equipa);
 }
 async function lemEnviarAta(){
   const t = await lemTextoAta(); if(!t){ alert('Ainda não há nenhuma ata guardada. Preencha-a em Reuniões Semanais.'); return; }
@@ -7701,6 +7718,180 @@ async function editarNotaAuditoria(nome){
   }
 }
 
+// ===== Controlo Analítico (resultados do laboratório) — dentro da auditoria HACCP =====
+let caLista = [];
+function caLerTexto(t){
+  const L = String(t||'').replace(/\r/g,'').split('\n').map(x => x.replace(/ /g,' ').trim()).filter(Boolean);
+  const j = L.join('\n');
+  const campo = re => { const m = j.match(re); return m ? m[1].trim() : ''; };
+  const d = {
+    numero: campo(/n[ºo°]\s*(CA\d+\/\d+)/i),
+    data_recolha: campo(/Data Recolha\s*[:\t ]\s*(\d{4}-\d{2}-\d{2})/i),
+    secao: campo(/Sec[çc][ãa]o\s*[:\t ]\s*([^\n\t]+)/i),
+    objeto: campo(/Objec?to da\s*Recolha\s*[:\t ]\s*([^\n\t]+)/i),
+    lote: campo(/Lote\s*[:\t ]\s*([^\n\t]+)/i),
+    validade: campo(/Validade\s*[:\t ]\s*(\d{4}-\d{2}-\d{2})/i),
+    referencia: campo(/Refer[êe]ncia\s*Laborat[óo]rio\s*[:\t ]\s*([^\n\t]+)/i),
+    observacoes: campo(/Observa[çc][õo]es do\s*T[ée]cnico\s*[:\t ]\s*([^\n\t]+)/i)
+  };
+  const linhas = L.filter(l => /Contagem|Pesquisa|Salmonella|Listeria/i.test(l));
+  d.parametro = linhas.map(l => l.replace(/\t+/g,' · ')).join('\n');
+  d.classificacao = /N[ãa]o satisfat[óo]rio/i.test(j) ? 'Não satisfatório' : /Aceit[áa]vel/i.test(j) ? 'Aceitável' : /Satisfat[óo]rio/i.test(j) ? 'Satisfatório' : '';
+  return d;
+}
+async function blocoControloAnalitico(){
+  try{ caLista = await sb('loja_controlo_analitico?select=*&order=data_recolha.desc.nullslast,id.desc&limit=50') || []; }catch(e){ caLista = []; }
+  const pode = currentUser && ['gestora','area','responsavel'].includes(currentUser.role);
+  const cor = c => /n[ãa]o satisf/i.test(c||'') ? '#B4231A' : /aceit/i.test(c||'') ? '#C77F12' : /satisf/i.test(c||'') ? '#1F7A33' : 'var(--ink-soft)';
+  const fmt = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4) : '—';
+  const nao = caLista.filter(x => /n[ãa]o satisf/i.test(x.classificacao||'') && !x.resolvido).length;
+  let h = `<div class="section-title">🧪 Controlo analítico (laboratório) ${nao ? `<span class="lem-n tem">${nao} por resolver</span>` : ''}</div>`;
+  h += `<div class="card" style="padding:4px 12px;">` + (caLista.length ? caLista.map((x,i) => `<div style="padding:10px 0;border-top:${i ? '1px solid var(--line)' : 'none'};">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+        <b style="font-size:13px;">${rpEsc(x.referencia || x.objeto || 'Análise')}</b>
+        <span style="font-size:12px;font-weight:800;color:${cor(x.classificacao)};white-space:nowrap;">${/n[ãa]o satisf/i.test(x.classificacao||'') ? '✖' : '✔'} ${rpEsc(x.classificacao || '—')}</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${rpEsc(x.secao || '')} · recolha ${fmt(x.data_recolha)}${x.numero ? ' · ' + rpEsc(x.numero) : ''}${x.lote ? ' · lote ' + rpEsc(x.lote) : ''}</div>
+      ${x.parametro ? `<div style="font-size:12px;color:var(--ink);white-space:pre-line;margin-top:4px;">${rpEsc(x.parametro)}</div>` : ''}
+      ${x.observacoes ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">Obs.: ${rpEsc(x.observacoes)}</div>` : ''}
+      ${/n[ãa]o satisf/i.test(x.classificacao||'') ? `<div style="margin-top:6px;font-size:12px;">${x.resolvido ? `<span class="lem-ok">✓ resolvido</span>` : '<b style="color:#B4231A">Ação corretiva:</b>'} ${rpEsc(x.acao_corretiva || (x.resolvido ? '' : 'por definir'))}</div>
+        ${pode && !x.resolvido ? `<div style="display:flex;gap:6px;margin-top:6px;"><button class="econ-btn" onclick="caAcao(${x.id})">✏️ Ação corretiva</button><button class="econ-btn filled" onclick="caResolver(${x.id})">✓ Resolvido</button></div>` : ''}` : ''}
+      ${x.caminho ? `<button class="econ-btn" style="margin-top:6px;" onclick="caAbrir(${x.id})">📄 Ver relatório</button>` : ''}
+    </div>`).join('') : `<div style="font-size:13px;color:var(--ink-soft);padding:8px 0;">Ainda sem resultados registados.</div>`) + `</div>`;
+  if(pode) h += `<details class="card lem-novo" style="margin-top:8px;"><summary>➕ Registar resultado do controlo analítico</summary>
+    <p class="com-ajuda" style="margin:6px 0;">Pode colar o texto do email "Comunicação de Resultados do Controlo Analítico" e carregar em "Preencher" — os campos ficam preenchidos. Também pode juntar a foto ou o PDF.</p>
+    <textarea id="ca-colar" rows="4" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12px;" placeholder="Colar aqui o texto do email (opcional)…"></textarea>
+    <button class="econ-btn" style="margin:6px 0 10px;" onclick="caPreencher()">Preencher a partir do texto</button>
+    <div class="com-duo"><div><label class="com-lbl" for="ca-numero">Nº</label><input id="ca-numero" placeholder="CA26/..."></div><div><label class="com-lbl" for="ca-data">Data recolha</label><input id="ca-data" type="date"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="ca-secao">Secção</label><input id="ca-secao"></div><div><label class="com-lbl" for="ca-class">Classificação</label><select id="ca-class"><option>Satisfatório</option><option>Aceitável</option><option>Não satisfatório</option></select></div></div>
+    <label class="com-lbl" for="ca-ref">Artigo / referência</label><input id="ca-ref" placeholder="ex.: Bovino carne picada">
+    <div class="com-duo"><div><label class="com-lbl" for="ca-lote">Lote</label><input id="ca-lote"></div><div><label class="com-lbl" for="ca-val">Validade</label><input id="ca-val" type="date"></div></div>
+    <label class="com-lbl" for="ca-par">Parâmetros e resultados</label><textarea id="ca-par" rows="3" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;" placeholder="ex.: Bolores 1700 ufc/g — Não satisfatório"></textarea>
+    <label class="com-lbl" for="ca-obs">Observações do técnico</label><input id="ca-obs">
+    <label class="com-lbl" for="ca-acao">Ação corretiva</label><input id="ca-acao" placeholder="o que vamos fazer">
+    <input type="file" id="ca-fich" accept="image/*,.pdf" class="hidden" onchange="document.getElementById('ca-fich-nome').textContent = this.files[0] ? '📎 ' + this.files[0].name : ''">
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><button class="econ-btn" onclick="document.getElementById('ca-fich').click()">📎 Juntar foto ou PDF</button><span id="ca-fich-nome" style="font-size:12px;color:var(--ink-soft);"></span></div>
+    <button class="btn-primary" onclick="caGuardar()">Guardar</button><div id="ca-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></details>`;
+  return h;
+}
+function caPreencher(){
+  const d = caLerTexto(document.getElementById('ca-colar').value);
+  const set = (id, v) => { const el = document.getElementById(id); if(el && v) el.value = v; };
+  set('ca-numero', d.numero); set('ca-data', d.data_recolha); set('ca-secao', d.secao); set('ca-ref', d.referencia || d.objeto); set('ca-lote', d.lote); set('ca-val', d.validade); set('ca-par', d.parametro); set('ca-obs', d.observacoes);
+  if(d.classificacao) set('ca-class', d.classificacao);
+}
+async function caGuardar(){
+  const v = id => (document.getElementById(id)||{}).value ? document.getElementById(id).value.trim() : '';
+  const est = document.getElementById('ca-estado');
+  if(!v('ca-ref') && !v('ca-numero')){ alert('Preencha pelo menos o artigo ou o número.'); return; }
+  const dados = {numero: v('ca-numero') || null, data_recolha: v('ca-data') || null, secao: v('ca-secao') || null, referencia: v('ca-ref') || null, lote: v('ca-lote') || null, validade: v('ca-val') || null, parametro: v('ca-par') || null, classificacao: v('ca-class'), observacoes: v('ca-obs') || null, acao_corretiva: v('ca-acao') || null, registado_por: currentUser ? currentUser.name : null};
+  try{
+    const f = document.getElementById('ca-fich').files[0];
+    if(f){
+      if(est) est.textContent = 'A carregar o ficheiro…';
+      const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+      const caminho = `controlo-analitico/${Date.now()}_${limpo}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      if(res.ok){ dados.caminho = caminho; dados.nome_ficheiro = f.name; dados.tipo_ficheiro = f.type || null; }
+    }
+    if(dados.numero){ const ja = await sb(`loja_controlo_analitico?numero=eq.${encodeURIComponent(dados.numero)}&select=id`); if(ja && ja.length){ await sb(`loja_controlo_analitico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)}); showToast(); abrirDetalheAuditoria('HACCP'); return; } }
+    await sb('loja_controlo_analitico', {method:'POST', body: JSON.stringify(dados)});
+    showToast(); abrirDetalheAuditoria('HACCP');
+  }catch(e){ if(est) est.textContent = '✕ Não consegui guardar.'; }
+}
+async function caAcao(id){
+  const x = caLista.find(r => r.id === id); const t = prompt('Ação corretiva:', (x && x.acao_corretiva) || ''); if(t === null) return;
+  try{ await sb(`loja_controlo_analitico?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({acao_corretiva: t.trim()})}); showToast(); abrirDetalheAuditoria('HACCP'); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function caResolver(id){
+  if(!confirm('Marcar como resolvido?')) return;
+  try{ await sb(`loja_controlo_analitico?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({resolvido: true})}); showToast(); abrirDetalheAuditoria('HACCP'); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function caAbrir(id){
+  const janela = window.open('', '_blank');
+  try{ const x = caLista.find(r => r.id === id); const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${x.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}}); if(!res.ok) throw 0; const url = URL.createObjectURL(await res.blob()); if(janela) janela.location.href = url; else window.location.href = url; }
+  catch(e){ if(janela) janela.close(); alert('Não consegui abrir o relatório.'); }
+}
+
+// ===== Ler o relatório de auditoria (PDF/Word) e ligar à auditoria =====
+function audLerRelatorio(texto){
+  const t = String(texto||'').replace(/\r/g,'').replace(/[ \t]+/g,' ');
+  const L = t.split('\n').map(x => x.trim());
+  const num = s => s == null ? null : Number(String(s).replace(',', '.'));
+  let data = null, m;
+  if((m = t.match(/no dia (\d{4})[\/-](\d{2})[\/-](\d{2})/i))) data = `${m[1]}-${m[2]}-${m[3]}`;
+  else if((m = t.match(/Data d[ae] (?:Auditoria|Visita|Verifica[çc][ãa]o)\s*:?\s*(\d{4})[\/-](\d{2})[\/-](\d{2})/i))) data = `${m[1]}-${m[2]}-${m[3]}`;
+  else if((m = t.match(/Data d[ae] (?:Auditoria|Visita|Verifica[çc][ãa]o)\s*:?\s*(\d{2})[\/-](\d{2})[\/-](\d{4})/i))) data = `${m[3]}-${m[2]}-${m[1]}`;
+  else if((m = t.match(/\b(20\d{2})[\/-](\d{2})[\/-](\d{2})\b/))) data = `${m[1]}-${m[2]}-${m[3]}`;
+  let tecnico = null;
+  if((m = t.match(/pelo T[ée]cnico\s+([^,\n]+?)(?:,|\n| o resultado)/i))) tecnico = m[1].trim();
+  else if((m = t.match(/T[ée]cnico(?: de [A-Za-zÀ-ÿ]+)?\s*:?\s+([A-ZÀ-Ú][^\n]{3,60})/))) tecnico = m[1].replace(/\s{2,}.*$/,'').trim();
+  let res = null;
+  for(const re of [/Resultado Final\s*:?\s*([\d]+[.,]?\d*)\s*%/i, /\bTotal\s*:\s*([\d]+[.,]?\d*)\s*%/i, /Resultado(?: obtido| global)?\s*:?\s*([\d]+[.,]?\d*)\s*%/i, /(?:Score|Pontua[çc][ãa]o|Classifica[çc][ãa]o)(?: final| global)?\s*:?\s*([\d]+[.,]?\d*)\s*%/i]){ if((m = t.match(re))){ res = num(m[1]); break; } }
+  if(res == null && /Resultado Final|resultado obtido/i.test(t)){ const so = L.find(l => /^\d{1,3}[.,]\d{1,2}\s*%$/.test(l)); if(so) res = num(so.replace('%','').trim()); }
+  let anterior = null;
+  if((m = t.match(/[ÚU]ltima Auditoria\s*:?\s*([\d]+[.,]?\d*)\s*%/i))) anterior = num(m[1]);
+  // pontos / não conformidades destacados no resumo
+  const ncs = []; let sec = '';
+  let ini = L.findIndex(l => /Destacam-se as seguintes n[ãa]o conformidades|Aprecia[çc][ãa]o Global|Principais (?:constata[çc][õo]es|n[ãa]o conformidades)/i.test(l));
+  if(ini >= 0){
+    for(let k = ini + 1; k < L.length; k++){
+      const l = L[k]; if(!l) continue;
+      if(/^\d+\s+Ficheiros|^\d+\s+N[íi]vel de Desempenho|ESTRUTURA,|N[ãa]o-Conformidades \/ Oportunidades|^Sec[çc][ãa]o\b/i.test(l)) break;
+      if(/^[-•–]\s*/.test(l)) ncs.push({secao: sec || null, descricao: l.replace(/^[-•–]\s*/,'').trim()});
+      else if(/:$/.test(l) || (l === l.toUpperCase() && /[A-ZÀ-Ú]{3}/.test(l) && l.length < 40)) sec = l.replace(/:$/,'').trim();
+      else if(ncs.length && !/^A loja apresenta/i.test(l)) ncs[ncs.length-1].descricao += ' ' + l;
+      if(ncs.length > 40) break;
+    }
+  }
+  let resumo = null;
+  if((m = t.match(/(A loja apresenta[^\n]+)/i))) resumo = m[1];
+  else if((m = t.match(/Em rela[çc][ãa]o [àa] [úu]ltima[^\n]+/i))) resumo = m[0];
+  return {data, tecnico, resultado: res, anterior, ncs, resumo};
+}
+async function audLigarRelatorio(nome, relId, texto){
+  const d = audLerRelatorio(texto);
+  const atualiza = {};
+  if(d.resultado != null) atualiza.resultado_pct = d.resultado;
+  if(d.tecnico) atualiza.tecnico = d.tecnico;
+  if(d.resumo) atualiza.resumo = d.resumo;
+  if(d.data) atualiza.data_auditoria = d.data;
+  if(!d.data || d.resultado == null){ if(Object.keys(atualiza).length) await sb(`loja_auditoria_relatorios?id=eq.${relId}`, {method:'PATCH', body: JSON.stringify(atualiza)}); return d; }
+  // auditoria desta data: cria ou atualiza
+  let det = (await sb(`loja_auditoria_detalhe?tipo=eq.${encodeURIComponent(nome)}&data_auditoria=eq.${d.data}&select=id,resultado_final`)) || [];
+  let detId;
+  if(det.length){ detId = det[0].id; await sb(`loja_auditoria_detalhe?id=eq.${detId}`, {method:'PATCH', body: JSON.stringify({resultado_final: d.resultado, tecnico: d.tecnico || undefined, resumo: d.resumo || undefined})}); }
+  else {
+    const novo = await sb('loja_auditoria_detalhe', {method:'POST', body: JSON.stringify({tipo: nome, data_auditoria: d.data, resultado_final: d.resultado, tecnico: d.tecnico, resumo: d.resumo})});
+    detId = novo && novo[0] && novo[0].id;
+    if(detId && d.ncs.length) await sb('loja_nao_conformidades', {method:'POST', body: JSON.stringify(d.ncs.map(n => ({auditoria_id: detId, secao: n.secao, descricao: n.descricao.slice(0, 1000), resolvida: false})))});
+  }
+  atualiza.detalhe_id = detId || null;
+  await sb(`loja_auditoria_relatorios?id=eq.${relId}`, {method:'PATCH', body: JSON.stringify(atualiza)});
+  // a nota da auditoria passa a ser a do relatório mais recente
+  const ult = await sb(`loja_auditoria_detalhe?tipo=eq.${encodeURIComponent(nome)}&resultado_final=not.is.null&select=data_auditoria,resultado_final&order=data_auditoria.desc&limit=1`);
+  if(ult && ult[0] && ult[0].data_auditoria === d.data) await sb(`loja_auditorias?nome=eq.${encodeURIComponent(nome)}`, {method:'PATCH', body: JSON.stringify({percentagem: Math.round(d.resultado*100)/100, atualizado_em: new Date().toISOString()})});
+  return d;
+}
+// Média do ano de uma auditoria (todas as visitas do ano com resultado)
+async function audMediaAno(nome){
+  const ano = new Date().getFullYear();
+  const rows = await sb(`loja_auditoria_detalhe?tipo=eq.${encodeURIComponent(nome)}&data_auditoria=gte.${ano}-01-01&resultado_final=not.is.null&select=data_auditoria,resultado_final,tecnico&order=data_auditoria.asc`).catch(()=>[]) || [];
+  const media = rows.length ? rows.reduce((a,r) => a + Number(r.resultado_final), 0) / rows.length : null;
+  return {ano, rows, media};
+}
+function audMediaHtml(m){
+  if(!m || !m.rows.length) return '';
+  const pct = v => Number(v).toLocaleString('pt-PT', {maximumFractionDigits:2}) + '%';
+  const dd = iso => iso.slice(8,10) + '/' + iso.slice(5,7);
+  return `<div class="card" style="margin-top:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;"><b style="font-size:13px;color:var(--navy);">Média de ${m.ano}</b><span style="font-size:22px;font-weight:800;color:var(--navy);">${pct(m.media)}</span></div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">${m.rows.length} ${m.rows.length === 1 ? 'auditoria' : 'auditorias'} este ano</div>
+    ${m.rows.map((r,i) => { const ant = i ? Number(m.rows[i-1].resultado_final) : null; const v = Number(r.resultado_final);
+      return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--line);font-size:12.5px;"><span>${dd(r.data_auditoria)}${r.tecnico ? ' · ' + rpEsc(r.tecnico) : ''}</span><b>${pct(v)}${ant != null ? (v >= ant ? ' <span style="color:#1F7A33">▲</span>' : ' <span style="color:#B4231A">▼</span>') : ''}</b></div>`; }).join('')}
+  </div>`;
+}
+
 async function abrirDetalheAuditoria(nome){
   const content = document.getElementById('melhoria-content');
   const alvo = content || document.body;
@@ -7722,10 +7913,12 @@ async function abrirDetalheAuditoria(nome){
       ${currentUser && currentUser.role === 'gestora' ? `<button class="econ-btn" style="margin-top:10px;" onclick="editarNotaAuditoria('${nome.replace(/'/g,"\\'")}')">✏️ Editar nota</button>` : ''}
     </div>`;
 
+    try{ html += audMediaHtml(await audMediaAno(nome)); }catch(e){}
     html += `<div class="section-title">📄 Relatórios da auditoria</div><div id="aud-relatorios" class="card"><div style="font-size:13px;color:var(--ink-soft);">A carregar…</div></div>`;
     if(nome === 'Controlo'){
       html += `<div class="section-title">🧾 Notas de Crédito</div><div class="card">${await blocoNotasCredito('auditoria', true)}</div>`;
     }
+    if(nome === 'HACCP') html += await blocoControloAnalitico();
 
     if(!auditorias || !auditorias.length){
       html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda não há relatório detalhado guardado para esta auditoria.</div></div>`;
@@ -8029,24 +8222,108 @@ async function infoNegGuardar(id){
   renderInfoNegocioHistorico();
 }
 
+// ===== Reunião semanal: segundas e quintas, ata preenchida sozinha =====
+function proximaReuniao(base){
+  const d = new Date(base || new Date()); d.setHours(12,0,0,0);
+  while(d.getDay() !== 1 && d.getDay() !== 4) d.setDate(d.getDate() + 1);
+  return d;
+}
+function nomeReuniao(d){
+  const dia = d.getDay() === 1 ? 'Segunda' : 'Quinta';
+  return `Reunião de ${dia}, ${d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})} · Semana ${numeroSemanaISO(d)}`;
+}
+let ataPreview = null;
+async function gerarAtaAutomatica(dReun){
+  const segunda = dReun.getDay() === 1;
+  const iso = x => dataLocalISO(x); const f = x => x.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+  const pct = v => v == null || isNaN(v) ? '—' : (v >= 0 ? '+' : '−') + Math.abs(v*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%';
+  // período de vendas: segunda → semana passada (seg a dom); quinta → desde segunda até ontem
+  const ini = new Date(dReun), fim = new Date(dReun);
+  if(segunda){ ini.setDate(dReun.getDate() - 7); fim.setDate(dReun.getDate() - 1); } else { ini.setDate(dReun.getDate() - 3); fim.setDate(dReun.getDate() - 1); }
+  const [dias, cats, vs, ops, inf, lem] = await Promise.all([
+    sb(`loja_vendas_dia?data=gte.${iso(ini)}&data=lte.${iso(fim)}&select=data,vendas_real,vendas_budget&order=data.asc`).catch(()=>[]),
+    sb('loja_categorias_perda_vendas?select=categoria,divisao,delta_pct&order=delta_pct.asc&limit=8').catch(()=>[]),
+    sb('loja_venda_sugestiva?select=*&order=data_referencia.desc.nullslast,id.desc&limit=1').catch(()=>[]),
+    sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
+    sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1').catch(()=>[]),
+    carregarLembretes().catch(()=>null)
+  ]);
+  const r = await gerarResumoReuniao();
+  const comV = (dias||[]).filter(d => Number(d.vendas_real) > 0);
+  const real = comV.reduce((a,d) => a + Number(d.vendas_real), 0), bdg = comV.reduce((a,d) => a + (Number(d.vendas_budget)||0), 0);
+  const titulo = segunda ? `Semana passada (${f(ini)} a ${f(fim)})` : `Esta semana até ontem (${f(ini)} a ${f(fim)})`;
+  let vendas = comV.length ? `${titulo}: ${fmtEuro(real)} — ${pct(bdg ? real/bdg - 1 : null)} vs budget (${fmtEuro(bdg)}).` : `${titulo}: ainda sem vendas carregadas para estes dias.`;
+  // pior dia
+  if(comV.length > 1){ const pior = [...comV].filter(d => d.vendas_budget).sort((a,b) => (a.vendas_real/a.vendas_budget) - (b.vendas_real/b.vendas_budget))[0]; if(pior) vendas += `\nDia mais fraco: ${new Date(pior.data+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'long',day:'2-digit',month:'2-digit'})} (${pct(pior.vendas_real/pior.vendas_budget - 1)} vs budget).`; }
+  vendas += '\n' + (r.vendas || '');
+  // secções piores
+  const rp = resumoPainel || {}; const secs = (rp.secoes||[]).filter(s => (s.real||0) > 1000);
+  const k = secs.filter(s => s.vsb != null && s.bdg > 0).length >= 5 ? 'vsb' : 'vsaa';
+  const pioresSec = secs.filter(s => s[k] != null && s[k] < 0).sort((a,b) => a[k]-b[k]).slice(0,4);
+  if(pioresSec.length) vendas += `\nSecções piores (${k === 'vsb' ? 'vs budget' : 'vs ' + (rp.ano_ant || 'ano passado')}): ${pioresSec.map(s => s.sec + ' ' + pct(s[k])).join(', ')}.`;
+  const catsOk = (cats||[]).filter(c => !/natal|páscoa|pascoa|sazona/i.test(c.categoria)).slice(0,5);
+  if(catsOk.length) vendas = vendas.replace(/\nCategorias a perder vendas[^\n]*/,'') + `\nCategorias piores vs ${rp.ano_ant || 'ano passado'}: ${catsOk.map(c => `${impTitulo(String(c.categoria).replace(/_bc$/i,' balcão').replace(/_/g,' '))} (${impTitulo(c.divisao)}) ${Math.round(Number(c.delta_pct))}%`).join(', ')}.`;
+  // venda sugestiva
+  let pot = '';
+  const v = vs && vs[0];
+  if(v){
+    const pObj = v.objetivo ? v.vendas_un / v.objetivo : (v.vs_objetivo_pct != null ? 1 + Number(v.vs_objetivo_pct)/100 : null);
+    const art = v.artigo || v.semana;
+    const top = (ops||[]).filter(o => (o.artigo || '') === (v.artigo || '')).sort((a,b) => b.vendas_un - a.vendas_un).slice(0,3);
+    pot += `Venda sugestiva — ${art}: ${v.vendas_un} un${v.objetivo ? ' de ' + v.objetivo : ''}${pObj != null ? ' (' + Math.round(pObj*100) + '% do objetivo)' : ''}.`;
+    if(top.length) pot += `\nPódio: ${top.map((o,i) => ['🥇','🥈','🥉'][i] + ' ' + o.nome + ' ' + o.vendas_un + ' un').join(' · ')}.`;
+  }
+  if(catsOk.length) pot += `${pot ? '\n' : ''}Potenciar: ${catsOk.slice(0,3).map(c => impTitulo(String(c.categoria).replace(/_bc$/i,' balcão').replace(/_/g,' '))).join(', ')} — exposição, ruturas e venda sugestiva.`;
+  pot += `\nArtigo/secção: [ ]  ·  Objetivo: [ ]  ·  Responsável: [ ]`;
+  // equipa: formação e banco de horas
+  let equipa = '';
+  if(lem){
+    const form = lem.formacao || [];
+    if(form.length){ const pessoas = [...new Set(form.map(x => lemPrimeiroNome(x.nome)))]; equipa += `Formação pendente: ${form.length} (${pessoas.slice(0,8).join(', ')}${pessoas.length > 8 ? '…' : ''}).`; }
+    const bh = lem.bh || [];
+    if(bh.length) equipa += `${equipa ? '\n' : ''}Banco de horas: ${bh.slice(0,8).map(c => `${lemPrimeiroNome(c.nome)} ${Number(c.bh_negativo) < 0 ? Number(c.bh_negativo).toLocaleString('pt-PT') + 'h' : (Number(c.bh_positivo)||0).toLocaleString('pt-PT') + 'h'}`).join(', ')}${bh.length > 8 ? '…' : ''}.`;
+    const alt = lem.alteracoes || []; if(alt.length) equipa += `${equipa ? '\n' : ''}Alterações de horário por assinar: ${alt.length}.`;
+    const aus = lem.ausencias || []; if(aus.length) equipa += `${equipa ? '\n' : ''}Ausentes: ${aus.length}.`;
+  }
+  equipa += `${equipa ? '\n' : ''}Trocas de horário: \nConflitos / pontos a resolver: \nEnergia geral da equipa: `;
+  // informação de negócio
+  const i0 = inf && inf[0];
+  let foco = i0 ? `${i0.semana || 'Informação de negócio'}:\n${String(i0.resumo||'').slice(0, 900)}${String(i0.resumo||'').length > 900 ? '…' : ''}` : '';
+  return {semana: nomeReuniao(dReun), data_reuniao: iso(dReun), vendas, quebras: r.quebras || '', vendas_potenciar: pot, auditorias: r.auditorias || '', custos: '', equipa, foco, automatica: true};
+}
+
 async function renderAtaSemanal(){
   const wrap = document.getElementById('ata-semanal-wrap');
-  const rows = await sb('loja_ata_semanal?select=*&order=id.desc&limit=1');
+  const dReun = proximaReuniao(); const isoR = dataLocalISO(dReun);
+  const hojeReuniao = dataLocalISO(new Date()) === isoR;
+  const rows = await sb(`loja_ata_semanal?data_reuniao=eq.${isoR}&select=*&order=id.desc&limit=1`).catch(()=>[]);
   ataAtual = rows && rows.length ? rows[0] : null;
+  ataPreview = null;
+  if(!ataAtual){
+    try{
+      ataPreview = await gerarAtaAutomatica(dReun);
+      // no dia da reunião fica logo guardada (a gestora pode editar depois)
+      if(hojeReuniao && currentUser && currentUser.role === 'gestora'){
+        const g = await sb('loja_ata_semanal', {method:'POST', body: JSON.stringify({...ataPreview, criado_por: 'automático'})});
+        if(g && g[0]){ ataAtual = g[0]; ataPreview = null; }
+      }
+    }catch(e){ console.warn('ata automática', e); }
+  }
 
   let html = '';
   {
-    const ataAtualOuVazia = ataAtual || {};
+    const ataAtualOuVazia = ataAtual || ataPreview || {};
     const campos = [
+      ['📰 Informação de negócio', ataAtualOuVazia.foco],
       ['📈 Vendas', ataAtualOuVazia.vendas],
       ['📉 Quebras', ataAtualOuVazia.quebras],
-      ['🎯 Vendas a potenciar — semana seguinte', ataAtualOuVazia.vendas_potenciar],
+      ['🎯 Vendas a potenciar e venda sugestiva', ataAtualOuVazia.vendas_potenciar],
       ['🔍 Auditorias (secção e loja)', ataAtualOuVazia.auditorias],
       ['💶 Custos da loja', ataAtualOuVazia.custos],
-      ['👥 Equipa (horários, conflitos, energia geral)', ataAtualOuVazia.equipa],
+      ['👥 Equipa (formação, banco de horas, horários, energia)', ataAtualOuVazia.equipa],
     ];
     html += `<div class="card">
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">Semana: <b>${ataAtualOuVazia.semana || '—'}</b>${ataAtual ? '' : ' · <span style="color:var(--ink-soft)">modelo por preencher</span>'}</div>`;
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;"><b style="color:var(--navy);font-size:13px;">${rpEsc(ataAtualOuVazia.semana || nomeReuniao(dReun))}</b><br>${hojeReuniao ? '🟢 A reunião é hoje.' : 'Próxima reunião.'} As reuniões são às segundas e quintas. ${ataAtual ? (ataAtual.automatica ? '· preenchida automaticamente — pode editar' : '· guardada') : ataPreview ? '· preenchida automaticamente com os dados de hoje (fica guardada no dia da reunião)' : '· modelo por preencher'}</div>`;
     campos.forEach(([label, valor])=>{
       html += `<div style="margin-bottom:12px;">
         <div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:3px;">${label}</div>
@@ -8060,6 +8337,9 @@ async function renderAtaSemanal(){
   if(currentUser && currentUser.role === 'gestora'){
     html += `<button class="btn-primary" style="margin-top:0;flex:1;" onclick="openEditAta()">📝 Preencher / editar ata</button>`;
   }
+  if(ataAtual && ataAtual.automatica && currentUser && currentUser.role === 'gestora'){
+    html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#1F7A33;" onclick="ataRefazer()">🔄 Atualizar números</button>`;
+  }
   if(ataAtual){
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:var(--teal);" onclick="enviarAtaPorEmail()">📧 Enviar por email</button>`;
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#25D366;" onclick="lemEnviarAta()">📲 WhatsApp</button>`;
@@ -8070,6 +8350,12 @@ async function renderAtaSemanal(){
 }
 
 
+async function ataRefazer(){
+  if(!ataAtual) return;
+  try{ const n = await gerarAtaAutomatica(new Date(ataAtual.data_reuniao + 'T12:00:00')); const {semana, ...resto} = n;
+    await sb(`loja_ata_semanal?id=eq.${ataAtual.id}`, {method:'PATCH', body: JSON.stringify({...resto, equipa: ataAtual.equipa && !/^Formação pendente|^Banco de horas|^Trocas de horário/m.test(ataAtual.equipa) ? ataAtual.equipa : resto.equipa})}); showToast(); renderAtaSemanal(); }
+  catch(e){ alert('Não consegui atualizar.'); }
+}
 let resumoReuniaoCache = null;
 async function gerarResumoReuniao(){
   try{ await carregarResumoPainel(); }catch(e){}
@@ -8164,6 +8450,22 @@ async function preencherAtaComNumeros(forcar){
 }
 
 function openEditAta(){
+  const base = ataAtual || ataPreview;
+  if(!ataAtual && ataPreview) ataAtual = null;
+  const v = k => base ? (base[k] || '') : '';
+  document.getElementById('ata-edit-semana').value = base ? (base.semana || '') : (commData ? commData.semana : '');
+  document.getElementById('ata-edit-foco').value = v('foco');
+  document.getElementById('ata-edit-vendas').value = v('vendas');
+  document.getElementById('ata-edit-quebras').value = v('quebras');
+  document.getElementById('ata-edit-potenciar').value = v('vendas_potenciar');
+  document.getElementById('ata-edit-auditorias').value = v('auditorias');
+  document.getElementById('ata-edit-custos').value = v('custos');
+  document.getElementById('ata-edit-equipa').value = v('equipa');
+  document.getElementById('comm-view').classList.add('hidden');
+  document.getElementById('ata-edit').classList.remove('hidden');
+  preencherAtaComNumeros(false);
+}
+function openEditAtaAntigo(){
   document.getElementById('ata-edit-semana').value = ataAtual ? (ataAtual.semana || '') : (commData ? commData.semana : '');
   document.getElementById('ata-edit-vendas').value = ataAtual ? (ataAtual.vendas || '') : '';
   document.getElementById('ata-edit-quebras').value = ataAtual ? (ataAtual.quebras || '') : '';
@@ -8190,6 +8492,9 @@ async function saveAta(){
     auditorias: document.getElementById('ata-edit-auditorias').value.trim(),
     custos: document.getElementById('ata-edit-custos').value.trim(),
     equipa: document.getElementById('ata-edit-equipa').value.trim(),
+    foco: document.getElementById('ata-edit-foco').value.trim(),
+    data_reuniao: (ataAtual && ataAtual.data_reuniao) || (ataPreview && ataPreview.data_reuniao) || dataLocalISO(proximaReuniao()),
+    automatica: false,
     criado_por: currentUser ? currentUser.name : null
   };
   try{
