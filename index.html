@@ -7701,6 +7701,101 @@ async function editarNotaAuditoria(nome){
   }
 }
 
+// ===== Controlo Analítico (resultados do laboratório) — dentro da auditoria HACCP =====
+let caLista = [];
+function caLerTexto(t){
+  const L = String(t||'').replace(/\r/g,'').split('\n').map(x => x.replace(/ /g,' ').trim()).filter(Boolean);
+  const j = L.join('\n');
+  const campo = re => { const m = j.match(re); return m ? m[1].trim() : ''; };
+  const d = {
+    numero: campo(/n[ºo°]\s*(CA\d+\/\d+)/i),
+    data_recolha: campo(/Data Recolha\s*[:\t ]\s*(\d{4}-\d{2}-\d{2})/i),
+    secao: campo(/Sec[çc][ãa]o\s*[:\t ]\s*([^\n\t]+)/i),
+    objeto: campo(/Objec?to da\s*Recolha\s*[:\t ]\s*([^\n\t]+)/i),
+    lote: campo(/Lote\s*[:\t ]\s*([^\n\t]+)/i),
+    validade: campo(/Validade\s*[:\t ]\s*(\d{4}-\d{2}-\d{2})/i),
+    referencia: campo(/Refer[êe]ncia\s*Laborat[óo]rio\s*[:\t ]\s*([^\n\t]+)/i),
+    observacoes: campo(/Observa[çc][õo]es do\s*T[ée]cnico\s*[:\t ]\s*([^\n\t]+)/i)
+  };
+  const linhas = L.filter(l => /Contagem|Pesquisa|Salmonella|Listeria/i.test(l));
+  d.parametro = linhas.map(l => l.replace(/\t+/g,' · ')).join('\n');
+  d.classificacao = /N[ãa]o satisfat[óo]rio/i.test(j) ? 'Não satisfatório' : /Aceit[áa]vel/i.test(j) ? 'Aceitável' : /Satisfat[óo]rio/i.test(j) ? 'Satisfatório' : '';
+  return d;
+}
+async function blocoControloAnalitico(){
+  try{ caLista = await sb('loja_controlo_analitico?select=*&order=data_recolha.desc.nullslast,id.desc&limit=50') || []; }catch(e){ caLista = []; }
+  const pode = currentUser && ['gestora','area','responsavel'].includes(currentUser.role);
+  const cor = c => /n[ãa]o satisf/i.test(c||'') ? '#B4231A' : /aceit/i.test(c||'') ? '#C77F12' : /satisf/i.test(c||'') ? '#1F7A33' : 'var(--ink-soft)';
+  const fmt = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4) : '—';
+  const nao = caLista.filter(x => /n[ãa]o satisf/i.test(x.classificacao||'') && !x.resolvido).length;
+  let h = `<div class="section-title">🧪 Controlo analítico (laboratório) ${nao ? `<span class="lem-n tem">${nao} por resolver</span>` : ''}</div>`;
+  h += `<div class="card" style="padding:4px 12px;">` + (caLista.length ? caLista.map((x,i) => `<div style="padding:10px 0;border-top:${i ? '1px solid var(--line)' : 'none'};">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+        <b style="font-size:13px;">${rpEsc(x.referencia || x.objeto || 'Análise')}</b>
+        <span style="font-size:12px;font-weight:800;color:${cor(x.classificacao)};white-space:nowrap;">${/n[ãa]o satisf/i.test(x.classificacao||'') ? '✖' : '✔'} ${rpEsc(x.classificacao || '—')}</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${rpEsc(x.secao || '')} · recolha ${fmt(x.data_recolha)}${x.numero ? ' · ' + rpEsc(x.numero) : ''}${x.lote ? ' · lote ' + rpEsc(x.lote) : ''}</div>
+      ${x.parametro ? `<div style="font-size:12px;color:var(--ink);white-space:pre-line;margin-top:4px;">${rpEsc(x.parametro)}</div>` : ''}
+      ${x.observacoes ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">Obs.: ${rpEsc(x.observacoes)}</div>` : ''}
+      ${/n[ãa]o satisf/i.test(x.classificacao||'') ? `<div style="margin-top:6px;font-size:12px;">${x.resolvido ? `<span class="lem-ok">✓ resolvido</span>` : '<b style="color:#B4231A">Ação corretiva:</b>'} ${rpEsc(x.acao_corretiva || (x.resolvido ? '' : 'por definir'))}</div>
+        ${pode && !x.resolvido ? `<div style="display:flex;gap:6px;margin-top:6px;"><button class="econ-btn" onclick="caAcao(${x.id})">✏️ Ação corretiva</button><button class="econ-btn filled" onclick="caResolver(${x.id})">✓ Resolvido</button></div>` : ''}` : ''}
+      ${x.caminho ? `<button class="econ-btn" style="margin-top:6px;" onclick="caAbrir(${x.id})">📄 Ver relatório</button>` : ''}
+    </div>`).join('') : `<div style="font-size:13px;color:var(--ink-soft);padding:8px 0;">Ainda sem resultados registados.</div>`) + `</div>`;
+  if(pode) h += `<details class="card lem-novo" style="margin-top:8px;"><summary>➕ Registar resultado do controlo analítico</summary>
+    <p class="com-ajuda" style="margin:6px 0;">Pode colar o texto do email "Comunicação de Resultados do Controlo Analítico" e carregar em "Preencher" — os campos ficam preenchidos. Também pode juntar a foto ou o PDF.</p>
+    <textarea id="ca-colar" rows="4" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12px;" placeholder="Colar aqui o texto do email (opcional)…"></textarea>
+    <button class="econ-btn" style="margin:6px 0 10px;" onclick="caPreencher()">Preencher a partir do texto</button>
+    <div class="com-duo"><div><label class="com-lbl" for="ca-numero">Nº</label><input id="ca-numero" placeholder="CA26/..."></div><div><label class="com-lbl" for="ca-data">Data recolha</label><input id="ca-data" type="date"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="ca-secao">Secção</label><input id="ca-secao"></div><div><label class="com-lbl" for="ca-class">Classificação</label><select id="ca-class"><option>Satisfatório</option><option>Aceitável</option><option>Não satisfatório</option></select></div></div>
+    <label class="com-lbl" for="ca-ref">Artigo / referência</label><input id="ca-ref" placeholder="ex.: Bovino carne picada">
+    <div class="com-duo"><div><label class="com-lbl" for="ca-lote">Lote</label><input id="ca-lote"></div><div><label class="com-lbl" for="ca-val">Validade</label><input id="ca-val" type="date"></div></div>
+    <label class="com-lbl" for="ca-par">Parâmetros e resultados</label><textarea id="ca-par" rows="3" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;" placeholder="ex.: Bolores 1700 ufc/g — Não satisfatório"></textarea>
+    <label class="com-lbl" for="ca-obs">Observações do técnico</label><input id="ca-obs">
+    <label class="com-lbl" for="ca-acao">Ação corretiva</label><input id="ca-acao" placeholder="o que vamos fazer">
+    <input type="file" id="ca-fich" accept="image/*,.pdf" class="hidden" onchange="document.getElementById('ca-fich-nome').textContent = this.files[0] ? '📎 ' + this.files[0].name : ''">
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><button class="econ-btn" onclick="document.getElementById('ca-fich').click()">📎 Juntar foto ou PDF</button><span id="ca-fich-nome" style="font-size:12px;color:var(--ink-soft);"></span></div>
+    <button class="btn-primary" onclick="caGuardar()">Guardar</button><div id="ca-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></details>`;
+  return h;
+}
+function caPreencher(){
+  const d = caLerTexto(document.getElementById('ca-colar').value);
+  const set = (id, v) => { const el = document.getElementById(id); if(el && v) el.value = v; };
+  set('ca-numero', d.numero); set('ca-data', d.data_recolha); set('ca-secao', d.secao); set('ca-ref', d.referencia || d.objeto); set('ca-lote', d.lote); set('ca-val', d.validade); set('ca-par', d.parametro); set('ca-obs', d.observacoes);
+  if(d.classificacao) set('ca-class', d.classificacao);
+}
+async function caGuardar(){
+  const v = id => (document.getElementById(id)||{}).value ? document.getElementById(id).value.trim() : '';
+  const est = document.getElementById('ca-estado');
+  if(!v('ca-ref') && !v('ca-numero')){ alert('Preencha pelo menos o artigo ou o número.'); return; }
+  const dados = {numero: v('ca-numero') || null, data_recolha: v('ca-data') || null, secao: v('ca-secao') || null, referencia: v('ca-ref') || null, lote: v('ca-lote') || null, validade: v('ca-val') || null, parametro: v('ca-par') || null, classificacao: v('ca-class'), observacoes: v('ca-obs') || null, acao_corretiva: v('ca-acao') || null, registado_por: currentUser ? currentUser.name : null};
+  try{
+    const f = document.getElementById('ca-fich').files[0];
+    if(f){
+      if(est) est.textContent = 'A carregar o ficheiro…';
+      const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+      const caminho = `controlo-analitico/${Date.now()}_${limpo}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      if(res.ok){ dados.caminho = caminho; dados.nome_ficheiro = f.name; dados.tipo_ficheiro = f.type || null; }
+    }
+    if(dados.numero){ const ja = await sb(`loja_controlo_analitico?numero=eq.${encodeURIComponent(dados.numero)}&select=id`); if(ja && ja.length){ await sb(`loja_controlo_analitico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)}); showToast(); abrirDetalheAuditoria('HACCP'); return; } }
+    await sb('loja_controlo_analitico', {method:'POST', body: JSON.stringify(dados)});
+    showToast(); abrirDetalheAuditoria('HACCP');
+  }catch(e){ if(est) est.textContent = '✕ Não consegui guardar.'; }
+}
+async function caAcao(id){
+  const x = caLista.find(r => r.id === id); const t = prompt('Ação corretiva:', (x && x.acao_corretiva) || ''); if(t === null) return;
+  try{ await sb(`loja_controlo_analitico?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({acao_corretiva: t.trim()})}); showToast(); abrirDetalheAuditoria('HACCP'); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function caResolver(id){
+  if(!confirm('Marcar como resolvido?')) return;
+  try{ await sb(`loja_controlo_analitico?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({resolvido: true})}); showToast(); abrirDetalheAuditoria('HACCP'); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function caAbrir(id){
+  const janela = window.open('', '_blank');
+  try{ const x = caLista.find(r => r.id === id); const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${x.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}}); if(!res.ok) throw 0; const url = URL.createObjectURL(await res.blob()); if(janela) janela.location.href = url; else window.location.href = url; }
+  catch(e){ if(janela) janela.close(); alert('Não consegui abrir o relatório.'); }
+}
+
 async function abrirDetalheAuditoria(nome){
   const content = document.getElementById('melhoria-content');
   const alvo = content || document.body;
@@ -7726,6 +7821,7 @@ async function abrirDetalheAuditoria(nome){
     if(nome === 'Controlo'){
       html += `<div class="section-title">🧾 Notas de Crédito</div><div class="card">${await blocoNotasCredito('auditoria', true)}</div>`;
     }
+    if(nome === 'HACCP') html += await blocoControloAnalitico();
 
     if(!auditorias || !auditorias.length){
       html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda não há relatório detalhado guardado para esta auditoria.</div></div>`;
