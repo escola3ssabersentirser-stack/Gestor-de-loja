@@ -7126,6 +7126,14 @@ async function numerosSemanaAtual(){
     plano: {proxima, intervalo: `${f(pSeg)} a ${f(pDom)}`, label: `Semana ${numeroSemanaISO(pSeg)} · ${f(pSeg)} a ${f(pDom)}`, info: proxima ? info : null}};
 }
 
+function planoLabelSemana(p){
+  const t = String(p.semana || '');
+  if(/Semana\s*\d+/i.test(t)) return rpEsc(t);
+  const m = t.match(/(\d{1,2})\/(\d{1,2})/); if(!m) return rpEsc(t || '—');
+  const ano = p.criado_em ? Number(String(p.criado_em).slice(0,4)) : new Date().getFullYear();
+  const d = new Date(ano, Number(m[2]) - 1, Number(m[1]), 12);
+  return `Semana ${numeroSemanaISO(d)} · ${rpEsc(t)}`;
+}
 async function renderPlanoSemanal(){
   const wrap = document.getElementById('plano-semanal-wrap');
   const [rows, ns] = await Promise.all([sb('loja_plano_semana?select=*&order=id.desc&limit=5'), numerosSemanaAtual()]);
@@ -7144,15 +7152,14 @@ async function renderPlanoSemanal(){
   if(podeCriar && daSemana){
     html += `<button class="btn-primary" style="margin:0 0 10px;" onclick="criarPlanoSemanal()">+ Novo Plano da Semana</button>`;
   }
-  if(!rows.length){
-    html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda sem planos semanais registados.</div></div>`;
-    wrap.innerHTML = html;
-    return;
-  }
-  rows.forEach(p=>{
+  if(!rows.length){ wrap.innerHTML = html; return; }
+  // o plano da semana do plano fica em destaque; os das semanas anteriores ficam recolhidos
+  const doPlano = daSemana ? [daSemana] : [];
+  const anteriores = (rows||[]).filter(p => p !== daSemana);
+  const desenhar = lista => { let html = ''; lista.forEach(p=>{
     const acoes = p.acoes || [];
     html += `<div class="card">
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana: <b>${p.semana}</b>${p.assinatura_nome ? ' · Assinado por '+p.assinatura_nome : ''}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana: <b>${planoLabelSemana(p)}</b>${p.assinatura_nome ? ' · Assinado por '+p.assinatura_nome : ''}</div>
       <div class="vs-detail-grid" style="margin-bottom:10px;">
         <div class="vs-box sales"><div class="vs-label">Vendas obj. / real.</div><div class="vs-value" style="font-size:14px;">${fmtEuro(p.vendas_objetivo)} / ${fmtEuro(p.vendas_realizado)}</div></div>
         <div class="vs-box loss"><div class="vs-label">Quebra obj. / real.</div><div class="vs-value" style="font-size:14px;">${p.quebras_objetivo_pct ?? '—'}% / ${p.quebras_realizado_pct ?? '—'}%</div></div>
@@ -7165,7 +7172,9 @@ async function renderPlanoSemanal(){
       </div>`).join('')}
       <button class="econ-btn filled" style="margin-top:10px;width:100%;" onclick='enviarPlanoSemanalPorEmail(${p.id})'>📧 Gerar documento e enviar</button>
     </div>`;
-  });
+  }); return html; };
+  html += desenhar(doPlano);
+  if(anteriores.length) html += `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);padding:6px 2px;">Planos de semanas anteriores (${anteriores.length})</summary>${desenhar(anteriores)}</details>`;
   wrap.innerHTML = html;
 }
 
