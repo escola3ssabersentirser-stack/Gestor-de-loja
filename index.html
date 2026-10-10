@@ -476,6 +476,22 @@
   .rp-svg .rp-eixo{font-size:11px;fill:#6B746E;}
   .rp-svg rect.rp-s-ant{fill:#C77F12;} .rp-svg rect.rp-s-atual{fill:#1F7A33;}
   .rp-svg .rp-budget{stroke:#141A16;stroke-width:2;}
+  #ap-overlay{position:fixed;inset:0;z-index:9999;background:#0E2216;display:none;flex-direction:column;}
+  #ap-overlay .ap-palco{flex:1;overflow:auto;display:flex;}
+  #ap-overlay .ap-slide{position:relative;flex:1;min-height:100%;box-sizing:border-box;padding:clamp(18px,4vw,56px) clamp(16px,5vw,72px) 70px;background:#F6F8F2;color:#14301E;font-family:'Public Sans',Arial,sans-serif;font-size:clamp(14px,1.6vw,22px);}
+  #ap-overlay .ap-slide h1{font-size:clamp(30px,5.5vw,72px);margin:0 0 12px;line-height:1.05;} #ap-overlay .ap-slide h2{font-size:clamp(22px,3.4vw,46px);margin:0 0 20px;line-height:1.1;} #ap-overlay .ap-slide h3{font-size:1em;margin:0 0 8px;}
+  #ap-overlay .ap-capa,#ap-overlay .ap-escuro{background:#14301E;color:#F6F8F2;} #ap-overlay .ap-capa{display:flex;flex-direction:column;justify-content:center;}
+  #ap-overlay .ap-tag{display:inline-block;align-self:flex-start;background:#8FD3A0;color:#14301E;font-weight:800;padding:6px 14px;border-radius:999px;margin-bottom:18px;}
+  #ap-overlay .ap-sub{opacity:.75;} #ap-overlay .ap-rod{position:absolute;left:clamp(16px,5vw,72px);bottom:18px;font-size:12px;opacity:.6;}
+  #ap-overlay .ap-grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;} #ap-overlay .ap-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+  #ap-overlay .ap-tile{background:#fff;border-radius:16px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);} #ap-overlay .ap-tile-t{font-size:.75em;color:#5B6B60;} #ap-overlay .ap-tile-v{font-size:1.9em;font-weight:800;line-height:1.15;} #ap-overlay .ap-tile-s{font-size:.7em;color:#5B6B60;}
+  #ap-overlay .ap-bom{color:#1F7A33;} #ap-overlay .ap-mau{color:#B4231A;} #ap-overlay .ap-escuro .ap-bom{color:#8FD3A0;} #ap-overlay .ap-escuro .ap-mau{color:#F08A7E;}
+  #ap-overlay .ap-duas{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;}
+  #ap-overlay .ap-tab{width:100%;border-collapse:collapse;font-size:.85em;} #ap-overlay .ap-tab th{text-align:left;font-size:.8em;color:#5B6B60;border-bottom:2px solid #D7E0D6;padding:6px;} #ap-overlay .ap-tab td{padding:7px 6px;border-bottom:1px solid #E3E9E2;}
+  #ap-overlay .ap-texto{white-space:pre-line;line-height:1.5;font-size:1.05em;} #ap-overlay .ap-pequeno{font-size:.8em;}
+  #ap-overlay .ap-lista{font-size:1.1em;line-height:1.5;padding-left:1.2em;} #ap-overlay .ap-lista li{margin-bottom:10px;}
+  #ap-overlay .ap-barra{display:flex;justify-content:center;align-items:center;gap:14px;padding:10px;background:#0E2216;color:#fff;}
+  #ap-overlay .ap-barra button{background:#1F7A33;color:#fff;border:0;border-radius:10px;min-width:48px;height:42px;font-size:22px;cursor:pointer;} #ap-overlay .ap-barra button:disabled{opacity:.35;} #ap-overlay .ap-barra button:last-child{background:#5B6B60;font-size:18px;}
   .vs-podio{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end;margin:14px 0 6px;}
   .vs-pod{display:flex;flex-direction:column;align-items:center;text-align:center;min-width:0;}
   .vs-pod-nome{font-size:12.5px;font-weight:700;color:var(--ink);line-height:1.2;margin-bottom:2px;overflow-wrap:anywhere;}
@@ -713,7 +729,7 @@
           <button class="rp-nav-btn" onclick="selectMenu('comunicacao','Comunicação Semanal')"><span class="rp-nav-ic">📣</span><span><b>Comunicação</b><small>informações importantes para a equipa</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('lembretes','Lembretes')"><span class="rp-nav-ic">🔔</span><span><b>Lembretes</b><small>banco de horas, horários, formação, ausências</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('comunidade','Comunidade do Mês')"><span class="rp-nav-ic">🤝</span><span><b>Comunidade do Mês</b><small>tema, ferramentas, feedback e PDP</small></span></button>
-          <a class="rp-nav-btn rp-nav-destaque" href="https://claude.ai/artifact/KNdgCvKFW7GUXJM4sE4N1G" target="_blank" rel="noopener"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>resultados, KPIs e pontos importantes</small></span></a>
+          <button class="rp-nav-btn rp-nav-destaque" onclick="abrirApresentacao()"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>sempre com os dados mais recentes</small></span></button>
         </div>
         <div id="rp-aud-lista" class="rp-pills" style="display:none">
           <button class="h3s-pill" onclick="selectMenu('area:relatorios','Relatórios das auditorias')">📄 Todos os relatórios</button>
@@ -8320,6 +8336,108 @@ async function gerarAtaAutomatica(dReun){
   const i0 = inf && inf[0];
   let foco = i0 ? `${i0.semana || 'Informação de negócio'}:\n${String(i0.resumo||'').slice(0, 900)}${String(i0.resumo||'').length > 900 ? '…' : ''}` : '';
   return {semana: nomeReuniao(dReun), data_reuniao: iso(dReun), vendas, quebras: r.quebras || '', vendas_potenciar: pot, auditorias: r.auditorias || '', custos: '', equipa, foco, automatica: true};
+}
+
+// ===== Apresentação semanal: gerada na hora com os dados mais recentes =====
+let apSlides = [], apIdx = 0;
+async function abrirApresentacao(){
+  let ov = document.getElementById('ap-overlay');
+  if(!ov){ ov = document.createElement('div'); ov.id = 'ap-overlay'; document.body.appendChild(ov); }
+  ov.innerHTML = `<div class="ap-palco"><div class="ap-slide" style="display:flex;align-items:center;justify-content:center;"><div style="font-size:20px;color:#C9DDCD;">A preparar a apresentação com os dados de hoje…</div></div></div>`;
+  ov.style.display = 'flex'; document.body.style.overflow = 'hidden';
+  try{ apSlides = await apGerarSlides(); }catch(e){ console.warn(e); apSlides = [`<div class="ap-slide"><h2>Não consegui preparar a apresentação.</h2></div>`]; }
+  apIdx = 0; apMostrar();
+}
+function apFechar(){ const ov = document.getElementById('ap-overlay'); if(ov) ov.style.display = 'none'; document.body.style.overflow = ''; }
+function apIr(d){ apIdx = Math.max(0, Math.min(apSlides.length - 1, apIdx + d)); apMostrar(); }
+function apMostrar(){
+  const ov = document.getElementById('ap-overlay'); if(!ov) return;
+  ov.innerHTML = `<div class="ap-palco">${apSlides[apIdx]}</div>
+    <div class="ap-barra"><button onclick="apIr(-1)" ${apIdx === 0 ? 'disabled' : ''} aria-label="Anterior">‹</button><span>${apIdx + 1} / ${apSlides.length}</span><button onclick="apIr(1)" ${apIdx === apSlides.length - 1 ? 'disabled' : ''} aria-label="Seguinte">›</button><button onclick="apFechar()" aria-label="Fechar">✕</button></div>`;
+}
+document.addEventListener('keydown', e => { const ov = document.getElementById('ap-overlay'); if(!ov || ov.style.display !== 'flex') return; if(e.key === 'ArrowRight' || e.key === ' ') apIr(1); else if(e.key === 'ArrowLeft') apIr(-1); else if(e.key === 'Escape') apFechar(); });
+(() => { let x0 = null; document.addEventListener('touchstart', e => { if(e.target.closest && e.target.closest('#ap-overlay')) x0 = e.touches[0].clientX; }, {passive:true}); document.addEventListener('touchend', e => { if(x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if(Math.abs(dx) > 50) apIr(dx < 0 ? 1 : -1); }, {passive:true}); })();
+
+async function apGerarSlides(){
+  const hoje = new Date(); const dReun = proximaReuniao();
+  const [ata, cats, mkd, arts, scoreV, vsOps, infos, kvRows, planos] = await Promise.all([
+    gerarAtaAutomatica(dReun),
+    sb('loja_categorias_perda_vendas?select=categoria,divisao,venda_ac,venda_aa,delta_pct,quebra_ac_pct&order=delta_pct.asc&limit=10').catch(()=>[]),
+    sb('loja_markdown_etiquetas?nivel=eq.divisao&select=divisao,impressas,vendidas,sem_venda,pct_aceitacao,data_referencia&order=sem_venda.desc').catch(()=>[]),
+    sb('loja_alertas_quebra_artigo?select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10').catch(()=>[]),
+    sb('loja_validades_score?select=*&order=ano.desc,data_atualizacao.desc.nullslast&limit=1').catch(()=>[]),
+    sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
+    sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1').catch(()=>[]),
+    sb('loja_resumo_painel?id=eq.3&select=dados').catch(()=>[]),
+    sb('loja_plano_acao?select=area,ponto,acao,estado&order=area.asc').catch(()=>[])
+  ]);
+  const r = resumoPainel || RESUMO_PADRAO; const mc = {}; (r.mes_curso||[]).forEach(l => mc[l.ind] = l);
+  const anoP = r.ano_ant || hoje.getFullYear() - 1;
+  const pct = (v, c=1) => v == null || isNaN(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v*100).toLocaleString('pt-PT',{maximumFractionDigits:c}) + '%';
+  const pp = v => v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toLocaleString('pt-PT',{maximumFractionDigits:2}) + ' pp';
+  const cls = (v, inverso) => v == null ? '' : ((inverso ? v <= 0 : v >= 0) ? 'ap-bom' : 'ap-mau');
+  const esc = rpEsc; const titulo = t => impTitulo(String(t||'').replace(/_bc$/i,' balcão').replace(/_/g,' '));
+  const rod = n => `<div class="ap-rod">Loja 747 · Viana do Castelo – Portuzelo · dados ${r.dados_ate ? 'até ' + impDDMM(r.dados_ate) : 'mais recentes'} · ${n}</div>`;
+  const S = [];
+  // 1 capa
+  S.push(`<div class="ap-slide ap-capa"><div class="ap-tag">Reunião semanal</div><h1>Resultados da Semana ${numeroSemanaISO(hoje)}</h1><p>${esc(semanaAtualLabel())}</p><p class="ap-sub">${esc(nomeReuniao(dReun))}</p>${rod(1)}</div>`);
+  // 2 mês em curso
+  const vb = mc['Vendas vs budget'] || {}, vaa = mc['Vendas vs ano passado'] || {}, qp = mc['Quebra em % das vendas'] || {}, cli = mc['Clientes (nº de tickets)'] || {}, tm = mc['Ticket médio (€)'] || {};
+  const kv = kvRows && kvRows[0] && kvRows[0].dados;
+  const tile = (t, v, s, c) => `<div class="ap-tile"><div class="ap-tile-t">${t}</div><div class="ap-tile-v ${c||''}">${v}</div><div class="ap-tile-s">${s||''}</div></div>`;
+  S.push(`<div class="ap-slide"><h2>${esc(r.mes || mesAtualNome())}: como estamos</h2><div class="ap-grid4">
+    ${tile('Vendas do mês', fmtEuro(vb.atual), 'budget ' + fmtEuro(vb.comp))}
+    ${tile('vs budget', pct(vb.vari), '', cls(vb.vari))}
+    ${tile('vs ' + anoP + ' (LFL)', pct(vaa.vari), '', cls(vaa.vari))}
+    ${tile('Quebra', qp.atual != null ? (qp.atual*100).toLocaleString('pt-PT',{maximumFractionDigits:2}) + '%' : '—', anoP + ': ' + (qp.comp != null ? (qp.comp*100).toLocaleString('pt-PT',{maximumFractionDigits:2}) + '%' : '—') + ' · ' + pp(qp.vari), cls(qp.vari, true))}
+  </div><div class="ap-grid4" style="margin-top:18px;">
+    ${tile('Clientes', cli.atual != null ? Number(cli.atual).toLocaleString('pt-PT') : '—', pct(cli.vari) + ' vs ' + anoP, cls(cli.vari))}
+    ${tile('Ticket médio', tm.atual != null ? Number(tm.atual).toLocaleString('pt-PT',{minimumFractionDigits:2}) + ' €' : '—', pct(tm.vari) + ' vs ' + anoP, cls(tm.vari))}
+    ${kv && kv.ano ? tile('Ano vs budget', pct(kv.ano.vsb), 'até ' + impDDMM(kv.data), cls(kv.ano.vsb)) : ''}
+    ${kv && kv.ano ? tile('Ano vs ' + anoP, pct(kv.ano.vsaa), 'até ' + impDDMM(kv.data), cls(kv.ano.vsaa)) : ''}
+  </div>${rod(2)}</div>`);
+  // 3 semana
+  S.push(`<div class="ap-slide"><h2>Vendas da semana</h2><div class="ap-texto">${esc(ata.vendas.split('\n').slice(0,2).join('\n'))}</div>${rod(3)}</div>`);
+  // 4 secções
+  const secs = (r.secoes||[]).filter(s => (s.real||0) > 500);
+  const k = secs.filter(s => s.bdg > 0 && s.vsb != null).length >= 5 ? 'vsb' : 'vsaa';
+  const ord = [...secs].filter(s => s[k] != null).sort((a,b) => b[k]-a[k]);
+  const lin = s => `<tr><td>${esc(s.sec)}</td><td class="${cls(s[k])}">${pct(s[k])}</td><td>${s.qp != null ? (s.qp*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : '—'}</td></tr>`;
+  S.push(`<div class="ap-slide"><h2>Secções: ${k === 'vsb' ? 'vendas vs budget' : 'vendas vs ' + anoP}</h2><div class="ap-duas"><div><h3 class="ap-bom">A crescer</h3><table class="ap-tab"><tr><th>Secção</th><th>Vendas</th><th>Quebra</th></tr>${ord.slice(0,5).map(lin).join('')}</table></div><div><h3 class="ap-mau">A perder</h3><table class="ap-tab"><tr><th>Secção</th><th>Vendas</th><th>Quebra</th></tr>${ord.slice(-5).reverse().map(lin).join('')}</table></div></div>${rod(4)}</div>`);
+  // 5 quebras
+  const difQ = secs.filter(s => s.qp != null && s.qp_aa != null && s.qp >= 0 && (s.real||0) > 1000).map(s => ({sec: s.sec, d: (s.qp - s.qp_aa)*100, qp: s.qp})).sort((a,b) => b.d - a.d);
+  const ultA = (arts||[])[0] && arts[0].data; const artsU = (arts||[]).filter(a => a.data === ultA).slice(0,5);
+  S.push(`<div class="ap-slide"><h2>Quebra: ${qp.atual != null ? (qp.atual*100).toLocaleString('pt-PT',{maximumFractionDigits:2}) + '%' : '—'} das vendas <span class="${cls(qp.vari, true)}" style="font-size:.6em;">(${pp(qp.vari)} vs ${anoP})</span></h2><div class="ap-duas">
+    <div><h3>Secções onde a quebra sobe</h3><table class="ap-tab">${difQ.filter(x => x.d > 0.3).slice(0,5).map(x => `<tr><td>${esc(x.sec)}</td><td class="ap-mau">${pp(x.d)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table>
+    <h3 style="margin-top:14px;">A reconhecer (quebra a descer)</h3><table class="ap-tab">${difQ.filter(x => x.d < -0.3).slice(-4).reverse().map(x => `<tr><td>${esc(x.sec)}</td><td class="ap-bom">${pp(x.d)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table></div>
+    <div><h3>Artigos com mais quebra${ultA ? ' (' + impDDMM(ultA) + ')' : ''}</h3><table class="ap-tab">${artsU.map(a => `<tr><td>${esc(titulo(a.descricao))}</td><td>${fmtEuro(a.valor_quebra)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table></div></div>${rod(5)}</div>`);
+  // 6 markdown / etiquetas
+  if((mkd||[]).length){
+    const tot = mkd.reduce((a,d) => ({i: a.i + Number(d.impressas||0), v: a.v + Number(d.vendidas||0)}), {i:0, v:0});
+    S.push(`<div class="ap-slide"><h2>Markdown: etiquetas que não venderam</h2><div class="ap-grid4">${tile('Impressas', tot.i.toLocaleString('pt-PT'))}${tile('Vendidas', tot.v.toLocaleString('pt-PT'), '', 'ap-bom')}${tile('Sem venda', Math.max(0, tot.i - tot.v).toLocaleString('pt-PT'), '', 'ap-mau')}${tile('Aceitação', tot.i ? Math.round(tot.v/tot.i*100) + '%' : '—')}</div>
+      <table class="ap-tab" style="margin-top:18px;"><tr><th>Divisão</th><th>Impressas</th><th>Sem venda</th><th>Aceitação</th></tr>${mkd.slice(0,6).map(d => `<tr><td>${esc(titulo(d.divisao))}</td><td>${d.impressas}</td><td class="ap-mau">${d.sem_venda}</td><td>${Math.round(d.pct_aceitacao)}%</td></tr>`).join('')}</table>${rod(6)}</div>`);
+  }
+  // 7 categorias
+  const catsOk = (cats||[]).filter(c => !/natal|páscoa|pascoa|sazona/i.test(c.categoria)).slice(0,8);
+  if(catsOk.length) S.push(`<div class="ap-slide"><h2>Categorias que mais perdem vendas vs ${anoP}</h2><table class="ap-tab"><tr><th>Categoria</th><th>Divisão</th><th>${r.ano || ''}</th><th>${anoP}</th><th>Variação</th></tr>${catsOk.map(c => `<tr><td>${esc(titulo(c.categoria))}</td><td>${esc(titulo(c.divisao))}</td><td>${fmtEuro(c.venda_ac)}</td><td>${fmtEuro(c.venda_aa)}</td><td class="ap-mau">${Math.round(Number(c.delta_pct))}%</td></tr>`).join('')}</table>${rod(7)}</div>`);
+  // 8 venda sugestiva
+  const camp = []; (vsOps||[]).forEach(o => { const kk = o.artigo || '—'; let c = camp.find(x => x.k === kk); if(!c){ c = {k: kk, data: o.data_referencia, ops: []}; camp.push(c); } c.ops.push(o); });
+  if(camp.length){ const a = camp[0].ops.sort((x,y) => y.vendas_un - x.vendas_un); const b = camp[1] ? camp[1].ops.sort((x,y) => y.vendas_un - x.vendas_un) : null;
+    S.push(`<div class="ap-slide ap-claro"><h2>🏆 Venda sugestiva — ${esc(camp[0].k)}</h2><div style="max-width:900px;margin:0 auto;">${podioVendaSugestivaHtml(a, b)}</div>${rod(8)}</div>`); }
+  // 9 informação de negócio
+  const inf = infos && infos[0];
+  if(inf) S.push(`<div class="ap-slide"><h2>📰 Informação de negócio — ${esc(inf.semana || '')}</h2><div class="ap-texto ap-pequeno">${esc(String(inf.resumo||'').slice(0, 1100))}${String(inf.resumo||'').length > 1100 ? '…' : ''}</div>${rod(9)}</div>`);
+  // 10 auditorias + score validades
+  const auds = (r.auditorias||[]).filter(a => a.atual > 0); const sv = scoreV && scoreV[0] && scoreV[0].dados;
+  S.push(`<div class="ap-slide"><h2>Auditorias e rotina de validades</h2><div class="ap-duas"><div><table class="ap-tab"><tr><th>Auditoria</th><th>Nota</th><th>Objetivo</th></tr>${auds.map(a => `<tr><td>${esc(a.area)}</td><td class="${a.atual >= a.obj ? 'ap-bom' : 'ap-mau'}">${Math.round(a.atual*100)}%</td><td>${Math.round(a.obj*100)}%</td></tr>`).join('')}</table></div>
+    <div>${sv ? `<div class="ap-grid2">${tile('Score validades ' + esc(sv.mes||''), (sv.score != null ? Number(sv.score).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : '—'), sv.posicao ? sv.posicao + '.º de ' + sv.total_lojas : '')}${tile('Aceitação', sv.aceitacao != null ? Number(sv.aceitacao).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : '—')}${tile('Quebra evitada', sv.quebra_evitada != null ? Math.round(sv.quebra_evitada).toLocaleString('pt-PT') + ' €' : '—', '', 'ap-bom')}${tile('MD não vendido', sv.mnv_valor != null ? Math.round(sv.mnv_valor).toLocaleString('pt-PT') + ' €' : '—', '', 'ap-mau')}</div>` : ''}</div></div>${rod(10)}</div>`);
+  // 11 pontos importantes
+  const res = await gerarResumoReuniao();
+  S.push(`<div class="ap-slide ap-escuro"><h2>Pontos importantes da semana</h2><ol class="ap-lista">${(res.pontos||[]).slice(0,6).map(p => `<li>${esc(p)}</li>`).join('') || '<li>Sem pontos críticos — manter o ritmo!</li>'}</ol>${rod(11)}</div>`);
+  // 12 compromissos
+  const pend = (planos||[]).filter(p => !/conclu/i.test(p.estado||'')).slice(0,7);
+  S.push(`<div class="ap-slide"><h2>Compromissos para a próxima semana</h2><table class="ap-tab"><tr><th>Secção</th><th>O que vamos fazer</th><th>Estado</th></tr>${pend.map(p => `<tr><td>${esc(p.area)}</td><td>${esc(p.acao || p.ponto)}</td><td>${esc(p.estado)}</td></tr>`).join('') || '<tr><td colspan="3">Definir na reunião: secção · ação · responsável · prazo</td></tr>'}</table><p class="ap-sub" style="margin-top:16px;">Na próxima reunião começamos por ver se cada compromisso foi cumprido.</p>${rod(12)}</div>`);
+  return S;
 }
 
 async function renderAtaSemanal(){
