@@ -476,6 +476,16 @@
   .rp-svg .rp-eixo{font-size:11px;fill:#6B746E;}
   .rp-svg rect.rp-s-ant{fill:#C77F12;} .rp-svg rect.rp-s-atual{fill:#1F7A33;}
   .rp-svg .rp-budget{stroke:#141A16;stroke-width:2;}
+  .vs-podio{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end;margin:14px 0 6px;}
+  .vs-pod{display:flex;flex-direction:column;align-items:center;text-align:center;min-width:0;}
+  .vs-pod-nome{font-size:12.5px;font-weight:700;color:var(--ink);line-height:1.2;margin-bottom:2px;overflow-wrap:anywhere;}
+  .vs-pod-un{font-size:12px;color:var(--ink-soft);margin-bottom:6px;}
+  .vs-pod-bloco{width:100%;border-radius:10px 10px 4px 4px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:8px;color:#fff;font-weight:800;}
+  .vs-pod-bloco .vs-pod-lugar{font-size:22px;line-height:1;} .vs-pod-bloco .vs-pod-med{font-size:20px;margin-top:4px;}
+  .vs-pod.p1 .vs-pod-bloco{height:130px;background:linear-gradient(180deg,#E3B341,#B8860B);} .vs-pod.p2 .vs-pod-bloco{height:100px;background:linear-gradient(180deg,#B9C2CB,#8A939C);}
+  .vs-pod.p3 .vs-pod-bloco{height:78px;background:linear-gradient(180deg,#D08A4E,#A0592A);} .vs-pod.p4 .vs-pod-bloco{height:58px;background:linear-gradient(180deg,#6FA17C,#1F7A33);}
+  .vs-barras{margin-top:8px;} .vs-barra-l{display:grid;grid-template-columns:22px minmax(0,1fr) 54px;gap:8px;align-items:center;padding:4px 0;font-size:12.5px;}
+  .vs-barra-t{height:10px;background:var(--line);border-radius:6px;overflow:hidden;} .vs-barra-t span{display:block;height:100%;border-radius:6px;background:#1F7A33;}
   .rp-svg rect.rp-p-aa{fill:#1F7A33;} .rp-svg rect.rp-p-aa.neg{fill:#B4231A;} .rp-svg rect.rp-p-bdg{fill:#8FA3B8;} .rp-dot.rp-p-aa{background:#1F7A33;} .rp-dot.rp-p-bdg{background:#8FA3B8;} .rp-svg .rp-zero{stroke:#141A16;stroke-width:1.2;} .rp-svg .rp-val{font-size:11px;font-weight:700;fill:#141A16;}
   .rp-svg .rp-linha{fill:none;stroke-width:2;} .rp-svg .rp-linha.rp-s-ant{stroke:#C77F12;} .rp-svg .rp-linha.rp-s-atual{stroke:#1F7A33;}
   .rp-svg .rp-ponto{stroke:#fff;stroke-width:2;} .rp-svg .rp-ponto.rp-s-ant{fill:#C77F12;} .rp-svg .rp-ponto.rp-s-atual{fill:#1F7A33;}
@@ -1164,6 +1174,9 @@
 
         <div class="section-title">📰 Informação de Negócio</div>
         <div id="info-negocio-historico-wrap"></div>
+
+        <div class="section-title">🏆 Pódio da Venda Sugestiva</div>
+        <div id="podio-comunicacao-wrap"></div>
 
         <div class="card">
           <div class="comm-item">
@@ -2617,8 +2630,13 @@ async function impVendaSugestiva(wb, nomeFicheiro){
     if(ja.length) await sb(`loja_venda_sugestiva?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)});
     else await sb('loja_venda_sugestiva', {method:'POST', body: JSON.stringify(dados)});
     ops.sort((a,b)=>b.vendas_un-a.vendas_un);
-    await sb('loja_venda_sugestiva_operadores?id=gt.0', {method:'DELETE'});
-    await sb('loja_venda_sugestiva_operadores', {method:'POST', body: JSON.stringify(ops)});
+    // guarda por campanha (artigo): substitui só a desta campanha, e só se o ficheiro não for mais antigo
+    const nomeArt = impTitulo(artigo) || semana;
+    const jaOps = await impTodos(`loja_venda_sugestiva_operadores?artigo=eq.${encodeURIComponent(nomeArt)}&select=data_referencia&order=data_referencia.desc&limit=1`);
+    if(!(jaOps.length && jaOps[0].data_referencia && jaOps[0].data_referencia > dataRef)){
+      await sb(`loja_venda_sugestiva_operadores?artigo=eq.${encodeURIComponent(nomeArt)}`, {method:'DELETE'});
+      await sb('loja_venda_sugestiva_operadores', {method:'POST', body: JSON.stringify(ops.map(o => ({...o, artigo: nomeArt, data_referencia: dataRef})))});
+    }
     return `${impTitulo(artigo)}: ${Math.round(vLoja||0)} de ${Math.round(obj||0)} unidades, ${ops.length} operadoras`;
   }
   throw new Error('não encontrei a tabela das operadoras');
@@ -7627,6 +7645,7 @@ async function renderComunicacao(){
   renderAtaSemanal();
   renderReunioesFormacoesSemana();
   renderInfoNegocioHistorico();
+  renderPodioComunicacao();
 }
 
 async function renderReunioesFormacoesSemana(){
@@ -7700,6 +7719,16 @@ let ataAtual = null;
 
 function infoEsc(t){ return String(t==null?'':t).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 let infoNegRows = [];
+async function renderPodioComunicacao(){
+  const wrap = document.getElementById('podio-comunicacao-wrap'); if(!wrap) return;
+  let ops = [];
+  try{ ops = await sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=200') || []; }catch(e){}
+  const camp = []; ops.forEach(o => { const k = o.artigo || '—'; let c = camp.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; camp.push(c); } c.ops.push(o); });
+  if(!camp.length){ wrap.innerHTML = `<div class="card" style="font-size:13px;color:var(--ink-soft);">Sem dados da venda sugestiva.</div>`; return; }
+  const a = camp[0].ops.sort((x,y) => y.vendas_un - x.vendas_un), b = camp[1] ? camp[1].ops.sort((x,y) => y.vendas_un - x.vendas_un) : null;
+  wrap.innerHTML = `<div class="card" style="padding:6px 12px;"><div style="font-size:12px;color:var(--ink-soft);">${rpEsc(camp[0].k)}${camp[0].data ? ' · até ' + camp[0].data.slice(8,10) + '/' + camp[0].data.slice(5,7) : ''} — parabéns a todos! 👏</div>${podioVendaSugestivaHtml(a, b)}</div>`;
+}
+
 async function renderInfoNegocioHistorico(){
   const wrap = document.getElementById('info-negocio-historico-wrap');
   if(!wrap) return;
@@ -8178,10 +8207,31 @@ async function historicoVendaSugestiva(){
   return h + `</div>`;
 }
 
+// Pódio da venda sugestiva: 1.º ao centro, 2.º à esquerda, 3.º e 4.º à direita + barras para todos
+function podioVendaSugestivaHtml(ops, anterior){
+  if(!ops || !ops.length) return '';
+  const top = ops.slice(0, 4);
+  const nomeCurto = n => { const p = String(n||'').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length-1] : (p[0]||''); };
+  const med = ['🥇','🥈','🥉','🏅'];
+  const ordem = [1, 0, 2, 3].filter(i => top[i]);
+  let h = `<div class="vs-podio" role="img" aria-label="Pódio: ${top.map((o,i) => (i+1) + '.º ' + nomeCurto(o.nome) + ' ' + o.vendas_un + ' unidades').join(', ')}">`;
+  ordem.forEach(i => { const o = top[i];
+    h += `<div class="vs-pod p${i+1}"><div class="vs-pod-nome">${rpEsc(nomeCurto(o.nome))}</div><div class="vs-pod-un">${o.vendas_un} un</div><div class="vs-pod-bloco"><span class="vs-pod-lugar">${i+1}.º</span><span class="vs-pod-med">${med[i]}</span></div></div>`; });
+  h += `</div>`;
+  const max = Math.max(1, ...ops.map(o => Number(o.vendas_un)||0));
+  h += `<div class="vs-barras">` + ops.map((o,i) => {
+    const antes = anterior ? anterior.find(x => (x.numero_pessoal && x.numero_pessoal === o.numero_pessoal) || x.nome === o.nome) : null;
+    const lugarAnt = antes ? anterior.indexOf(antes) + 1 : null;
+    const mov = lugarAnt == null ? '<span style="color:var(--ink-soft)" title="não vendeu na semana anterior">novo</span>' : lugarAnt > i+1 ? `<span style="color:#1F7A33" title="estava em ${lugarAnt}.º">▲${lugarAnt-(i+1)}</span>` : lugarAnt < i+1 ? `<span style="color:#B4231A" title="estava em ${lugarAnt}.º">▼${(i+1)-lugarAnt}</span>` : '<span style="color:var(--ink-soft)">=</span>';
+    return `<div class="vs-barra-l"><b>${i+1}.º</b><div><div style="display:flex;justify-content:space-between;gap:6px;"><span>${rpEsc(o.nome)}</span><span style="font-size:11px;">${anterior ? mov : ''}</span></div><div class="vs-barra-t"><span style="width:${Math.max(3, (Number(o.vendas_un)||0)/max*100)}%;${i < 3 ? '' : 'background:#8FA3B8;'}"></span></div></div><b style="text-align:right;">${o.vendas_un} un</b></div>`;
+  }).join('') + `</div>`;
+  return h;
+}
+
 async function blocoVendaSugestiva(){
   const [rows, operadores] = await Promise.all([
-    sb('loja_venda_sugestiva?select=*&order=id.desc&limit=1'),
-    sb('loja_venda_sugestiva_operadores?select=*&order=id.desc')
+    sb('loja_venda_sugestiva?select=*&order=data_referencia.desc.nullslast,id.desc&limit=1'),
+    sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=200')
   ]);
   const v = rows && rows.length ? rows[0] : null;
   let html = `<div class="section-title">🛍️ Venda Sugestiva</div>`;
@@ -8199,17 +8249,19 @@ async function blocoVendaSugestiva(){
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;color:var(--ink-soft);">${v.semana || ''}</span><span style="font-size:12px;color:${v.lojas_atingiram_objetivo?'var(--green)':'var(--red)'};font-weight:700;">${v.lojas_atingiram_objetivo?'✓ Objetivo atingido':'Objetivo não atingido'}</span></div>
   </div>`;
   html += await historicoVendaSugestiva();
-  if(operadores.length){
-    html += `<div class="card" style="padding:4px 12px;">
-      <h3 style="margin:10px 0 6px;">Ranking de Operadores</h3>`;
-    operadores.forEach((o,i)=>{
-      html += `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};">
-        <span style="font-size:12.5px;color:var(--ink);">${i+1}. ${o.nome}</span>
-        <span style="font-size:13px;font-weight:700;color:var(--navy);">${o.vendas_un} un</span>
-      </div>`;
-    });
-    html += `</div>`;
-  }
+  // ranking por campanha: esta semana e a semana anterior
+  const campanhas = [];
+  (operadores||[]).forEach(o => { const k = o.artigo || '—'; let c = campanhas.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; campanhas.push(c); } c.ops.push(o); });
+  campanhas.slice(0, 2).forEach((c, ci) => {
+    const ops = c.ops.sort((a,b) => b.vendas_un - a.vendas_un);
+    const total = ops.reduce((a,o) => a + (Number(o.vendas_un)||0), 0);
+    const outra = ci === 0 && campanhas[1] ? [...campanhas[1].ops].sort((a,b) => b.vendas_un - a.vendas_un) : null;
+    html += `<div class="card" style="padding:4px 12px;margin-bottom:12px;">
+      <h3 style="margin:10px 0 2px;">🏆 Pódio — ${ci === 0 ? 'esta semana' : 'semana anterior'}</h3>
+      <div style="font-size:11.5px;color:var(--ink-soft);">${rpEsc(c.k)}${c.data ? ' · até ' + c.data.slice(8,10) + '/' + c.data.slice(5,7) : ''} · total ${total} un${ci === 0 && outra ? ' · ▲▼ = lugares ganhos ou perdidos face à semana anterior' : ''}</div>
+      ${podioVendaSugestivaHtml(ops, outra)}
+    </div>`;
+  });
   return html;
 }
 
