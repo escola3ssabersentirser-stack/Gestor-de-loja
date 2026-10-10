@@ -2465,6 +2465,28 @@ function impBlocoMes(R, hIdx){
   const cVal = titulos ? titulos.findIndex((t,i) => i >= col && t.toUpperCase().includes('NÃO REALIZADO (VALOR)')) : -1;
   return {col, cVal, mes: impTitulo(mes), dataRef};
 }
+// Etiquetas do mês: impressas, vendidas, sem venda e % de aceitação (por divisão e por artigo)
+function impEtiquetasMes(R, hIdx, bloco, extra){
+  let titulos = null;
+  for(let k = hIdx; k >= Math.max(0, hIdx-4); k--){ const row = (R[k]||[]).map(impTxt); if(row.some(t => t.toUpperCase().includes('ETIQUETAS IMPRESSAS'))){ titulos = row; break; } }
+  if(!titulos || bloco.col < 0) return [];
+  const c = txt => titulos.findIndex((t,i) => i >= bloco.col && t.toUpperCase().includes(txt));
+  const cImp = c('ETIQUETAS IMPRESSAS'), cAc = c('% ACEITA'), cVv = c('VENDAS MARKDOWN (VALOR)'), cQv = c('QUEBRA IDENTIFICADA (VALOR)'), cNr = bloco.cVal;
+  const row = (R[hIdx]||[]).map(impTxt);
+  const cLoja = row.indexOf('Cód Retail') >= 0 ? row.indexOf('Cód Retail') : 0;
+  const cDiv = row.indexOf('Divisão (txt)'), cArt = row.indexOf('Artigo (txt)'), cCod = row.indexOf('Artigo (cód)');
+  const out = [];
+  for(let i=hIdx+1;i<R.length;i++){
+    const r = R[i]||[]; if(impTxt(r[cLoja]).replace(/\.0$/,'') !== IMP_LOJA) continue;
+    const imp = impNum(r[cImp]); if(!(imp > 0)) continue;
+    const ac = impNum(r[cAc]); const vend = ac == null ? null : Math.round(ac * imp);
+    const dv = impTxt(r[cDiv]).toUpperCase();
+    out.push({nivel: cArt >= 0 ? 'artigo' : 'divisao', divisao: dv, secao_app: IMP_SECAO_MKD[dv] || null, artigo: cArt >= 0 ? impTxt(r[cArt]) : null, artigo_cod: cCod >= 0 ? impTxt(r[cCod]).replace(/\.0$/,'') : null,
+      impressas: imp, vendidas: vend, sem_venda: vend == null ? null : Math.max(0, imp - vend), pct_aceitacao: ac == null ? null : impR2(ac*100),
+      vendas_valor: impR2(impNum(r[cVv]) || 0), quebra_valor: impR2(impNum(r[cQv]) || 0), pct_nao_realizado: cNr >= 0 ? impR2(impNum(r[cNr]) || 0) : null, ...extra});
+  }
+  return out;
+}
 async function impMarkdown(wb){
   const nDiv = wb.SheetNames.find(n => n.trim() === 'Markdown da Loja por Divisão');
   const nArt = wb.SheetNames.find(n => n.startsWith('Markdown da Loja por Divisão e'));
@@ -2515,6 +2537,16 @@ async function impMarkdown(wb){
       }
     }
   }
+  // etiquetas do mês (divisões + artigos)
+  try{
+    const extra = {mes_referencia: bloco.mes, data_referencia: dataRef};
+    let etq = impEtiquetasMes(D, h.i, bloco, extra);
+    if(nArt){ const A = impLinhas(wb.Sheets[nArt]); const ha = impCabecalho(A, ['Artigo (txt)']); if(ha) etq = etq.concat(impEtiquetasMes(A, ha.i, impBlocoMes(A, ha.i), extra)); }
+    if(etq.length){
+      await sb('loja_markdown_etiquetas?id=gt.0', {method:'DELETE'});
+      for(let i=0;i<etq.length;i+=200) await sb('loja_markdown_etiquetas', {method:'POST', body: JSON.stringify(etq.slice(i,i+200))});
+    }
+  }catch(e){ console.warn('etiquetas', e); }
   const pior = [...divisoes].sort((a,b)=>b.pct-a.pct)[0];
   await impGuardarData('markdown', dataRef);
   return `dados até ${impDDMM(dataRef)} · ${bloco.mes}: ${divisoes.length} divisões${pior && pior.pct > 0 ? ' (pior: ' + impTitulo(pior.divisao) + ' ' + pior.pct.toLocaleString('pt-PT') + '%)' : ''}, ${nArtigos} artigos`;
@@ -12001,22 +12033,30 @@ async function renderMarkdownScreen(){
   }
   html += `</div>`;
 
-  html += `<div class="section-title">🔴 Artigos com 100% Markdown Não Realizado — ${mesAtualNome()} <span class="count">· ${piorAceitacao.length}</span></div>`;
-  html += `<div class="card">`;
-  if(piorAceitacao.length){
-    html += `<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">Todas as etiquetas impressas, nenhuma aceite — 0% de vendas com desconto.</div>`;
-    piorAceitacao.forEach((a,i)=>{
-      html += `<div style="padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};display:flex;justify-content:space-between;">
-        <span style="font-size:12px;color:var(--ink);">${a.artigo} <span style="color:var(--ink-soft);font-size:10.5px;">(${a.divisao})</span></span>
-        <span style="font-size:12px;font-weight:700;color:var(--red);">${a.valor} etiq.</span>
-      </div>`;
-    });
-  } else {
-    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
-  }
-  html += `</div>`;
-
+  html += await blocoEtiquetasMarkdown();
   content.innerHTML = html;
+}
+
+async function blocoEtiquetasMarkdown(){
+  let rows = [];
+  try{ rows = await sb('loja_markdown_etiquetas?select=*&order=sem_venda.desc.nullslast&limit=2000') || []; }catch(e){}
+  const div = rows.filter(r => r.nivel === 'divisao'), art = rows.filter(r => r.nivel === 'artigo');
+  if(!rows.length) return `<div class="section-title">🏷️ Etiquetas de markdown</div><div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Aparece ao carregar o relatório de markdown nos ficheiros do dia.</div></div>`;
+  const ref = rows[0];
+  const n = v => v == null ? '—' : Number(v).toLocaleString('pt-PT', {maximumFractionDigits:0});
+  const corAc = v => v == null ? 'var(--ink-soft)' : v >= 70 ? '#1F7A33' : v >= 50 ? '#C77F12' : '#B4231A';
+  const tot = div.reduce((a,d) => ({imp: a.imp + Number(d.impressas||0), vend: a.vend + Number(d.vendidas||0)}), {imp:0, vend:0});
+  const acLoja = tot.imp ? tot.vend / tot.imp * 100 : null;
+  let h = `<div class="section-title">🏷️ Etiquetas de markdown — ${rpEsc(ref.mes_referencia || '')}${ref.data_referencia ? ' · até ' + ref.data_referencia.slice(8,10) + '/' + ref.data_referencia.slice(5,7) : ''}</div>`;
+  h += `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px;">
+    ${[['Impressas', n(tot.imp), 'var(--navy)'], ['Vendidas', n(tot.vend), '#1F7A33'], ['Sem venda', n(Math.max(0, tot.imp - tot.vend)), '#B4231A'], ['Aceitação', acLoja == null ? '—' : Math.round(acLoja) + '%', corAc(acLoja)]].map(([t,v,c]) => `<div class="card" style="margin:0;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--ink-soft);">${t}</div><div style="font-size:18px;font-weight:800;color:${c};">${v}</div></div>`).join('')}
+  </div>
+  <div style="font-size:11.5px;color:var(--ink-soft);margin:0 4px 8px;">Aceitação = etiquetas vendidas ÷ etiquetas impressas. O que interessa é <b>vender</b>: quanto mais etiquetas sem venda, mais quebra.</div>`;
+  const tabela = (lista, comArtigo) => `<div class="card rp-tabela-box" style="padding:4px 8px;"><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">${comArtigo ? 'Artigo' : 'Divisão'}</th><th>Impressas</th><th>Vendidas</th><th>Sem venda</th><th>Aceitação</th></tr></thead><tbody>${lista.map(r => `<tr><td style="text-align:left;">${rpEsc(comArtigo ? r.artigo : impTitulo(r.divisao))}${comArtigo ? `<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(impTitulo(r.divisao))}</div>` : ''}</td><td>${n(r.impressas)}</td><td>${n(r.vendidas)}</td><td style="font-weight:800;color:${Number(r.sem_venda) > 0 ? '#B4231A' : 'var(--ink)'};">${n(r.sem_venda)}</td><td style="font-weight:800;color:${corAc(r.pct_aceitacao)};">${r.pct_aceitacao == null ? '—' : Math.round(r.pct_aceitacao) + '%'}</td></tr>`).join('')}</tbody></table></div>`;
+  if(div.length) h += `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin:6px 4px;">Por divisão</div>` + tabela([...div].sort((a,b) => (b.sem_venda||0) - (a.sem_venda||0)), false);
+  const piores = art.filter(r => Number(r.sem_venda) > 0).slice(0, 30);
+  if(piores.length) h += `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin:12px 4px 6px;">Artigos com mais etiquetas sem venda (top ${piores.length})</div>` + tabela(piores, true);
+  return h;
 }
 
 async function blocoSupervisaoResumo(){
