@@ -6900,11 +6900,38 @@ function lembrarReuniaoWhatsApp(r){
   window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
 }
 
+// números da semana em curso (segunda a domingo), sempre calculados a partir dos dados do dia
+async function numerosSemanaAtual(){
+  const hoje = new Date(); const dia = (hoje.getDay()+6)%7;
+  const seg = new Date(hoje); seg.setDate(hoje.getDate()-dia); const dom = new Date(seg); dom.setDate(seg.getDate()+6);
+  const f = d => d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+  let dias = [];
+  try{ dias = await sb(`loja_vendas_dia?data=gte.${dataLocalISO(seg)}&data=lte.${dataLocalISO(dom)}&select=data,vendas_real,vendas_budget&order=data.asc`) || []; }catch(e){}
+  const comVenda = dias.filter(d => Number(d.vendas_real) > 0);
+  const real = comVenda.reduce((a,d)=>a+Number(d.vendas_real),0);
+  const bdgAteHoje = comVenda.reduce((a,d)=>a+(Number(d.vendas_budget)||0),0);
+  const bdgSemana = dias.reduce((a,d)=>a+(Number(d.vendas_budget)||0),0);
+  try{ await carregarResumoPainel(); }catch(e){}
+  const qp = (resumoPainel && (resumoPainel.mes_curso||[]).find(x => x.ind === 'Quebra em % das vendas')) || {};
+  const ultimo = comVenda.length ? comVenda[comVenda.length-1].data : null;
+  return {intervalo: `${f(seg)} a ${f(dom)}`, label: `Semana ${numeroSemanaISO(hoje)} · ${f(seg)} a ${f(dom)}`, real, bdgAteHoje, bdgSemana, vsb: bdgAteHoje ? real/bdgAteHoje - 1 : null, quebraPct: qp.atual != null ? qp.atual*100 : null, ate: ultimo ? impDDMM(ultimo) : null};
+}
+
 async function renderPlanoSemanal(){
   const wrap = document.getElementById('plano-semanal-wrap');
-  const rows = await sb('loja_plano_semana?select=*&order=id.desc&limit=5');
+  const [rows, ns] = await Promise.all([sb('loja_plano_semana?select=*&order=id.desc&limit=5'), numerosSemanaAtual()]);
   let html = '';
-  if(currentUser && (currentUser.role === 'gestora' || currentUser.role === 'responsavel' || currentUser.role === 'area')){
+  const podeCriar = currentUser && (currentUser.role === 'gestora' || currentUser.role === 'responsavel' || currentUser.role === 'area');
+  const daSemana = (rows||[]).find(p => String(p.semana||'').includes(ns.intervalo));
+  html += `<div class="card" style="border-left:5px solid #1F7A33;margin-bottom:12px;">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana em curso: <b>${ns.label}</b>${ns.ate ? ' · vendas até ' + ns.ate : ''}${daSemana ? ' · plano feito' : ' · <span style="color:#B4231A;font-weight:700;">plano por fazer</span>'}</div>
+    <div class="vs-detail-grid" style="margin-bottom:${podeCriar && !daSemana ? '10px' : '0'};">
+      <div class="vs-box sales"><div class="vs-label">Vendas da semana / budget até hoje</div><div class="vs-value" style="font-size:14px;">${ns.real ? fmtEuro(ns.real) : '—'} / ${ns.bdgAteHoje ? fmtEuro(ns.bdgAteHoje) : '—'}${ns.vsb != null ? ` <span style="font-size:12px;color:${ns.vsb >= 0 ? '#1F7A33' : '#B4231A'}">(${ns.vsb >= 0 ? '+' : ''}${(ns.vsb*100).toFixed(1).replace('.',',')}%)</span>` : ''}</div><div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">budget da semana inteira: ${ns.bdgSemana ? fmtEuro(ns.bdgSemana) : '—'}</div></div>
+      <div class="vs-box loss"><div class="vs-label">Quebra do mês</div><div class="vs-value" style="font-size:14px;">${ns.quebraPct != null ? ns.quebraPct.toFixed(2).replace('.',',') + '%' : '—'}</div></div>
+    </div>
+    ${podeCriar && !daSemana ? `<button class="btn-primary" style="margin:0;" onclick="criarPlanoSemanal()">+ Fazer o plano da ${ns.label.split(' · ')[0]}</button>` : ''}
+  </div>`;
+  if(podeCriar && daSemana){
     html += `<button class="btn-primary" style="margin:0 0 10px;" onclick="criarPlanoSemanal()">+ Novo Plano da Semana</button>`;
   }
   if(!rows.length){
@@ -7049,6 +7076,7 @@ async function criarPlanoSemanal(){
     sb(`loja_vendas_dia?data=gte.${segISO}&data=lte.${domISO}&select=*&order=data.asc`)
   ]);
   const r = resumoRows[0] || {};
+  const ns = await numerosSemanaAtual();
 
   const bhNegativo = colaboradores.filter(c => Number(c.bh_negativo) < -1);
   const pendComplianceCount = formacaoRows.filter(f => f.codigo_conduta==='a formar' || f.data_privacy==='a formar' || f.politica_anticorrupcao==='a formar' || f.seguranca_protecao==='a formar').length;
@@ -7073,7 +7101,7 @@ async function criarPlanoSemanal(){
   contexto += `\n📊 SEMANA ANTERIOR (${r.semana_anterior_referencia || '—'}):\n`;
   contexto += `  Vendas: ${r.vendas_semana_anterior!=null ? fmtEuro(r.vendas_semana_anterior) : 'sem dados'} · Quebra: ${r.quebras_semana_anterior!=null ? fmtEuro(r.quebras_semana_anterior) : 'sem dados'}\n\n`;
   contexto += `🎯 OBJETIVOS:\n`;
-  contexto += `  Vendas — Semana atual: ${fmtEuro(r.budget_semana_vendas)}\n`;
+  contexto += `  Vendas — Semana atual: ${fmtEuro(ns.bdgSemana)} (até hoje: ${fmtEuro(ns.real)} de ${fmtEuro(ns.bdgAteHoje)} previstos)\n`;
   contexto += `  Vendas — Mês: ${fmtEuro(r.budget_mes_vendas)}\n`;
   contexto += `  Quebra — Objetivo do ano: 1,9%\n\n`;
   contexto += `💰 ACUMULADO:\n`;
@@ -7101,11 +7129,11 @@ async function criarPlanoSemanal(){
     <div style="display:flex;gap:10px;">
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Vendas — Objetivo (€)</label>
-        <input id="ps-vendas-obj" type="number" value="${r.budget_semana_vendas ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-vendas-obj" type="number" value="${ns.bdgSemana ? Math.round(ns.bdgSemana*100)/100 : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Vendas — Realizado (€)</label>
-        <input id="ps-vendas-real" type="number" value="${r.vendas_semana ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-vendas-real" type="number" value="${ns.real ? Math.round(ns.real*100)/100 : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
     </div>
     <div style="display:flex;gap:10px;">
@@ -7115,7 +7143,7 @@ async function criarPlanoSemanal(){
       </div>
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Quebras — Realizado (%)</label>
-        <input id="ps-quebra-real" type="number" step="0.1" value="${quebraSemanaPct ?? quebraMesPct ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-quebra-real" type="number" step="0.1" value="${ns.quebraPct != null ? ns.quebraPct.toFixed(2) : (quebraSemanaPct ?? quebraMesPct ?? '')}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
     </div>
     <div style="margin-bottom:12px;padding:10px;background:var(--bg-soft,#f4f4f4);border-radius:8px;">
