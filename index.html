@@ -503,6 +503,10 @@
   #ap-overlay .ap-lista{font-size:1.1em;line-height:1.5;padding-left:1.2em;} #ap-overlay .ap-lista li{margin-bottom:10px;}
   #ap-overlay .ap-barra{display:flex;justify-content:center;align-items:center;gap:14px;padding:10px;background:#0E2216;color:#fff;}
   #ap-overlay .ap-barra button{background:#1F7A33;color:#fff;border:0;border-radius:10px;min-width:48px;height:42px;font-size:22px;cursor:pointer;} #ap-overlay .ap-barra button:disabled{opacity:.35;} #ap-overlay .ap-barra button:last-child{background:#5B6B60;font-size:18px;}
+  #comm-view, #comm-view .card, #resumo-reuniao-wrap, #ata-semanal-wrap{max-width:100%;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;}
+  #comm-view .comm-texto{font-size:13px;white-space:pre-line;line-height:1.5;}
+  #comm-view .rp-tabela-box, #resumo-reuniao-wrap .rp-tabela-box{overflow-x:auto;}
+  #comm-view .vs-podio{gap:4px;} #comm-view .vs-pod-nome{font-size:11.5px;}
   .vs-podio{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:end;margin:14px 0 6px;}
   .vs-pod{display:flex;flex-direction:column;align-items:center;text-align:center;min-width:0;}
   .vs-pod-nome{font-size:12.5px;font-weight:700;color:var(--ink);line-height:1.2;margin-bottom:2px;overflow-wrap:anywhere;}
@@ -1208,42 +1212,29 @@
     <div class="content">
       <!-- VISTA DE LEITURA -->
       <div id="comm-view">
+        <div id="comm-semana-cab" class="card" style="background:#14301E;color:#F6F8F2;margin-bottom:12px;"></div>
+
         <div class="comm-hero">
-          <div class="label">Mensagem da Semana</div>
+          <div class="label" id="comm-msg-label">Mensagem da semana</div>
           <div class="msg" id="comm-mensagem">—</div>
         </div>
 
-        <div class="section-title">📊 Resultados — semana, mês e ano</div>
-        <div id="comm-resultados" class="card" style="font-size:13px;white-space:pre-line;line-height:1.5;">A carregar…</div>
+        <div class="section-title">1 · 📊 Resultados — semana, mês e ano</div>
+        <div id="comm-resultados" class="card comm-texto">A carregar…</div>
 
-        <div class="section-title">📰 Informação de Negócio</div>
+        <div class="section-title">2 · 📰 Informação de Negócio</div>
         <div id="info-negocio-historico-wrap"></div>
 
-        <div class="section-title">🏆 Pódio da Venda Sugestiva</div>
+        <div class="section-title">3 · 👥 Equipa esta semana</div>
+        <div id="comm-equipa" class="card comm-texto">A carregar…</div>
+
+        <div class="section-title">4 · 🏆 Pódio da Venda Sugestiva</div>
         <div id="podio-comunicacao-wrap"></div>
 
-        <div class="card">
-          <div class="comm-item">
-            <div class="comm-icon">🎓</div>
-            <div class="comm-body"><h4>Formação</h4><p id="comm-formacao">—</p></div>
-          </div>
-          <div class="comm-item">
-            <div class="comm-icon">🕐</div>
-            <div class="comm-body"><h4>Banco de Horas</h4><p id="comm-banco-horas">—</p></div>
-          </div>
-          <div class="comm-item">
-            <div class="comm-icon">⏱️</div>
-            <div class="comm-body"><h4>Horas Extra</h4><p id="comm-horas-extra">—</p></div>
-          </div>
-          <div class="comm-item">
-            <div class="comm-icon">🔄</div>
-            <div class="comm-body"><h4>Trocas de Horário</h4><p id="comm-trocas">—</p></div>
-          </div>
-          <div class="comm-item">
-            <div class="comm-icon">ℹ️</div>
-            <div class="comm-body"><h4>Informações Importantes</h4><p id="comm-info">—</p></div>
-          </div>
-        </div>
+        <div class="section-title">5 · ℹ️ Avisos da gestora</div>
+        <div id="comm-avisos" class="card comm-texto">—</div>
+        <!-- campos antigos (mantidos para compatibilidade) -->
+        <div class="hidden"><p id="comm-formacao"></p><p id="comm-banco-horas"></p><p id="comm-horas-extra"></p><p id="comm-trocas"></p><p id="comm-info"></p></div>
 
         <div id="comm-edit-btn-wrap"></div>
 
@@ -8176,21 +8167,27 @@ async function renderComunicacao(){
   document.getElementById('comm-edit').classList.add('hidden');
   document.getElementById('comm-view').classList.remove('hidden');
   const rows = await sb('loja_comunicacao?id=eq.1&select=*');
-  commData = rows[0];
-  document.getElementById('comm-period').textContent = `${commData.semana} · ${commData.periodo}`;
-  document.getElementById('comm-mensagem').textContent = commData.mensagem;
-  document.getElementById('comm-formacao').textContent = commData.formacao;
-  document.getElementById('comm-banco-horas').textContent = commData.banco_horas;
-  document.getElementById('comm-horas-extra').textContent = commData.horas_extra;
-  document.getElementById('comm-trocas').textContent = commData.trocas_horario;
-  document.getElementById('comm-info').textContent = commData.informacoes;
+  commData = rows[0] || {};
+  // tudo referido à semana atual
+  const hoje = new Date(); const nSem = numeroSemanaISO(hoje);
+  const ehDestaSemana = Number(String(commData.semana || '').replace(/\D/g,'')) === nSem;
+  const seg = new Date(hoje); seg.setDate(hoje.getDate() - ((hoje.getDay()+6)%7)); const dom = new Date(seg); dom.setDate(seg.getDate() + 6);
+  const fd = d => d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+  document.getElementById('comm-period').textContent = semanaAtualLabel();
+  const prox = proximaReuniao();
+  document.getElementById('comm-semana-cab').innerHTML = `<div style="font-size:12px;color:#8FD3A0;font-weight:700;">COMUNICAÇÃO DA SEMANA</div><div style="font-size:20px;font-weight:800;margin:2px 0;">Semana ${nSem} · ${fd(seg)} a ${fd(dom)}</div><div style="font-size:12.5px;color:#C9DDCD;">Hoje: ${hoje.toLocaleDateString('pt-PT',{weekday:'long',day:'2-digit',month:'long'})} · Próxima reunião: ${prox.toLocaleDateString('pt-PT',{weekday:'long',day:'2-digit',month:'2-digit'})}</div>`;
+  document.getElementById('comm-msg-label').textContent = `Mensagem da semana ${nSem}`;
+  document.getElementById('comm-mensagem').textContent = ehDestaSemana && commData.mensagem ? commData.mensagem : (souDona() ? 'Ainda não escreveu a mensagem desta semana — carregue em "Escrever a comunicação desta semana".' : 'A mensagem desta semana ainda não foi publicada.');
+  const avisos = [['🎓 Formação', commData.formacao], ['🕐 Banco de horas', commData.banco_horas], ['⏱️ Horas extra', commData.horas_extra], ['🔄 Trocas de horário', commData.trocas_horario], ['ℹ️ Informações importantes', commData.informacoes]].filter(([,v]) => v && String(v).trim());
+  document.getElementById('comm-avisos').textContent = ehDestaSemana && avisos.length ? avisos.map(([t,v]) => `${t}\n${String(v).trim()}`).join('\n\n') : (commData.semana && !ehDestaSemana ? `Os avisos guardados são da ${commData.semana}. Escreva os desta semana.` : 'Sem avisos esta semana.');
+  comunicacaoEquipa().then(t => { const el = document.getElementById('comm-equipa'); if(el) el.textContent = t; }).catch(()=>{ const el = document.getElementById('comm-equipa'); if(el) el.textContent = '—'; });
 
   const btnWrap = document.getElementById('comm-edit-btn-wrap');
   btnWrap.innerHTML = '';
   if(currentUser && souDona()){
     const btn = document.createElement('button');
     btn.className = 'btn-primary';
-    btn.textContent = 'Editar comunicação';
+    btn.textContent = 'Escrever a comunicação desta semana';
     btn.onclick = openEditComunicacao;
     btnWrap.appendChild(btn);
   }
@@ -8201,6 +8198,18 @@ async function renderComunicacao(){
   resultadosPeriodos().then(t => { const el = document.getElementById('comm-resultados'); if(el) el.textContent = t; }).catch(()=>{});
 }
 
+// Equipa esta semana: tirado dos dados (formação, banco de horas, horários, aniversários, ausências)
+async function comunicacaoEquipa(){
+  const d = await carregarLembretes();
+  const L = [];
+  const nomes = arr => { const u = [...new Set(arr.map(x => lemPrimeiroNome(x)))]; return u.slice(0,10).join(', ') + (u.length > 10 ? '…' : ''); };
+  L.push(d.formacao.length ? `🎓 Formação pendente: ${d.formacao.length} — ${nomes(d.formacao.map(f => f.nome))}.` : '🎓 Formação: nada pendente.');
+  L.push(d.bh.length ? `🕐 Banco de horas: ${d.bh.map(c => `${lemPrimeiroNome(c.nome)} ${Number(c.bh_negativo) < 0 ? Number(c.bh_negativo).toLocaleString('pt-PT') + 'h' : (Number(c.bh_positivo)||0).toLocaleString('pt-PT') + 'h'}`).slice(0,10).join(', ')}.` : '🕐 Banco de horas: sem pendentes.');
+  L.push(d.alteracoes.length ? `🔄 Trocas de horário por assinar no Hello: ${d.alteracoes.length} — ${nomes(d.alteracoes.map(a => a.colaborador_nome))}.` : '🔄 Trocas de horário: tudo assinado.');
+  const anos = (d.anos||[]).filter(a => a.faltam <= 7); if(anos.length) L.push(`🎂 Aniversários: ${anos.map(a => `${lemPrimeiroNome(a.nome)} (${String(a.dia_aniversario).padStart(2,'0')}/${String(a.mes_aniversario).padStart(2,'0')})`).join(', ')}.`);
+  if((d.ausencias||[]).length) L.push(`💙 Ausentes: ${d.ausencias.length}.`);
+  return L.join('\n');
+}
 async function renderReunioesFormacoesSemana(){
   const wrap = document.getElementById('reunioes-formacoes-semana-wrap');
   if(!wrap) return;
@@ -8241,8 +8250,11 @@ async function renderReunioesFormacoesSemana(){
 }
 
 function openEditComunicacao(){
-  document.getElementById('edit-semana').value = commData.semana;
-  document.getElementById('edit-periodo').value = commData.periodo;
+  const nS = numeroSemanaISO(new Date()); const novaSemana = Number(String(commData.semana || '').replace(/\D/g,'')) !== nS;
+  const sg = new Date(); sg.setDate(sg.getDate() - ((sg.getDay()+6)%7)); const dm = new Date(sg); dm.setDate(sg.getDate() + 6);
+  document.getElementById('edit-semana').value = 'Semana ' + nS;
+  document.getElementById('edit-periodo').value = `${sg.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})} a ${dm.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}`;
+  if(novaSemana){ ['mensagem','formacao','banco_horas','horas_extra','trocas_horario','informacoes'].forEach(k => { commData['_ant_' + k] = commData[k]; }); }
   document.getElementById('edit-mensagem').value = commData.mensagem;
   document.getElementById('edit-formacao').value = commData.formacao;
   document.getElementById('edit-banco-horas').value = commData.banco_horas;
