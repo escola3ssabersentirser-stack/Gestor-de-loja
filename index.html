@@ -1213,6 +1213,9 @@
           <div class="msg" id="comm-mensagem">—</div>
         </div>
 
+        <div class="section-title">📊 Resultados — semana, mês e ano</div>
+        <div id="comm-resultados" class="card" style="font-size:13px;white-space:pre-line;line-height:1.5;">A carregar…</div>
+
         <div class="section-title">📰 Informação de Negócio</div>
         <div id="info-negocio-historico-wrap"></div>
 
@@ -3584,7 +3587,8 @@ async function lemEnviarComunicacao(){
   if(!c){ alert('Ainda não há comunicação semanal guardada.'); return; }
   let inf = null; try { const ir = await sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1'); inf = ir && ir[0]; } catch(e){}
   const parte = (t, v) => v && String(v).trim() ? `\n\n*${t}*\n${String(v).trim()}` : '';
-  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${c.periodo || c.semana || semanaAtualLabel()}` + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes) + parte('Informação de negócio' + (inf && inf.semana ? ' — ' + inf.semana : ''), inf && inf.resumo ? (inf.resumo.length > 1500 ? inf.resumo.slice(0,1500) + '…\n(ver o resto na app)' : inf.resumo) : ''));
+  const resultados = await resultadosPeriodos().catch(() => '');
+  lemWhats('', `*Comunicação semanal — Loja Portuzelo*\n${semanaAtualLabel()}` + parte('Resultados', resultados) + parte('Mensagem da semana', c.mensagem) + parte('Formação', c.formacao) + parte('Banco de horas', c.banco_horas) + parte('Horas extra', c.horas_extra) + parte('Trocas de horário', c.trocas_horario) + parte('Informações importantes', c.informacoes) + parte('Informação de negócio' + (inf && inf.semana ? ' — ' + inf.semana : ''), inf && inf.resumo ? (inf.resumo.length > 1500 ? inf.resumo.slice(0,1500) + '…\n(ver o resto na app)' : inf.resumo) : ''));
   await lemRegistar('comunicacao-semanal'); setTimeout(renderLembretes, 800);
 }
 
@@ -8096,6 +8100,7 @@ async function renderComunicacao(){
   renderReunioesFormacoesSemana();
   renderInfoNegocioHistorico();
   renderPodioComunicacao();
+  resultadosPeriodos().then(t => { const el = document.getElementById('comm-resultados'); if(el) el.textContent = t; }).catch(()=>{});
 }
 
 async function renderReunioesFormacoesSemana(){
@@ -8179,6 +8184,14 @@ async function renderPodioComunicacao(){
   wrap.innerHTML = `<div class="card" style="padding:6px 12px;"><div style="font-size:12px;color:var(--ink-soft);">${rpEsc(camp[0].k)}${camp[0].data ? ' · até ' + camp[0].data.slice(8,10) + '/' + camp[0].data.slice(5,7) : ''} — parabéns a todos! 👏</div>${podioVendaSugestivaHtml(a, b)}</div>`;
 }
 
+// informação de negócio da semana de uma data (por omissão, hoje); se não houver, a mais recente que não seja futura
+async function infoNegocioDaSemana(d){
+  const n = numeroSemanaISO(d || new Date());
+  const rows = await sb('loja_informacao_negocio_historico?select=semana,resumo,data_documento&order=data_documento.desc.nullslast,id.desc&limit=12') || [];
+  const nDe = r => Number(String(r.semana || '').replace(/\D/g,'')) || 0;
+  const a = rows.find(r => nDe(r) === n) || rows.find(r => nDe(r) && nDe(r) < n);
+  return a ? [a] : [];
+}
 async function renderInfoNegocioHistorico(){
   const wrap = document.getElementById('info-negocio-historico-wrap');
   if(!wrap) return;
@@ -8189,34 +8202,33 @@ async function renderInfoNegocioHistorico(){
   const semAtual = true;
   const fmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-PT') : '';
   let html = '';
-  if(!rows.length){
-    html += `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda não há informação de negócio desta semana.</div></div>`;
-  } else {
-    const r = rows[0];
-    const nSem = Number(String(r.semana||'').replace(/\D/g,'')); const desatualizada = nSem > 0 && nSem < numeroSemanaISO(new Date());
-    html += `<div class="card" style="border-left:5px solid var(--teal);margin-bottom:10px;">
+  // a semana em destaque é sempre a semana atual; a seguinte aparece como "próxima"; o resto vai para o arquivo
+  const cur = numeroSemanaISO(new Date());
+  const nDe = r => Number(String(r.semana || '').replace(/\D/g,'')) || 0;
+  const atual = rows.find(r => nDe(r) === cur), proxima = rows.find(r => nDe(r) === cur + 1);
+  const arquivo = rows.filter(r => r !== atual && r !== proxima);
+  const cartao = (r, etiqueta, cor) => `<div class="card" style="border-left:5px solid ${cor};margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">
-        <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(r.titulo || r.semana)}</span>
+        <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(r.semana || r.titulo)} <span style="font-size:11px;font-weight:700;color:${cor};">· ${etiqueta}</span></span>
         <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${fmt(r.data_documento)}</span>
       </div>
-      ${desatualizada ? `<div style="font-size:11.5px;color:#B4231A;margin-bottom:6px;">⚠️ Esta é a informação da ${infoEsc(r.semana)}. A da semana atual ainda não foi colocada.</div>` : ''}
       ${infoTexto(r.resumo)}
       ${r.caminho ? `<button class="econ-btn" style="margin-top:10px;" onclick="infoNegAbrir(${r.id})">📄 Abrir documento original</button>` : ''}
       ${gestora ? `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn-primary" style="margin-top:0;flex:1;padding:8px;font-size:12.5px;" onclick="infoNegForm(${r.id})">✏️ Editar</button></div>` : ''}
     </div>`;
-    if(rows.length > 1){
-      html += `<details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);padding:6px 2px;">Semanas anteriores (${rows.length-1})</summary>`;
-      rows.slice(1).forEach(o=>{
-        html += `<div class="card" style="margin:8px 0;">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-            <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(o.semana || o.titulo)}</span>
-            <span style="font-size:11px;color:var(--ink-soft);">${fmt(o.data_documento)}</span>
-          </div>
-          ${infoTexto(o.resumo)}${o.caminho ? `<button class="econ-btn" style="margin-top:8px;" onclick="infoNegAbrir(${o.id})">📄 Abrir documento</button>` : ''}
-        </div>`;
-      });
-      html += `</details>`;
-    }
+  if(atual) html += cartao(atual, 'esta semana', 'var(--teal)');
+  else html += `<div class="card" style="border-left:5px solid #C77F12;margin-bottom:10px;font-size:12.5px;">⚠️ Ainda não há informação de negócio da <b>Semana ${cur}</b> (esta semana).</div>`;
+  if(proxima) html += cartao(proxima, 'próxima semana', '#1F7A33');
+  if(arquivo.length){
+    html += `<details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);padding:6px 2px;">📁 Arquivo (${arquivo.length})</summary>`;
+    arquivo.forEach(o => { html += `<div class="card" style="margin:8px 0;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+          <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(o.semana || o.titulo)}</span>
+          <span style="font-size:11px;color:var(--ink-soft);">${fmt(o.data_documento)}</span>
+        </div>
+        ${infoTexto(o.resumo)}${o.caminho ? `<button class="econ-btn" style="margin-top:8px;" onclick="infoNegAbrir(${o.id})">📄 Abrir documento</button>` : ''}
+      </div>`; });
+    html += `</details>`;
   }
   if(gestora) html = `<input type="file" id="info-neg-ficheiro" accept=".pdf,.docx,.txt" class="hidden" onchange="infoNegCarregar(this)">
     <button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('info-neg-ficheiro').click()">📎 Carregar Informação de Negócio (PDF ou Word)</button>
@@ -8348,17 +8360,17 @@ async function gerarAtaAutomatica(dReun){
     sb('loja_categorias_perda_vendas?select=categoria,divisao,delta_pct&order=delta_pct.asc&limit=8').catch(()=>[]),
     sb('loja_venda_sugestiva?select=*&order=data_referencia.desc.nullslast,id.desc&limit=1').catch(()=>[]),
     sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
-    sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1').catch(()=>[]),
+    infoNegocioDaSemana(dReun).catch(()=>[]),
     carregarLembretes().catch(()=>null)
   ]);
   const r = await gerarResumoReuniao();
   const comV = (dias||[]).filter(d => Number(d.vendas_real) > 0);
   const real = comV.reduce((a,d) => a + Number(d.vendas_real), 0), bdg = comV.reduce((a,d) => a + (Number(d.vendas_budget)||0), 0);
   const titulo = segunda ? `Semana passada (${f(ini)} a ${f(fim)})` : `Esta semana até ontem (${f(ini)} a ${f(fim)})`;
-  let vendas = comV.length ? `${titulo}: ${fmtEuro(real)} — ${pct(bdg ? real/bdg - 1 : null)} vs budget (${fmtEuro(bdg)}).` : `${titulo}: ainda sem vendas carregadas para estes dias.`;
+  let vendas = '';
   // pior dia
-  if(comV.length > 1){ const pior = [...comV].filter(d => d.vendas_budget).sort((a,b) => (a.vendas_real/a.vendas_budget) - (b.vendas_real/b.vendas_budget))[0]; if(pior) vendas += `\nDia mais fraco: ${new Date(pior.data+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'long',day:'2-digit',month:'2-digit'})} (${pct(pior.vendas_real/pior.vendas_budget - 1)} vs budget).`; }
-  vendas += '\n' + (r.vendas || '');
+  if(comV.length > 1){ const pior = [...comV].filter(d => d.vendas_budget).sort((a,b) => (a.vendas_real/a.vendas_budget) - (b.vendas_real/b.vendas_budget))[0]; if(pior) vendas += `Dia mais fraco da semana: ${new Date(pior.data+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'long',day:'2-digit',month:'2-digit'})} (${pct(pior.vendas_real/pior.vendas_budget - 1)} vs budget).`; }
+  vendas = (r.vendas || '') + (vendas ? '\n' + vendas : '');
   // secções piores
   const rp = resumoPainel || {}; const secs = (rp.secoes||[]).filter(s => (s.real||0) > 1000);
   const k = secs.filter(s => s.vsb != null && s.bdg > 0).length >= 5 ? 'vsb' : 'vsaa';
@@ -8424,7 +8436,7 @@ async function apGerarSlides(){
     sb('loja_alertas_quebra_artigo?select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10').catch(()=>[]),
     sb('loja_validades_score?select=*&order=ano.desc,data_atualizacao.desc.nullslast&limit=1').catch(()=>[]),
     sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
-    sb('loja_informacao_negocio_historico?select=semana,resumo&order=data_documento.desc.nullslast,id.desc&limit=1').catch(()=>[]),
+    infoNegocioDaSemana(dReun).catch(()=>[]),
     sb('loja_resumo_painel?id=eq.3&select=dados').catch(()=>[]),
     sb('loja_plano_acao?select=area,ponto,acao,estado&order=area.asc').catch(()=>[])
   ]);
@@ -8561,6 +8573,32 @@ async function ataRefazer(){
     await sb(`loja_ata_semanal?id=eq.${ataAtual.id}`, {method:'PATCH', body: JSON.stringify({...resto, equipa: ataAtual.equipa && !/^Formação pendente|^Banco de horas|^Trocas de horário/m.test(ataAtual.equipa) ? ataAtual.equipa : resto.equipa})}); showToast(); renderAtaSemanal(); }
   catch(e){ alert('Não consegui atualizar.'); }
 }
+// Resultados da semana, do mês e do ano, sempre com as datas certas dos dados
+async function resultadosPeriodos(){
+  const hoje = new Date(); hoje.setHours(12,0,0,0);
+  const dd = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) : '';
+  const pct = v => { if(v == null || isNaN(v)) return '—'; const x = Math.round(v*1000)/10; return (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%'; };
+  try{ await carregarResumoPainel(); }catch(e){}
+  const r = resumoPainel || RESUMO_PADRAO; const anoP = r.ano_ant || hoje.getFullYear() - 1;
+  const mc = {}; (r.mes_curso||[]).forEach(l => mc[l.ind] = l);
+  // semana: à segunda conta a semana passada inteira; nos outros dias, desde segunda até ao último dia com vendas
+  const seg = new Date(hoje); seg.setDate(hoje.getDate() - ((hoje.getDay()+6)%7));
+  let ini = new Date(seg), fim = new Date(hoje); fim.setDate(hoje.getDate() - 1);
+  if(hoje.getDay() === 1){ ini.setDate(seg.getDate() - 7); fim = new Date(seg); fim.setDate(seg.getDate() - 1); }
+  let dias = []; try{ dias = await sb(`loja_vendas_dia?data=gte.${dataLocalISO(ini)}&data=lte.${dataLocalISO(fim)}&vendas_real=gt.0&select=data,vendas_real,vendas_budget&order=data.asc`) || []; }catch(e){}
+  let kv = null; try{ const x = await sb('loja_resumo_painel?id=eq.3&select=dados'); kv = x && x[0] && x[0].dados; }catch(e){}
+  let res = null; try{ const x = await sb('loja_resumo?id=eq.1&select=vendas_ano'); res = x && x[0]; }catch(e){}
+  const linhas = [];
+  if(dias.length){ const real = dias.reduce((a,d) => a + Number(d.vendas_real), 0), bdg = dias.reduce((a,d) => a + (Number(d.vendas_budget)||0), 0);
+    linhas.push(`Semana ${numeroSemanaISO(new Date(dias[0].data + 'T12:00:00'))} (${dd(dias[0].data)} a ${dd(dias[dias.length-1].data)}): ${fmtEuro(real)} — ${pct(bdg ? real/bdg - 1 : null)} vs budget.`); }
+  else linhas.push(`Semana (${dd(dataLocalISO(ini))} a ${dd(dataLocalISO(fim))}): ainda sem vendas carregadas.`);
+  const vb = mc['Vendas vs budget'] || {}, vaa = mc['Vendas vs ano passado'] || {}, qp = mc['Quebra em % das vendas'] || {};
+  const ateMes = r.dados_ate || (r.data_relatorio ? (p => impMenosUmDia(`${p[2]}-${p[1]}-${p[0]}`))(r.data_relatorio.split('/')) : null);
+  linhas.push(`Mês de ${r.mes || mesAtualNome()} (até ${ateMes ? dd(ateMes) : '—'}): ${fmtEuro(vb.atual)} — ${pct(vb.vari)} vs budget e ${pct(vaa.vari)} vs ${anoP}. Quebra ${qp.atual != null ? (qp.atual*100).toLocaleString('pt-PT',{maximumFractionDigits:2}) + '%' : '—'}.`);
+  if(kv && kv.ano) linhas.push(`Ano ${hoje.getFullYear()} (até ${dd(kv.data)}): ${res && res.vendas_ano ? fmtEuro(res.vendas_ano) + ' — ' : ''}${pct(kv.ano.vsb)} vs budget e ${pct(kv.ano.vsaa)} vs ${anoP}.`);
+  else if(r.secoes_total && r.secoes_total.vsaa_ano != null) linhas.push(`Ano ${hoje.getFullYear()}: ${pct(r.secoes_total.vsaa_ano)} vs ${anoP}.`);
+  return linhas.join('\n');
+}
 let resumoReuniaoCache = null;
 async function gerarResumoReuniao(){
   try{ await carregarResumoPainel(); }catch(e){}
@@ -8598,7 +8636,7 @@ async function gerarResumoReuniao(){
   }catch(e){}
 
   const v = {
-    vendas: `Vendas do mês: ${rpEur(vb.atual)} — ${rpVarPct(vb.vari)} vs budget e ${rpVarPct(vaa.vari)} vs ${anoP}.\n`
+    vendas: (await resultadosPeriodos().catch(() => `Vendas do mês: ${rpEur(vb.atual)} — ${rpVarPct(vb.vari)} vs budget e ${rpVarPct(vaa.vari)} vs ${anoP}.`)) + `\n`
       + `Clientes: ${rpNum(cli.atual)} (${rpVarPct(cli.vari)}) · Ticket médio: ${tm.atual != null ? Number(tm.atual).toLocaleString('pt-PT',{minimumFractionDigits:2}) + ' €' : '–'} (${rpVarPct(tm.vari)})${/dados até (\d\d\/\d\d)/.test(cli.nota||'') ? ' — até ' + (cli.nota||'').match(/dados até (\d\d\/\d\d)/)[1] : ''}.`
       + (acima.length ? `\nAcima ${usaBdg ? 'do budget' : 'de ' + anoP}: ${acima.join(', ')}.` : '')
       + (abaixo.length ? `\nMais abaixo ${usaBdg ? 'do budget' : 'de ' + anoP}: ${abaixo.join(', ')}.` : '')
