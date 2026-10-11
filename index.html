@@ -3845,7 +3845,8 @@ function lookupColaborador(){
   resultBox.textContent = 'A procurar...';
   lookupTimer = setTimeout(async ()=>{
     try{
-      const rows = await sb(`loja_colaboradores?numero_pessoal=eq.${encodeURIComponent(numero)}&select=nome,perfil`);
+      const dig = numero.replace(/\D/g,''); const variantes = [...new Set([numero, dig, dig.replace(/^0+/,''), dig.padStart(8,'0')].filter(Boolean))];
+      const rows = await sb(`loja_colaboradores?numero_pessoal=in.(${variantes.map(v => '"' + encodeURIComponent(v) + '"').join(',')})&select=nome,perfil,numero_pessoal`);
       if(rows && rows.length){
         foundColaborador = rows[0];
         resultBox.style.color = 'var(--teal)';
@@ -3873,7 +3874,7 @@ async function login(){
     return;
   }
   const role = foundColaborador.perfil || 'colaborador';
-  currentUser = {name: foundColaborador.nome, role, numero: document.getElementById('input-numero').value.trim()};
+  currentUser = {name: foundColaborador.nome, role, numero: foundColaborador.numero_pessoal || document.getElementById('input-numero').value.trim()};
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('header-name').textContent = currentUser.name;
   entrarNaTelaInicial();
