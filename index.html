@@ -7195,12 +7195,15 @@ async function numerosSemanaAtual(){
   const qp = (resumoPainel && (resumoPainel.mes_curso||[]).find(x => x.ind === 'Quebra em % das vendas')) || {};
   const ultimo = comVenda.length ? comVenda[comVenda.length-1].data : null;
   // semana do plano: se já está na app a informação de negócio da semana seguinte, o plano passa a ser para essa semana
-  let info = null; try{ const ir = await sb('loja_informacao_negocio_historico?select=semana,resumo,data_documento&order=data_documento.desc.nullslast,id.desc&limit=1'); info = ir && ir[0]; }catch(e){}
-  const nInfo = info ? Number(String(info.semana||'').replace(/\D/g,'')) : 0;
-  const proxima = nInfo > numeroSemanaISO(hoje);
+  // semana do plano: de sexta a domingo (ou se já houver a informação de negócio da semana seguinte) o plano é para a semana seguinte
+  const segSeg = new Date(seg); segSeg.setDate(seg.getDate() + 7);
+  const infoSeg = await infoNegocioDaSemana(segSeg).catch(() => []);
+  const proxima = [5,6,0].includes(hoje.getDay()) || infoSeg.length > 0;
   const pSeg = new Date(seg); if(proxima) pSeg.setDate(seg.getDate() + 7); const pDom = new Date(pSeg); pDom.setDate(pSeg.getDate() + 6);
+  const infoPlano = proxima ? infoSeg : await infoNegocioDaSemana(pSeg).catch(() => []);
+  const info = infoPlano[0] || null;
   return {intervalo: `${f(seg)} a ${f(dom)}`, label: `Semana ${numeroSemanaISO(hoje)} · ${f(seg)} a ${f(dom)}`, real, bdgAteHoje, bdgSemana, vsb: bdgAteHoje ? real/bdgAteHoje - 1 : null, quebraPct: qp.atual != null ? qp.atual*100 : null, ate: ultimo ? impDDMM(ultimo) : null,
-    plano: {proxima, intervalo: `${f(pSeg)} a ${f(pDom)}`, label: `Semana ${numeroSemanaISO(pSeg)} · ${f(pSeg)} a ${f(pDom)}`, info: proxima ? info : null}};
+    plano: {proxima, intervalo: `${f(pSeg)} a ${f(pDom)}`, label: `Semana ${numeroSemanaISO(pSeg)} · ${f(pSeg)} a ${f(pDom)}`, info, semanaN: numeroSemanaISO(pSeg)}};
 }
 
 function planoLabelSemana(p){
@@ -7218,12 +7221,12 @@ async function renderPlanoSemanal(){
   const podeCriar = currentUser && (souDona() || currentUser.role === 'responsavel' || currentUser.role === 'area');
   const daSemana = (rows||[]).find(p => String(p.semana||'').includes(ns.plano.intervalo));
   html += `<div class="card" style="border-left:5px solid #1F7A33;margin-bottom:12px;">
-    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Plano para a <b>${ns.plano.label}</b>${ns.plano.proxima ? ' (próxima semana — a informação de negócio já está na app)' : ''}${daSemana ? ' · plano feito' : ' · <span style="color:#B4231A;font-weight:700;">plano por fazer</span>'}<br>Resultados da semana em curso (${ns.label})${ns.ate ? ', vendas até ' + ns.ate : ''}:</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Plano para a <b>${ns.plano.label}</b>${ns.plano.proxima ? ' (próxima semana)' : ''}${daSemana ? ' · plano feito' : ' · <span style="color:#B4231A;font-weight:700;">plano por fazer</span>'}<br>Resultados da semana em curso (${ns.label})${ns.ate ? ', vendas até ' + ns.ate : ''}:</div>
     <div class="vs-detail-grid" style="margin-bottom:${podeCriar && !daSemana ? '10px' : '0'};">
       <div class="vs-box sales"><div class="vs-label">Vendas da semana / budget até hoje</div><div class="vs-value" style="font-size:14px;">${ns.real ? fmtEuro(ns.real) : '—'} / ${ns.bdgAteHoje ? fmtEuro(ns.bdgAteHoje) : '—'}${ns.vsb != null ? ` <span style="font-size:12px;color:${ns.vsb >= 0 ? '#1F7A33' : '#B4231A'}">(${ns.vsb >= 0 ? '+' : ''}${(ns.vsb*100).toFixed(1).replace('.',',')}%)</span>` : ''}</div><div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">budget da semana inteira: ${ns.bdgSemana ? fmtEuro(ns.bdgSemana) : '—'}</div></div>
       <div class="vs-box loss"><div class="vs-label">Quebra do mês</div><div class="vs-value" style="font-size:14px;">${ns.quebraPct != null ? ns.quebraPct.toFixed(2).replace('.',',') + '%' : '—'}</div></div>
     </div>
-    ${ns.plano.info ? `<div style="font-size:12px;color:var(--ink);margin:6px 0 10px;white-space:pre-line;"><b>📰 ${rpEsc(ns.plano.info.semana || 'Informação de negócio')}:</b> ${rpEsc(String(ns.plano.info.resumo||'').slice(0, 300))}${String(ns.plano.info.resumo||'').length > 300 ? '…' : ''}</div>` : ''}
+    ${ns.plano.info ? `<div style="font-size:12px;color:var(--ink);margin:6px 0 10px;white-space:pre-line;"><b>📰 ${rpEsc(ns.plano.info.semana || 'Informação de negócio')}:</b> ${rpEsc(String(ns.plano.info.resumo||'').slice(0, 300))}${String(ns.plano.info.resumo||'').length > 300 ? '…' : ''}</div>` : `<div style="font-size:12px;color:#B4231A;margin:6px 0 10px;">⚠️ Ainda não foi carregada a informação de negócio da Semana ${ns.plano.semanaN}.</div>`}
     ${podeCriar && !daSemana ? `<button class="btn-primary" style="margin:0;" onclick="criarPlanoSemanal()">+ Fazer o plano da ${ns.plano.label.split(' · ')[0]}</button>` : ''}
   </div>`;
   if(podeCriar && daSemana){
@@ -7426,11 +7429,11 @@ async function criarPlanoSemanal(){
     <div style="display:flex;gap:10px;">
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Vendas — Objetivo (€)</label>
-        <input id="ps-vendas-obj" type="number" value="${ns.bdgSemana ? Math.round(ns.bdgSemana*100)/100 : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-vendas-obj" type="number" value="${!ns.plano.proxima && ns.bdgSemana ? Math.round(ns.bdgSemana*100)/100 : ''}" placeholder="${ns.plano.proxima ? 'objetivo da próxima semana' : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
       <div style="flex:1;margin-bottom:12px;">
         <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Vendas — Realizado (€)</label>
-        <input id="ps-vendas-real" type="number" value="${ns.real ? Math.round(ns.real*100)/100 : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
+        <input id="ps-vendas-real" type="number" value="${!ns.plano.proxima && ns.real ? Math.round(ns.real*100)/100 : ''}" placeholder="${ns.plano.proxima ? 'preencher no fim da semana' : ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
       </div>
     </div>
     <div style="display:flex;gap:10px;">
@@ -8189,7 +8192,7 @@ async function infoNegocioDaSemana(d){
   const n = numeroSemanaISO(d || new Date());
   const rows = await sb('loja_informacao_negocio_historico?select=semana,resumo,data_documento&order=data_documento.desc.nullslast,id.desc&limit=12') || [];
   const nDe = r => Number(String(r.semana || '').replace(/\D/g,'')) || 0;
-  const a = rows.find(r => nDe(r) === n) || rows.find(r => nDe(r) && nDe(r) < n);
+  const a = rows.find(r => nDe(r) === n);
   return a ? [a] : [];
 }
 async function renderInfoNegocioHistorico(){
@@ -8403,7 +8406,7 @@ async function gerarAtaAutomatica(dReun){
   equipa += `${equipa ? '\n' : ''}Trocas de horário: \nConflitos / pontos a resolver: \nEnergia geral da equipa: `;
   // informação de negócio
   const i0 = inf && inf[0];
-  let foco = i0 ? `${i0.semana || 'Informação de negócio'}:\n${String(i0.resumo||'').slice(0, 900)}${String(i0.resumo||'').length > 900 ? '…' : ''}` : '';
+  let foco = i0 ? `${i0.semana || 'Informação de negócio'}:\n${String(i0.resumo||'').slice(0, 900)}${String(i0.resumo||'').length > 900 ? '…' : ''}` : `⚠️ Ainda não foi carregada a informação de negócio da Semana ${numeroSemanaISO(dReun)}. Carregue o documento em Comunicação → Informação de Negócio.`;
   return {semana: nomeReuniao(dReun), data_reuniao: iso(dReun), vendas, quebras: r.quebras || '', vendas_potenciar: pot, auditorias: r.auditorias || '', custos: '', equipa, foco, automatica: true};
 }
 
@@ -8433,7 +8436,7 @@ async function apGerarSlides(){
     gerarAtaAutomatica(dReun),
     sb('loja_categorias_perda_vendas?select=categoria,divisao,venda_ac,venda_aa,delta_pct,quebra_ac_pct&order=delta_pct.asc&limit=10').catch(()=>[]),
     sb('loja_markdown_etiquetas?nivel=eq.divisao&select=divisao,impressas,vendidas,sem_venda,pct_aceitacao,data_referencia&order=sem_venda.desc').catch(()=>[]),
-    sb('loja_alertas_quebra_artigo?select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10').catch(()=>[]),
+    sb('loja_alertas_quebra_artigo?valor_quebra=gt.0&valor_quebra=lt.1500&select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10').catch(()=>[]),
     sb('loja_validades_score?select=*&order=ano.desc,data_atualizacao.desc.nullslast&limit=1').catch(()=>[]),
     sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
     infoNegocioDaSemana(dReun).catch(()=>[]),
@@ -8475,7 +8478,7 @@ async function apGerarSlides(){
   S.push(`<div class="ap-slide"><h2>Secções: ${k === 'vsb' ? 'vendas vs budget' : 'vendas vs ' + anoP}</h2><div class="ap-duas"><div><h3 class="ap-bom">A crescer</h3><table class="ap-tab"><tr><th>Secção</th><th>Vendas</th><th>Quebra</th></tr>${ord.slice(0,5).map(lin).join('')}</table></div><div><h3 class="ap-mau">A perder</h3><table class="ap-tab"><tr><th>Secção</th><th>Vendas</th><th>Quebra</th></tr>${ord.slice(-5).reverse().map(lin).join('')}</table></div></div>${rod(4)}</div>`);
   // 5 quebras
   const difQ = secs.filter(s => s.qp != null && s.qp_aa != null && s.qp >= 0 && (s.real||0) > 1000).map(s => ({sec: s.sec, d: (s.qp - s.qp_aa)*100, qp: s.qp})).sort((a,b) => b.d - a.d);
-  const ultA = (arts||[])[0] && arts[0].data; const artsU = (arts||[]).filter(a => a.data === ultA).slice(0,5);
+  const artsP = (arts||[]).filter(a => Number(a.valor_quebra) > 0); const ultA = artsP[0] && artsP[0].data; const artsU = artsP.filter(a => a.data === ultA).slice(0,5);
   S.push(`<div class="ap-slide"><h2>Quebra: ${qp.atual != null ? (qp.atual*100).toLocaleString('pt-PT',{maximumFractionDigits:2}) + '%' : '—'} das vendas <span class="${cls(qp.vari, true)}" style="font-size:.6em;">(${pp(qp.vari)} vs ${anoP})</span></h2><div class="ap-duas">
     <div><h3>Secções onde a quebra sobe</h3><table class="ap-tab">${difQ.filter(x => x.d > 0.3).slice(0,5).map(x => `<tr><td>${esc(x.sec)}</td><td class="ap-mau">${pp(x.d)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table>
     <h3 style="margin-top:14px;">A reconhecer (quebra a descer)</h3><table class="ap-tab">${difQ.filter(x => x.d < -0.3).slice(-4).reverse().map(x => `<tr><td>${esc(x.sec)}</td><td class="ap-bom">${pp(x.d)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table></div>
@@ -8636,12 +8639,12 @@ async function gerarResumoReuniao(){
   try{
     const [m, q, c] = await Promise.all([
       sb('loja_markdown_pct_divisao?select=divisao,pct_nao_realizado_valor,mes_referencia&order=pct_nao_realizado_valor.desc&limit=3'),
-      sb('loja_alertas_quebra_artigo?select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10'),
+      sb('loja_alertas_quebra_artigo?valor_quebra=gt.0&valor_quebra=lt.1500&select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10'),
       sb('loja_categorias_perda_vendas?select=categoria,divisao,delta_pct&order=delta_pct.asc&limit=10')
     ]);
     datasR = await impDatas();
     mkd = (m||[]).filter(x => Number(x.pct_nao_realizado_valor) > 5);
-    const ult = (q||[])[0] && q[0].data; arts = (q||[]).filter(x => x.data === ult).slice(0,3);
+    const qp0 = (q||[]).filter(x => Number(x.valor_quebra) > 0); const ult = qp0[0] && qp0[0].data; arts = qp0.filter(x => x.data === ult).slice(0,3);
     cats = (c||[]).filter(x => !/natal|páscoa|pascoa|sazonais/i.test(x.categoria)).slice(0,3).map(x => ({...x, categoria: String(x.categoria).replace(/_bc$/i,' balcão').replace(/_/g,' ')}));
   }catch(e){}
 
