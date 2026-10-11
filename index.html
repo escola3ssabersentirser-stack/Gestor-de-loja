@@ -2471,11 +2471,21 @@ async function impBomDia(wb){
         if(v !== null && v > 0) arts.push({material: String(Math.round(impNum(r[cCod]) ?? 0) || impTxt(r[cCod])), descricao: impTxt(r[cDesc]), valor_quebra: impR2(v)});
       }
       arts.sort((a,b)=>b.valor_quebra-a.valor_quebra);
-      const ja = await impTodos(`loja_alertas_quebra_artigo?data=eq.${dataOntem}&select=material`);
-      for(const a of arts.slice(0,10)){
-        if(ja.some(j => String(j.material) === a.material)) continue;
-        await sb('loja_alertas_quebra_artigo', {method:'POST', body: JSON.stringify({...a, secao: null, data: dataOntem, resolvido: false})});
-        alertas++;
+      // o relatório novo assume: substitui a leitura do mesmo dia e fecha as leituras antigas
+      const novos = arts.slice(0,15);
+      if(novos.length){
+        try{ await sb(`loja_alertas_quebra_artigo?data=lt.${dataOntem}&resolvido=eq.false`, {method:'PATCH', body: JSON.stringify({resolvido:true})}); }catch(e){}
+        const ja = await impTodos(`loja_alertas_quebra_artigo?data=eq.${dataOntem}&select=id,material`);
+        for(const j of ja){
+          if(!novos.some(n => n.material === String(j.material))){ try{ await sb(`loja_alertas_quebra_artigo?id=eq.${j.id}`, {method:'PATCH', body: JSON.stringify({resolvido:true})}); }catch(e){} }
+        }
+        for(const a of novos){
+          const ex = ja.find(j => String(j.material) === a.material);
+          const corpo = {...a, secao: secaoPorDescricao(a.descricao), data: dataOntem, resolvido: false};
+          if(ex) await sb(`loja_alertas_quebra_artigo?id=eq.${ex.id}`, {method:'PATCH', body: JSON.stringify(corpo)});
+          else await sb('loja_alertas_quebra_artigo', {method:'POST', body: JSON.stringify(corpo)});
+          alertas++;
+        }
       }
     }
   }
@@ -5462,7 +5472,7 @@ async function renderResultadosOrganizados(prefixo){
     sb('loja_artigos_sem_vendas?select=*'),
     sb('loja_artigos_repetidos?select=*'),
     sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=5'),
-    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=100')
+    quebraArtigosAtuais(100)
   ]);
   const r = resumoRows[0] || {};
 
@@ -6853,7 +6863,7 @@ async function renderResumoExecutivo(){
   const [resumoRows, vendasDia, artigosQuebra, categoriasPerda, custos] = await Promise.all([
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_vendas_dia?select=*&order=data.desc&limit=2'),
-    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=30'),
+    quebraArtigosAtuais(30),
     sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=5'),
     sb('loja_custos_mensais?select=ano,mes,vendas,quebra&order=ano.asc')
   ]);
@@ -6966,7 +6976,7 @@ async function renderResumoExecutivo(){
 async function criarPlanoReversaoOntem(){
   const [vendasDia, artigosQuebra, categoriasPerda] = await Promise.all([
     sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
-    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=10'),
+    quebraArtigosAtuais(10),
     sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=10')
   ]);
   const ontem = vendasDia[0];
@@ -7349,7 +7359,7 @@ async function gerarResumoSemanalEPlaneamento(){
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_vendas_secao?select=*'),
     sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc&limit=5'),
-    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=5'),
+    quebraArtigosAtuais(5),
     sb('loja_artigos_sem_vendas?select=*&limit=5')
   ]);
   const r = resumoRows[0] || {};
@@ -7455,7 +7465,7 @@ async function criarPlanoSemanal(){
     sb('loja_colaboradores?select=nome,secao,bh_negativo&order=bh_negativo.asc'),
     sb('loja_formacao_compliance?select=*'),
     sb('loja_formacoes_percurso?select=*'),
-    sb('loja_alertas_quebra_artigo?select=*&order=data.desc&limit=10'),
+    quebraArtigosAtuais(10),
     sb('loja_artigos_sem_vendas?select=*&limit=10'),
     sb('loja_vendas_secao?select=*'),
     sb(`loja_vendas_dia?data=gte.${segISO}&data=lte.${domISO}&select=*&order=data.asc`)
@@ -8543,7 +8553,7 @@ async function apGerarSlides(){
     gerarAtaAutomatica(dReun),
     sb('loja_categorias_perda_vendas?select=categoria,divisao,venda_ac,venda_aa,delta_pct,quebra_ac_pct&order=delta_pct.asc&limit=10').catch(()=>[]),
     sb('loja_markdown_etiquetas?nivel=eq.divisao&select=divisao,impressas,vendidas,sem_venda,pct_aceitacao,data_referencia&order=sem_venda.desc').catch(()=>[]),
-    sb('loja_alertas_quebra_artigo?valor_quebra=gt.0&valor_quebra=lt.1500&select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10').catch(()=>[]),
+    quebraArtigosAtuais(10).catch(()=>[]),
     sb('loja_validades_score?select=*&order=ano.desc,data_atualizacao.desc.nullslast&limit=1').catch(()=>[]),
     sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
     infoNegocioDaSemana(dReun).catch(()=>[]),
@@ -8746,7 +8756,7 @@ async function gerarResumoReuniao(){
   try{
     const [m, q, c] = await Promise.all([
       sb('loja_markdown_pct_divisao?select=divisao,pct_nao_realizado_valor,mes_referencia&order=pct_nao_realizado_valor.desc&limit=3'),
-      sb('loja_alertas_quebra_artigo?valor_quebra=gt.0&valor_quebra=lt.1500&select=descricao,valor_quebra,data&order=data.desc,valor_quebra.desc&limit=10'),
+      quebraArtigosAtuais(10),
       sb('loja_categorias_perda_vendas?select=categoria,divisao,delta_pct&order=delta_pct.asc&limit=10')
     ]);
     datasR = await impDatas();
@@ -10852,27 +10862,71 @@ function kpiRow(label, valor, nota){
   </div>`;
 }
 
+// ---------- QUEBRA POR ARTIGO: só conta o último relatório carregado ----------
+async function quebraArtigosAtuais(limite){
+  const rows = (await sb('loja_alertas_quebra_artigo?resolvido=eq.false&valor_quebra=gt.0&valor_quebra=lt.1500&select=*&order=data.desc,valor_quebra.desc&limit=300').catch(()=>[])) || [];
+  if(!rows.length) return [];
+  const ultima = rows[0].data;
+  const vistos = new Set(); const out = [];
+  rows.filter(r => r.data === ultima).forEach(r => { if(!r.secao) r.secao = secaoPorDescricao(r.descricao); const k = String(r.material||r.descricao); if(!vistos.has(k)){ vistos.add(k); out.push(r); } });
+  out.sort((a,b)=>Number(b.valor_quebra)-Number(a.valor_quebra));
+  return limite ? out.slice(0, limite) : out;
+}
+function secaoPorDescricao(d){
+  const t = String(d||'').toUpperCase();
+  const regras = [
+    [/BACALHAU/, 'Bacalhau'], [/VITEL|NOVILHO|BOVINO|PORCO|FRANGO|PERU|BORREGO|LEIT[AÃ]O|GALINHA|CABRITO|HAMBURG|ALM[OÔ]NDEG/, 'Talho'],
+    [/DOURADA|ROBALO|SALM[AÃ]O|PESCADA|POLVO|LULA|CAMAR|SARDINH|CARAPAU|PEIXE/, 'Peixaria'],
+    [/PIZZA|SALADA DE|SOPA|CALDO|REFEI|TAKE/, 'Take-Away'], [/P[AÃ]O |BOLO|BROA|CROISS|PASTEL/, 'Padaria/Pastelaria'],
+    [/QUEIJO|QJ /, 'Queijos'], [/FIAMBRE|CHOURI|PRESUNTO|AZEITONA|SALSICH|LOMBO .*FUM/, 'Charcutaria'],
+    [/IOG|NATAS|MANTEIGA/, 'Produtos Lacteos'], [/LEITE /, 'Leite'], [/UVA|MA[CÇ][AÃ]|PERA|BANANA|ALFACE|TOMATE|ABACATE|FRAMBO|MIRTILO|SALADA |HORTEL/, 'Frutas E Vegetais'],
+    [/C[AÃ]O |GATO /, 'Mercearia + Pet Food'], [/ESFREG|TORRADEIRA|ACENDALHA|PANO |BALDE/, 'Bazar'], [/BOLACHA|WAFER|MASSA |ARROZ|CHOC/, 'Mercearia + Pet Food']
+  ];
+  for(const [re, sec] of regras) if(re.test(t)) return sec;
+  return null;
+}
+function normArtigoMd(t){ return String(t||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+// etiqueta markdown do mesmo artigo (código igual ou mesmo nome)
+function etiquetaDoArtigo(a, etiquetas){
+  const cod = String(a.material||'').replace(/^0+/,'');
+  const nome = normArtigoMd(a.descricao);
+  return etiquetas.find(e => (e.artigo_cod && String(e.artigo_cod).replace(/^0+/,'') === cod) || normArtigoMd(e.artigo) === nome) || null;
+}
+
 async function blocoAlertasQuebraArtigo(secao){
-  const query = secao
-    ? `loja_alertas_quebra_artigo?secao=eq.${encodeURIComponent(secao)}&resolvido=eq.false&select=*&order=valor_quebra.asc&limit=10`
-    : `loja_alertas_quebra_artigo?resolvido=eq.false&select=*&order=valor_quebra.asc&limit=10`;
-  const itens = await sb(query);
-  let html = `<div class="section-title">🔴 Alertas de Quebra Alta — Por Artigo</div>`;
+  const [todos, etiquetas] = await Promise.all([
+    quebraArtigosAtuais(0),
+    sb('loja_markdown_etiquetas?nivel=eq.artigo&select=artigo,artigo_cod,impressas,vendidas,sem_venda').catch(()=>[])
+  ]);
+  let itens = todos;
+  if(secao) itens = itens.filter(a => a.secao === secao);
+  let html = `<div class="section-title">🔴 Artigos com Mais Quebra — último relatório</div>`;
   if(!itens.length){
-    html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem alertas de quebra por artigo de momento.</div></div>`;
+    html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem artigos com quebra no último relatório carregado.</div></div>`;
     return html;
   }
+  const dataRel = itens[0].data ? new Date(itens[0].data+'T12:00:00').toLocaleDateString('pt-PT') : '';
+  const comEt = itens.map(a => ({a, e: etiquetaDoArtigo(a, etiquetas||[])}));
+  const semEt = comEt.filter(x => !x.e);
+  const totSem = semEt.reduce((s,x)=>s+Number(x.a.valor_quebra||0),0);
+  const tot = comEt.reduce((s,x)=>s+Number(x.a.valor_quebra||0),0);
+  html += `<div class="card" style="padding:10px 12px;margin-bottom:10px;background:#fff4f4;border-left:4px solid var(--red);">
+    <div style="font-size:12.5px;color:var(--ink);"><b>${semEt.length} de ${comEt.length}</b> artigos com quebra <b>não tiveram etiqueta markdown</b></div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">Quebra destes artigos: <b style="color:var(--red);">${totSem.toLocaleString('pt-PT',{maximumFractionDigits:0})} €</b> de ${tot.toLocaleString('pt-PT',{maximumFractionDigits:0})} € · relatório de ${dataRel}</div>
+  </div>`;
   html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
-  itens.forEach(a=>{
-    const cor = a.valor_quebra < 0 ? 'var(--red)' : 'var(--amber)';
-    html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
-      <div>
+  comEt.forEach(({a,e})=>{
+    const etq = e ? `<span style="font-size:10.5px;color:var(--green);">🏷️ markdown: ${e.impressas||0} impressas · ${e.vendidas||0} vendidas</span>`
+                  : `<span style="font-size:10.5px;font-weight:700;color:var(--red);">⚠ sem etiqueta markdown</span>`;
+    html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;">
+      <div style="min-width:0;">
         <div style="font-size:12.5px;color:var(--ink);">${a.descricao}</div>
         <div style="font-size:11px;color:var(--ink-soft);">${a.material || ''}${a.secao ? ' · '+labelSecaoPainel(a.secao) : ''}</div>
+        <div>${etq}</div>
       </div>
-      <div style="text-align:right;">
-        <span style="font-size:13px;font-weight:700;color:${cor};">${a.valor_quebra}€</span><br>
-        <button class="econ-btn" style="margin-top:4px;padding:3px 8px;font-size:10.5px;" onclick="resolverAlertaQuebra(${a.id})">Resolvido</button>
+      <div style="text-align:right;flex-shrink:0;">
+        <span style="font-size:13px;font-weight:700;color:var(--red);">${Number(a.valor_quebra).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span><br>
+        ${souDona() ? `<button class="econ-btn" style="margin-top:4px;padding:3px 8px;font-size:10.5px;" onclick="resolverAlertaQuebra(${a.id})">Resolvido</button>` : ''}
       </div>
     </div>`;
   });
@@ -10881,6 +10935,7 @@ async function blocoAlertasQuebraArtigo(secao){
 }
 
 async function resolverAlertaQuebra(id){
+  if(!soDona('marcar alertas como resolvidos')) return;
   try{
     await sb(`loja_alertas_quebra_artigo?id=eq.${id}`, {method:"PATCH", body: JSON.stringify({resolvido:true})});
     showToast();
