@@ -2321,6 +2321,7 @@ function impTipo(wb){
   if(nomes.includes('Bom Dia')) return 'bomdia';
   if(nomes.some(n => n.startsWith('Markdown da Loja por Divis'))) return 'markdown';
   if(nomes.includes('Detalhes por Categoria')) return 'categorias';
+  if(nomes.some(n => n.trim() === 'Resumo 30 dias') && nomes.some(n => n.trim() === 'Validades por tratar')) return 'validades';
   for(const n of nomes){
     const R = impLinhas(wb.Sheets[n]);
     if(impCabecalho(R, ['Nome Operador','Vendas Operador'])) return 'vendasugestiva';
@@ -2676,6 +2677,100 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   return `dados até ${impDDMM(dataRef)}${estimada ? ' (data estimada)' : ''}${painelOk ? ' · painel atualizado' : ''} · 10 categorias que mais perdem vendas (pior: ${top[0].categoria} ${top[0].delta_pct.toLocaleString('pt-PT')}%)`;
 }
 
+// ---------- RELATÓRIO DE GESTÃO DE VALIDADES ----------
+function valLerRelatorio(wb, nomeFicheiro){
+  const L = n => { const k = wb.SheetNames.find(x => x.trim().toLowerCase() === n.toLowerCase()); return k ? impLinhas(wb.Sheets[k]) : []; };
+  const daLoja = r => (r||[]).some(c => impTxt(c).startsWith(IMP_LOJA + ' ') || impTxt(c) === IMP_LOJA);
+  const out = {resumo30: [], dias30: [], hoje: [], periodoHoje: '', ontem: [], periodoOntem: '', porTratar: [], naoTratados: [], naoRegistadas: []};
+  // 30 dias
+  const R30 = L('Resumo 30 dias'); const h30 = impCabecalho(R30, ['Secção','Tx Execução']);
+  if(h30){ const row = (R30[h30.i]||[]).map(impTxt); const cS = h30.col('Secção'), cT = h30.col('Tx Execução');
+    const cDias = row.map((t,i) => /^\d{2}\/\d{2}\s*-\s*\d{2}\/\d{2}$/.test(t) ? i : -1).filter(i => i >= 0);
+    out.dias30 = cDias.map(i => row[i].split('-')[1].trim());
+    for(let i = h30.i+1; i < R30.length; i++){ const r = R30[i]; if(!daLoja(r)) continue; const s = impTxt(r[cS]); if(!s) continue;
+      out.resumo30.push({secao: s, tx: impNum(r[cT]), dias: cDias.map(c => impNum(r[c]))}); } }
+  // hoje
+  const RH = L('Resumo Hoje'); const per = R => { for(const r of R.slice(0,4)) for(const c of (r||[])){ const t = impTxt(c); if(/\d{2}\/\d{2}/.test(t)) return t; } return ''; };
+  out.periodoHoje = per(RH);
+  const hH = impCabecalho(RH, ['Secção','Artigos Elegíveis']);
+  if(hH){ const row = (RH[hH.i]||[]).map(impTxt); const c = re => row.findIndex(t => re.test(t));
+    const cS = hH.col('Secção'), cE = hH.col('Artigos Elegíveis'), cP = c(/por tratar/i), cR = c(/Por recolher/i), cX = c(/Expirada/i), cM = c(/markdown em atraso/i), cC = c(/cancelados/i), cD = c(/Diferen/i);
+    for(let i = hH.i+1; i < RH.length; i++){ const r = RH[i]; if(!daLoja(r)) continue; const s = impTxt(r[cS]); if(!s) continue;
+      out.hoje.push({secao: s, elegiveis: impNum(r[cE]), por_tratar: impNum(r[cP]) || 0, recolher: impNum(r[cR]) || 0, expirada: impNum(r[cX]) || 0, md_atraso: impNum(r[cM]) || 0, cancelados: impNum(r[cC]) || 0, dif_stock_md: impNum(r[cD]) || 0}); } }
+  // ontem
+  const RO = L('Detalhe Ontem'); out.periodoOntem = per(RO);
+  const hO = impCabecalho(RO, ['Secção','Total','Tratados']);
+  if(hO){ const row = (RO[hO.i]||[]).map(impTxt); const c = re => row.findIndex(t => re.test(t));
+    const cS = hO.col('Secção'), cTo = hO.col('Total'), cTr = hO.col('Tratados'), cN = c(/^Não Tratados/i), cV = c(/Não Registadas/i), cPv = c(/Próxima Validade/i);
+    for(let i = hO.i+1; i < RO.length; i++){ const r = RO[i]; if(!daLoja(r)) continue; const s = impTxt(r[cS]); if(!s) continue;
+      out.ontem.push({secao: s, total: impNum(r[cTo]) || 0, tratados: impNum(r[cTr]) || 0, nao_tratados: impNum(r[cN]) || 0, nao_registadas: impNum(r[cV]) || 0, prox_validade: impNum(r[cPv]) || 0}); } }
+  // artigos por tratar (vários blocos, cada um com um título)
+  const RV = L('Validades por tratar'); let motivo = '';
+  for(let i = 0; i < RV.length; i++){
+    const r = (RV[i]||[]).map(impTxt); const cheios = r.filter(Boolean);
+    if(cheios.length === 1 && cheios[0].length > 25){ motivo = cheios[0]; continue; }
+    if(r.includes('Cod Artigo') && r.includes('Desc Artigo')){
+      const c = t => r.indexOf(t); const cS = c('Secção'), cCod = c('Cod Artigo'), cD = c('Desc Artigo'), cSt = c('Stock'), cPv = c('Próxima Validade'), cDd = r.findIndex(t => /Dias diferen/i.test(t)), cVt = r.findIndex(t => /Validade Te/i.test(t));
+      for(let k = i+1; k < RV.length; k++){ const x = RV[k] || []; const xs = x.map(impTxt); const ch = xs.filter(Boolean);
+        if(ch.length === 1 && ch[0].length > 25) { i = k - 1; break; }
+        if(!xs[cD]) continue;
+        out.porTratar.push({secao: xs[cS], material: xs[cCod].replace(/^0+/,''), descricao: xs[cD], stock: impNum(x[cSt]), proxima_validade: impData(x[cPv]), validade_teorica: cVt >= 0 ? impData(x[cVt]) : null, dias_dif: cDd >= 0 ? impNum(x[cDd]) : null, motivo});
+        if(k === RV.length - 1) i = k; }
+    }
+  }
+  const itens = (n, cols) => { const R = L(n); const h = R.findIndex(r => (r||[]).map(impTxt).includes('Desc Artigo')); if(h < 0) return []; const row = R[h].map(impTxt); const res = [];
+    for(let i = h+1; i < R.length; i++){ const r = R[i]||[]; const d = impTxt(r[row.indexOf('Desc Artigo')]); if(!d) continue; const o = {descricao: d, secao: impTxt(r[row.indexOf('Secção')])}; cols.forEach(([k,t]) => { const ci = row.indexOf(t); if(ci >= 0) o[k] = impTxt(r[ci]); }); res.push(o); } return res; };
+  out.naoTratados = itens('Ontem Nao Tratados', [['acao','Ação ontem'],['stock','Stock Dia Seguinte']]);
+  out.naoRegistadas = itens('Ontem Validades Não Registadas', [['qtd','Qtd Quebra']]);
+  const m = String(nomeFicheiro||'').match(/(\d{4})-(\d{2})-(\d{2})/);
+  out.data = m ? `${m[1]}-${m[2]}-${m[3]}` : impISO(new Date());
+  return out;
+}
+async function impValidades(wb, nomeFicheiro){
+  const d = valLerRelatorio(wb, nomeFicheiro);
+  if(!d.resumo30.length && !d.hoje.length) throw new Error('não encontrei os dados da loja ' + IMP_LOJA + ' neste relatório');
+  await impVerificarData('validades', d.data);
+  await sb('loja_validades_relatorio?on_conflict=data', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({data: d.data, dados: d})});
+  const ult = d.dias30[0] || '';
+  const exec = d.resumo30.filter(x => x.tx != null && !/total/i.test(x.secao)).map(x => ({divisao: x.secao, tx_execucao_pct: impR2(x.tx * 100), data_referencia: '30 dias até ' + (ult || impDDMM(d.data))}));
+  if(exec.length){ await sb('loja_validades_execucao_pct?id=gt.0', {method:'DELETE'}); await sb('loja_validades_execucao_pct', {method:'POST', body: JSON.stringify(exec)}); }
+  await sb('loja_validades_artigos_tratar?tratado=not.is.true', {method:'DELETE'});
+  if(d.porTratar.length) await sb('loja_validades_artigos_tratar', {method:'POST', body: JSON.stringify(d.porTratar.map(a => ({secao: a.secao, material: a.material, descricao: a.descricao, proxima_validade: a.proxima_validade, acao: (a.motivo.replace(/^Verificar Validades - /,'').slice(0,120)) + (a.dias_dif ? ` (+${a.dias_dif} dias)` : '') + (a.stock != null ? ` · stock ${a.stock}` : ''), tratado: false, data: d.data})))});
+  await impGuardarData('validades', d.data);
+  const tot = d.resumo30.find(x => /total/i.test(x.secao)); const porTratarHoje = d.hoje.reduce((a,x) => a + x.por_tratar, 0);
+  return `dados de ${impDDMM(d.data)} · execução 30 dias ${tot && tot.tx != null ? Math.round(tot.tx*100) + '%' : '—'} · ${porTratarHoje} por tratar hoje · ${d.porTratar.length} artigos a verificar`;
+}
+async function valCarregarRelatorio(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o relatório de validades')) return;
+  const est = document.getElementById('val-rel-estado'); if(est) est.textContent = 'A ler…';
+  try{ const msg = await impValidades(XLSX.read(await f.arrayBuffer(), {type:'array'}), f.name); if(est) est.textContent = '✓ ' + msg; setTimeout(() => renderArea('validades'), 600); }
+  catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
+}
+async function blocoRelatorioValidades(){
+  let rel = null; try{ const r = await sb('loja_validades_relatorio?select=*&order=data.desc&limit=1'); rel = r && r[0]; }catch(e){}
+  const btn = souDona() ? `<div class="card" style="margin-bottom:10px;"><input type="file" id="val-rel-fich" class="hidden" accept=".xlsx,.xls" onchange="valCarregarRelatorio(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('val-rel-fich').click()">📎 Carregar Relatório de Gestão de Validades</button><div id="val-rel-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;">Também pode carregá-lo junto com os ficheiros do dia.</div></div>` : '';
+  if(!rel) return btn;
+  const d = rel.dados || {}; const pct = v => v == null ? '—' : Math.round(v*100) + '%';
+  const cor = v => v == null ? 'var(--ink-soft)' : v >= 0.97 ? '#1F7A33' : v >= 0.8 ? '#C77F12' : '#B4231A';
+  const tot30 = (d.resumo30||[]).find(x => /total/i.test(x.secao)); const secs30 = (d.resumo30||[]).filter(x => !/total/i.test(x.secao));
+  const hojeTot = (d.hoje||[]).find(x => /total/i.test(x.secao)) || {}; const hojeSecs = (d.hoje||[]).filter(x => !/total/i.test(x.secao));
+  const ontemTot = (d.ontem||[]).find(x => /total/i.test(x.secao)) || {}; const ontemSecs = (d.ontem||[]).filter(x => !/total/i.test(x.secao));
+  const porTratarHoje = hojeSecs.reduce((a,x) => a + (x.por_tratar||0), 0);
+  let h = btn + `<div class="rp-bloco-tit" style="margin-top:4px;">📄 Relatório de gestão de validades — ${rel.data.split('-').reverse().join('/')}</div>`;
+  h += `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px;">
+    ${[['Execução 30 dias', pct(tot30 && tot30.tx), cor(tot30 && tot30.tx)], ['Por tratar hoje', String(porTratarHoje), porTratarHoje ? '#B4231A' : '#1F7A33'], ['Ontem tratados', `${ontemTot.tratados ?? '—'}/${ontemTot.total ?? '—'}`, (ontemTot.nao_tratados||0) ? '#B4231A' : '#1F7A33']].map(([t,v,c]) => `<div class="card" style="margin:0;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--ink-soft);">${t}</div><div style="font-size:19px;font-weight:800;color:${c};">${v}</div></div>`).join('')}
+  </div>`;
+  if(hojeSecs.length) h += `<div class="card rp-tabela-box" style="padding:4px 8px;"><div style="font-size:12px;color:var(--ink-soft);padding:4px 2px;">Hoje (${rpEsc(d.periodoHoje || '')})</div><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">Secção</th><th>Elegíveis</th><th>Por tratar</th><th>Por recolher</th><th>Expirada</th><th>MD atraso</th><th>Dif. stock/MD</th></tr></thead><tbody>${hojeSecs.map(x => `<tr><td style="text-align:left;">${rpEsc(x.secao)}</td><td>${x.elegiveis ?? ''}</td><td style="font-weight:800;color:${x.por_tratar ? '#B4231A' : 'inherit'}">${x.por_tratar || ''}</td><td>${x.recolher || ''}</td><td>${x.expirada || ''}</td><td>${x.md_atraso || ''}</td><td style="color:${x.dif_stock_md ? '#C77F12' : 'inherit'}">${x.dif_stock_md || ''}</td></tr>`).join('')}</tbody></table></div>`;
+  if(ontemSecs.length) h += `<div class="card rp-tabela-box" style="padding:4px 8px;margin-top:10px;"><div style="font-size:12px;color:var(--ink-soft);padding:4px 2px;">Ontem (${rpEsc(d.periodoOntem || '')})</div><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">Secção</th><th>Total</th><th>Tratados</th><th>Não tratados</th><th>Sem validade registada</th></tr></thead><tbody>${ontemSecs.map(x => `<tr><td style="text-align:left;">${rpEsc(x.secao)}</td><td>${x.total}</td><td>${x.tratados}</td><td style="font-weight:800;color:${x.nao_tratados ? '#B4231A' : 'inherit'}">${x.nao_tratados || ''}</td><td>${x.nao_registadas || ''}</td></tr>`).join('')}</tbody></table></div>`;
+  if(secs30.length){
+    const dias = (d.dias30||[]).slice(0,30).reverse();
+    h += `<div class="card" style="margin-top:10px;"><div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px;">Execução diária — últimos 30 dias</div>` + secs30.map(x => { const v = (x.dias||[]).slice(0,30).reverse();
+      return `<div style="display:grid;grid-template-columns:110px 1fr 44px;gap:6px;align-items:center;margin:5px 0;font-size:12px;"><span>${rpEsc(x.secao)}</span><span style="display:flex;gap:1px;height:16px;align-items:flex-end;">${v.map((y,i) => `<span title="${dias[i] || ''}: ${y == null ? 'sem rotina' : Math.round(y*100) + '%'}" style="flex:1;height:${y == null ? 3 : Math.max(3, y*16)}px;background:${y == null ? 'var(--line)' : cor(y)};border-radius:1px;"></span>`).join('')}</span><b style="text-align:right;color:${cor(x.tx)}">${pct(x.tx)}</b></div>`; }).join('') + `</div>`;
+  }
+  if((d.naoTratados||[]).length || (d.naoRegistadas||[]).length) h += `<div class="card" style="margin-top:10px;font-size:12.5px;">${(d.naoTratados||[]).length ? `<b style="color:#B4231A;">Ontem não tratados:</b> ${d.naoTratados.map(x => rpEsc(impTitulo(x.descricao))).join(', ')}<br>` : ''}${(d.naoRegistadas||[]).length ? `<b style="color:#B4231A;">Quebra sem validade registada:</b> ${d.naoRegistadas.map(x => rpEsc(impTitulo(x.descricao)) + (x.qtd ? ' (' + x.qtd + ')' : '')).join(', ')}` : ''}</div>`;
+  return h;
+}
+
 // ---------- NOTAS DE CRÉDITO ----------
 async function impNotas(wb){
   let novas = 0, total = 0;
@@ -2747,7 +2842,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva'};
+const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades'};
 
 let impResHTML = '';
 function escolherFicheirosDia(){ document.getElementById('rp-input-ficheiro').click(); }
@@ -2765,7 +2860,7 @@ async function importarFicheirosDia(input){
     if(box){ box.innerHTML = impResHTML; box.style.display = 'block'; }
   };
   // o Resumo vai por último, para o painel ficar desenhado com tudo
-  const ordem = {bomdia:1, markdown:2, categorias:3, notascredito:4, vendasugestiva:5, resumo:9};
+  const ordem = {bomdia:1, markdown:2, categorias:3, notascredito:4, vendasugestiva:5, validades:6, resumo:9};
   const lidos = [];
   for(const f of ficheiros){
     const l = {nome: f.name, tipo: '?', msg: 'a ler…', ok: null}; linhas.push(l);
@@ -2782,7 +2877,7 @@ async function importarFicheirosDia(input){
   for(const x of lidos){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
-      const fn = {bomdia: impBomDia, markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, resumo: impResumo}[x.tipo];
+      const fn = {bomdia: impBomDia, markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
     mostrar(false);
@@ -3271,7 +3366,8 @@ async function areaValidadesHtml(){
     sb(`loja_rotina_validades?data=eq.${dataLocalISO(new Date())}&select=*`).catch(()=>[])
   ]);
   const ref = (exec||[]).find(x => x.data_referencia) ;
-  let h = `<div class="rp-bloco-tit" style="margin-top:4px;">Taxa de execução da rotina de validades${ref ? ' · ' + rpEsc(ref.data_referencia) : ''}</div><div class="card">`;
+  let h = await blocoRelatorioValidades();
+  h += `<div class="rp-bloco-tit" style="margin-top:4px;">Taxa de execução da rotina de validades${ref ? ' · ' + rpEsc(ref.data_referencia) : ''}</div><div class="card">`;
   h += (exec||[]).length ? (exec||[]).map(x => { const v = Number(x.tx_execucao_pct); const cls = v >= 98 ? 'bom' : v >= 95 ? 'neutro' : 'mau';
     return `<div class="rp-score-linha" style="grid-template-columns:150px 1fr 60px;margin:6px 0;"><span class="rp-score-mes">${rpEsc(x.divisao)}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%;background:${cls==='mau'?'#B4231A':cls==='neutro'?'#C77F12':'#1F7A33'}"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT')}%</span></div>`; }).join('')
     : `<div style="font-size:13px;color:var(--ink-soft);">Sem dados de execução.</div>`;
@@ -3281,7 +3377,6 @@ async function areaValidadesHtml(){
   h += `<div class="rp-bloco-tit">Artigos por tratar <span class="lem-n ${(tratar||[]).length ? 'tem' : ''}">${(tratar||[]).length}</span></div>`;
   h += (tratar||[]).length ? (tratar||[]).map(a => `<div class="card lem-item"><div><b>${rpEsc(a.descricao)}</b><small>${rpEsc(a.secao || '')} · validade ${a.proxima_validade ? new Date(a.proxima_validade+'T12:00:00').toLocaleDateString('pt-PT') : '—'}${a.acao ? ' · ' + rpEsc(a.acao) : ''}</small></div><button class="lem-w" style="background:#1F7A33" onclick="areaTratarValidade(${a.id})">✓ Tratado</button></div>`).join('')
     : `<div class="card lem-vazio">✓ Nenhum artigo por tratar.</div>`;
-  h += `<div class="card com-dica" style="margin-top:14px;">📄 <b>Relatório de gestão de validades:</b> quando o carregar nos ficheiros do dia, esta página atualiza sozinha. Envie-me um exemplo do relatório para a app o aprender a ler.</div>`;
   return h;
 }
 async function areaTratarValidade(id){
