@@ -3499,7 +3499,7 @@ async function renderLembretes(){
     + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0).length, anosHtml, formAnos)
     + sec('📲','Envios da semana', ['resumo-semanal|','ata-semanal|','comunicacao-semanal|'].filter(k => !d.enviados.has(k)).length, semanal)
     + sec('💙','Baixas e ausências', d.ausSemContacto.length, aus, formAus)
-    + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt)
+    + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt, souDona() ? `<div class="card" style="margin-bottom:8px;"><input type="file" id="hor-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv,image/*" onchange="horCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('hor-fich').click()">📎 Atualizar com o ficheiro do Hello (Excel ou foto)</button><div id="hor-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '')
     + sec('🕐','Banco de horas', d.bh.length, bh, `<p class="com-ajuda" style="margin:0 4px 8px;">Cada pessoa só aparece a partir do dia marcado para gozar. Depois de gozar, carregue em ✓ OK e sai da lista.</p>`)
     + sec('🎓','Formação pendente', d.formacao.length, form);
 }
@@ -11342,7 +11342,7 @@ async function horGuardarLidos(){
     let assinados = 0;
     if(completa){ const ids = atuais.filter(a => !vistos.has(horChave(a.colaborador_numero, a.descricao))).map(a => a.id); if(ids.length){ await sb(`loja_alteracoes_horario?id=in.(${ids.join(',')})`, {method:'PATCH', body: JSON.stringify({assinado: true, assinado_em: new Date().toISOString()})}); assinados = ids.length; } }
     alert(`Horários atualizados ✓\n\n${novos.length} novas trocas por assinar${completa ? '\n' + assinados + ' marcadas como já assinadas' : ''}.`);
-    renderFormacoesScreen();
+    if(currentScreen === 'lembretes') renderLembretes(); else renderFormacoesScreen();
   }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
 }
 function horLembrar(numero){
