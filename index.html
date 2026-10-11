@@ -8557,12 +8557,22 @@ async function renderAtaSemanal(){
   if(ataAtual && ataAtual.automatica && currentUser && souDona()){
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#1F7A33;" onclick="ataRefazer()">🔄 Atualizar números</button>`;
   }
+  html += `</div><div style="display:flex;gap:8px;margin:-6px 0 16px;flex-wrap:wrap;">`;
+  if(ataAtual || ataPreview){
+    html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#2B579A;" onclick="ataWord()">📄 Word</button>`;
+    html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#217346;" onclick="ataExcel()">📊 Excel</button>`;
+  }
   if(ataAtual){
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:var(--teal);" onclick="enviarAtaPorEmail()">📧 Enviar por email</button>`;
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#25D366;" onclick="lemEnviarAta()">📲 WhatsApp</button>`;
   }
   html += `</div>`;
 
+  try{
+    ataLista = await sb('loja_ata_semanal?select=*&order=data_reuniao.desc.nullslast,id.desc&limit=30') || [];
+    const ant = ataLista.filter(a => !ataAtual || a.id !== ataAtual.id);
+    if(ant.length) html += `<details class="card" style="margin-bottom:16px;"><summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:13px;">📁 Atas anteriores (${ant.length})</summary>${ant.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;">${rpEsc(a.semana || a.data_reuniao || 'Ata')}</span><span style="display:flex;gap:4px;"><button class="lem-w" style="background:#2B579A" onclick="ataWord(${a.id})">Word</button><button class="lem-w" style="background:#217346" onclick="ataExcel(${a.id})">Excel</button></span></div>`).join('')}</details>`;
+  }catch(e){}
   wrap.innerHTML = html;
 }
 
@@ -8674,7 +8684,8 @@ async function renderResumoReuniao(){
     ${bloco('📉 Quebras', v.quebras)}
     ${bloco('🔍 Auditorias', v.auditorias)}
     ${v.pontos.length ? `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px;">💬 Pontos a discutir</div><ol style="margin:0 0 4px 18px;padding:0;font-size:13px;line-height:1.5;color:var(--ink);">${v.pontos.map(p => `<li>${rpEsc(p)}</li>`).join('')}</ol>` : ''}
-    <button class="btn-primary" style="background:#25D366;margin-top:12px;" onclick="lemEnviarResumo()">📲 Enviar resumo por WhatsApp</button>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"><button class="btn-primary" style="margin:0;flex:1;background:#2B579A;" onclick="resumoWord()">📄 Word</button><button class="btn-primary" style="margin:0;flex:1;background:#217346;" onclick="resumoExcel()">📊 Excel</button></div>
+    <button class="btn-primary" style="background:#25D366;margin-top:8px;" onclick="lemEnviarResumo()">📲 Enviar resumo por WhatsApp</button>
   </div>`;
 }
 
@@ -8755,9 +8766,61 @@ async function saveAta(){
   }
 }
 
+// ===== Atas e resumos em Word e Excel =====
+const ATA_CAMPOS = [['foco','Informação de negócio'],['vendas','Vendas'],['quebras','Quebras'],['vendas_potenciar','Vendas a potenciar e venda sugestiva'],['auditorias','Auditorias (secção e loja)'],['custos','Custos da loja'],['equipa','Equipa (formação, banco de horas, horários, energia)']];
+const docNome = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,60);
+function ataAtualOuPreview(id){ if(id && ataLista) return ataLista.find(a => a.id === id); return ataAtual || ataPreview; }
+let ataLista = [];
+async function ataWord(id){
+  const a = ataAtualOuPreview(id); if(!a){ alert('Ainda não há ata.'); return; }
+  await gerarDocumentoWordEEmail(`Ata da reunião semanal — ${a.semana || ''}`, ATA_CAMPOS.map(([k,l]) => ({label: l, valor: a[k]})), a.criado_por && a.criado_por !== 'automático' ? a.criado_por : (currentUser ? currentUser.name : ''), `Ata_${docNome(a.semana || a.data_reuniao)}`);
+}
+function xlsDescarregar(wb, nome, titulo){
+  const out = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  return partilharOuDescarregarFicheiro(new Blob([out], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), nome, titulo);
+}
+function xlsFolhaSecoes(){
+  const r = resumoPainel || RESUMO_PADRAO; const p = v => v == null ? '' : Math.round(v*1000)/10;
+  const linhas = [['Secção','Budget (€)','Real (€)','vs budget (%)','vs ' + (r.ano_ant || 'AA') + ' (%)','Quebra (%)','Quebra ' + (r.ano_ant || 'AA') + ' (%)']];
+  (r.secoes||[]).concat(r.secoes_total ? [r.secoes_total] : []).forEach(s => linhas.push([s.sec, s.bdg ?? '', s.real ?? '', p(s.vsb), p(s.vsaa), p(s.qp), p(s.qp_aa)]));
+  return XLSX.utils.aoa_to_sheet(linhas);
+}
+async function ataExcel(id){
+  const a = ataAtualOuPreview(id); if(!a){ alert('Ainda não há ata.'); return; }
+  if(typeof XLSX === 'undefined'){ alert('Sem ligação para criar o Excel. Tente de novo.'); return; }
+  const wb = XLSX.utils.book_new();
+  const ata = [['Ata da reunião semanal — Loja 747 Portuzelo'], [a.semana || ''], []];
+  ATA_CAMPOS.forEach(([k,l]) => { ata.push([l]); String(a[k] || '—').split('\n').forEach(t => ata.push(['', t])); ata.push([]); });
+  const ws = XLSX.utils.aoa_to_sheet(ata); ws['!cols'] = [{wch:34},{wch:110}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Ata');
+  try{ await carregarResumoPainel(); }catch(e){}
+  const res = (await resultadosPeriodos().catch(() => '')).split('\n').map(t => [t]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Resultados'], ...res]), 'Resultados');
+  XLSX.utils.book_append_sheet(wb, xlsFolhaSecoes(), 'Secções');
+  await xlsDescarregar(wb, `Ata_${docNome(a.semana || a.data_reuniao)}.xlsx`, 'Ata da reunião');
+}
+async function resumoWord(){
+  const v = resumoReuniaoCache || await gerarResumoReuniao();
+  await gerarDocumentoWordEEmail(`Resumo semanal — ${semanaAtualLabel()}`, [
+    {label:'Vendas (semana, mês e ano)', valor: v.vendas}, {label:'Quebras', valor: v.quebras}, {label:'Auditorias', valor: v.auditorias}, {label:'Pontos a discutir', valor: (v.pontos||[]).map((p,i) => (i+1) + '. ' + p).join('\n')}
+  ], currentUser ? currentUser.name : '', `Resumo_semanal_${docNome(semanaAtualLabel())}`);
+}
+async function resumoExcel(){
+  if(typeof XLSX === 'undefined'){ alert('Sem ligação para criar o Excel. Tente de novo.'); return; }
+  const v = resumoReuniaoCache || await gerarResumoReuniao();
+  const wb = XLSX.utils.book_new();
+  const linhas = [['Resumo semanal — Loja 747 Portuzelo'], [semanaAtualLabel()], []];
+  [['Vendas (semana, mês e ano)', v.vendas], ['Quebras', v.quebras], ['Auditorias', v.auditorias], ['Pontos a discutir', (v.pontos||[]).map((p,i) => (i+1) + '. ' + p).join('\n')]].forEach(([l,t]) => { linhas.push([l]); String(t || '—').split('\n').forEach(x => linhas.push(['', x])); linhas.push([]); });
+  const ws = XLSX.utils.aoa_to_sheet(linhas); ws['!cols'] = [{wch:30},{wch:110}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Resumo');
+  XLSX.utils.book_append_sheet(wb, xlsFolhaSecoes(), 'Secções');
+  await xlsDescarregar(wb, `Resumo_semanal_${docNome(semanaAtualLabel())}.xlsx`, 'Resumo semanal');
+}
+
 function enviarAtaPorEmail(){
   if(!ataAtual) return;
   gerarDocumentoWordEEmail(`Ata Semanal — ${ataAtual.semana || ''}`, [
+    {label:'Informação de negócio', valor: ataAtual.foco},
     {label:'Vendas', valor: ataAtual.vendas},
     {label:'Quebras', valor: ataAtual.quebras},
     {label:'Vendas a potenciar — semana seguinte', valor: ataAtual.vendas_potenciar},
