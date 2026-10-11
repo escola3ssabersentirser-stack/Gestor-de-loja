@@ -3499,7 +3499,7 @@ async function renderLembretes(){
     + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0).length, anosHtml, formAnos)
     + sec('📲','Envios da semana', ['resumo-semanal|','ata-semanal|','comunicacao-semanal|'].filter(k => !d.enviados.has(k)).length, semanal)
     + sec('💙','Baixas e ausências', d.ausSemContacto.length, aus, formAus)
-    + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt)
+    + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt, souDona() ? `<div class="card" style="margin-bottom:8px;"><input type="file" id="hor-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv,image/*" onchange="horCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('hor-fich').click()">📎 Atualizar com o ficheiro do Hello (Excel ou foto)</button><div id="hor-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '')
     + sec('🕐','Banco de horas', d.bh.length, bh, `<p class="com-ajuda" style="margin:0 4px 8px;">Cada pessoa só aparece a partir do dia marcado para gozar. Depois de gozar, carregue em ✓ OK e sai da lista.</p>`)
     + sec('🎓','Formação pendente', d.formacao.length, form);
 }
@@ -11266,13 +11266,98 @@ async function renderValidacaoTarefasScreen(){
   content.innerHTML = html;
 }
 
+// ===== RH: carregar ficheiros de Banco de Horas e Formações =====
+let rhLidos = {tipo: null, linhas: []};
+const rhN = t => String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+function rhNum(v){ if(v == null || v === '') return null; if(typeof v === 'number') return v; let s = String(v).trim().replace(/h$/i,''); const hm = s.match(/^(-?)(\d+):(\d{2})$/); if(hm) return (hm[1] ? -1 : 1) * (Number(hm[2]) + Number(hm[3])/60); s = s.replace(/\s/g,'').replace(',', '.'); const n = Number(s); return isNaN(n) ? null : n; }
+function rhLerTabela(wb, testeCab){
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
+    const hi = R.findIndex((r,i) => i < 40 && testeCab(r.map(rhN)));
+    if(hi >= 0) return {H: R[hi].map(rhN), linhas: R.slice(hi+1)};
+  }
+  return null;
+}
+function rhCols(H){ const c = re => H.findIndex(h => re.test(h)); return {num: c(/(n\.?\s*º?|numero|nº).*(colab|pessoal|func)|^n\.?º?$|^numero$|pessoal|sap/), nome: c(/nome/)}; }
+function rhLerBancoHoras(wb){
+  const t = rhLerTabela(wb, H => H.some(h => /nome/.test(h)) && H.some(h => /banco|saldo|horas|bh/.test(h))); if(!t) return [];
+  const {num, nome} = rhCols(t.H); const c = re => t.H.findIndex(h => re.test(h));
+  const cPos = c(/positiv|a gozar|credito|saldo positivo/), cNeg = c(/negativ|a compensar|debito|saldo negativo/), cSaldo = c(/^saldo|banco de horas|^bh$|total horas|^horas$/), cData = c(/data.*(gozo|gozar|prevista)|previsao/);
+  const out = [];
+  t.linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return;
+    let pos = cPos >= 0 ? rhNum(r[cPos]) : null, neg = cNeg >= 0 ? rhNum(r[cNeg]) : null;
+    if(pos == null && neg == null && cSaldo >= 0){ const sv = rhNum(r[cSaldo]); if(sv != null){ pos = sv > 0 ? sv : 0; neg = sv < 0 ? sv : 0; } }
+    if(neg != null && neg > 0) neg = -neg;
+    if(pos == null && neg == null) return;
+    out.push({numero: num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '', nome: nm, pos: pos || 0, neg: neg || 0, data: cData >= 0 ? horIso(r[cData]) : null});
+  });
+  return out;
+}
+function rhLerFormacoes(wb){
+  const t = rhLerTabela(wb, H => H.some(h => /nome/.test(h)) && H.some(h => /conduta|privacy|anticorrup|seguranca|curso|percurso|formacao/.test(h))); if(!t) return [];
+  const {num, nome} = rhCols(t.H); const c = re => t.H.findIndex(h => re.test(h));
+  const cc = {codigo_conduta: c(/conduta/), data_privacy: c(/privacy|privacidade/), politica_anticorrupcao: c(/anticorrup/), seguranca_protecao: c(/seguranca/)};
+  const cCurso = c(/curso|percurso|acao|formacao/), cData = c(/data/), cEstado = c(/estado|situacao|status|observ/);
+  const out = [];
+  t.linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return; const numero = num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '';
+    if(Object.values(cc).some(i => i >= 0)){ const o = {tipo: 'compliance', numero, nome: nm}; Object.entries(cc).forEach(([k,i]) => { if(i >= 0) o[k] = String(r[i]||'').trim() || null; }); out.push(o); }
+    else if(cCurso >= 0 && String(r[cCurso]||'').trim()) out.push({tipo: 'percurso', numero, nome: nm, curso: String(r[cCurso]).trim(), data: cData >= 0 ? horIso(r[cData]) : null, obs: cEstado >= 0 ? String(r[cEstado]||'').trim() || null : null});
+  });
+  return out;
+}
+async function rhCarregar(input, tipo){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('atualizar os dados de RH')) return;
+  const est = document.getElementById('rh-estado-' + tipo); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(!/\.(xlsx|xls|xlsm|csv)$/i.test(f.name)) throw new Error('use o ficheiro Excel (.xlsx). As fotografias de ecrã não ficam bem lidas — envie-as no chat ao Claude.');
+    const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+    const linhas = tipo === 'bh' ? rhLerBancoHoras(wb) : rhLerFormacoes(wb);
+    if(!linhas.length) throw new Error('não reconheci as colunas do ficheiro. Envie-o no chat ao Claude para ele ensinar a app a ler este formato.');
+    rhLidos = {tipo, linhas};
+    msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">${linhas.length} linhas lidas</b><div style="max-height:220px;overflow:auto;margin:6px 0;font-size:12px;">${linhas.slice(0,60).map(x => `<div style="padding:4px 0;border-top:1px solid var(--line);"><b>${rpEsc(x.nome)}</b> · ${tipo === 'bh' ? `${x.pos ? '+' + x.pos.toLocaleString('pt-PT',{maximumFractionDigits:2}) + 'h' : ''}${x.neg ? ' ' + x.neg.toLocaleString('pt-PT',{maximumFractionDigits:2}) + 'h' : ''}${x.data ? ' · gozo ' + x.data.split('-').reverse().join('/') : ''}` : x.tipo === 'compliance' ? ['codigo_conduta','data_privacy','politica_anticorrupcao','seguranca_protecao'].filter(k => x[k]).map(k => x[k]).join(' / ') : rpEsc(x.curso) + (x.data ? ' · ' + x.data.split('-').reverse().join('/') : '')}</div>`).join('')}</div>
+      ${tipo === 'form' ? '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="rh-subst" checked> Substituir a lista atual por esta</label>' : ''}
+      <button class="btn-primary" onclick="rhGuardar()">Guardar</button></div>`);
+  }catch(e){ msg('✕ ' + (e && e.message || e)); }
+}
+async function rhGuardar(){
+  if(!soDona('atualizar os dados de RH')) return;
+  const {tipo, linhas} = rhLidos; let ok = 0, falta = [];
+  try{
+    if(tipo === 'bh'){
+      const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome') || [];
+      const porNum = new Map(colabs.map(c => [String(c.numero_pessoal||'').replace(/\D/g,'').replace(/^0+/,''), c]));
+      const porNome = new Map(colabs.map(c => [rhN(c.nome), c]));
+      for(const x of linhas){
+        const c = (x.numero && porNum.get(x.numero.replace(/^0+/,''))) || porNome.get(rhN(x.nome)) || colabs.find(k => rhN(k.nome).startsWith(rhN(x.nome).split(' ')[0]) && rhN(k.nome).endsWith(rhN(x.nome).split(' ').pop()));
+        if(!c){ falta.push(x.nome); continue; }
+        const dados = {bh_positivo: Math.round(x.pos*100)/100, bh_negativo: Math.round(x.neg*100)/100}; if(x.data) dados.data_prevista_gozar_horas = x.data;
+        await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify(dados)}); ok++;
+      }
+    } else {
+      const subst = (document.getElementById('rh-subst')||{}).checked;
+      const comp = linhas.filter(x => x.tipo === 'compliance').map(x => ({numero_pessoal: x.numero || null, nome: x.nome, codigo_conduta: x.codigo_conduta || null, data_privacy: x.data_privacy || null, politica_anticorrupcao: x.politica_anticorrupcao || null, seguranca_protecao: x.seguranca_protecao || null}));
+      const perc = linhas.filter(x => x.tipo === 'percurso').map(x => ({numero_pessoal: x.numero || null, nome: x.nome, curso: x.curso, data_prevista: x.data, observacoes: x.obs}));
+      if(comp.length){ if(subst) await sb('loja_formacao_compliance?id=gt.0', {method:'DELETE'}); await sb('loja_formacao_compliance', {method:'POST', body: JSON.stringify(comp)}); }
+      if(perc.length){ if(subst) await sb('loja_formacoes_percurso?id=gt.0', {method:'DELETE'}); await sb('loja_formacoes_percurso', {method:'POST', body: JSON.stringify(perc)}); }
+      ok = comp.length + perc.length;
+    }
+    alert(`Guardado ✓\n\n${ok} linhas atualizadas${falta.length ? '\n\nNão encontrei na app: ' + falta.slice(0,10).join(', ') + (falta.length > 10 ? '…' : '') : ''}`);
+    lemDados = null; renderFormacoesScreen();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
+function rhBotaoUpload(tipo, texto){
+  if(!souDona()) return '';
+  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="rh-fich-${tipo}" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="rhCarregar(this,'${tipo}')"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rh-fich-${tipo}').click()">📎 ${texto}</button><div id="rh-estado-${tipo}" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+}
+
 async function renderFormacoesScreen(){
   const content = document.getElementById('formacoes-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
   const bhHtml = await blocoBancoHorasGozar();
   const alteracoesHtml = await blocoAlteracoesHorarioPendentes();
   const formacaoHtml = await blocoFormacaoCompliance();
-  content.innerHTML = bhHtml + alteracoesHtml + formacaoHtml;
+  const sec = (t, i) => `<div class="section-title" style="margin-top:6px;">${t}</div>`;
+  content.innerHTML = rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
 }
 
 // ===== Horários por assinar (lista do Hello) — RH =====
@@ -11342,7 +11427,7 @@ async function horGuardarLidos(){
     let assinados = 0;
     if(completa){ const ids = atuais.filter(a => !vistos.has(horChave(a.colaborador_numero, a.descricao))).map(a => a.id); if(ids.length){ await sb(`loja_alteracoes_horario?id=in.(${ids.join(',')})`, {method:'PATCH', body: JSON.stringify({assinado: true, assinado_em: new Date().toISOString()})}); assinados = ids.length; } }
     alert(`Horários atualizados ✓\n\n${novos.length} novas trocas por assinar${completa ? '\n' + assinados + ' marcadas como já assinadas' : ''}.`);
-    renderFormacoesScreen();
+    if(currentScreen === 'lembretes') renderLembretes(); else renderFormacoesScreen();
   }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
 }
 function horLembrar(numero){
