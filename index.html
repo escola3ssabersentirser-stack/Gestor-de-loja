@@ -12855,6 +12855,112 @@ async function editarIndicadorMC(id){
   }
 }
 
+// ---------- REPOSIÇÃO POR COLABORADOR (ficheiro de reposições do SAP) — Melhoria Contínua ----------
+const REP_TIPOS = [['Massiva','#1E4E8C'],['Automática','#1F7A33'],['Visível','#C77F12'],['Sem Stock','#B4231A']];
+function repIso(v){
+  if(v == null || v === '') return null;
+  if(typeof v === 'number') return new Date(Date.UTC(1899,11,30) + Math.round(v)*864e5).toISOString().slice(0,10);
+  const m = String(v).match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  const m2 = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m2 ? m2[0] : null;
+}
+function repSegunda(iso){ const d = new Date(iso+'T12:00:00'); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.toISOString().slice(0,10); }
+function repLerExcel(wb){
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
+    const hi = R.findIndex(r => r.some(c => /^Tipo Repos/i.test(String(c).trim())) && r.some(c => /^N[ºo°]\.? ?pess/i.test(String(c).trim())));
+    if(hi < 0) continue;
+    const H = R[hi].map(c => String(c).trim()); const ci = re => H.findIndex(h => re.test(h));
+    const c = {num: ci(/^N[ºo°]\.? ?pess/i), tipo: ci(/^Tipo Repos/i), pal: ci(/^Palete/i), data: ci(/^Data$/i), mat: ci(/^Material$/i), rep: ci(/^Reposi/i), hora: ci(/^Hora$/i)};
+    const linhas = [];
+    for(let i = hi+1; i < R.length; i++){
+      const r = R[i]; const num = String(r[c.num]||'').replace(/\D/g,''); const data = repIso(r[c.data]);
+      if(!num || !data) continue;
+      linhas.push({num: num.padStart(8,'0'), tipo: String(r[c.tipo]||'').trim() || 'Outro', pal: String(r[c.pal]||'').trim(), data, mat: String(r[c.mat]||'').replace(/^0+/,''), rep: Number(r[c.rep]) || 0});
+    }
+    return linhas;
+  }
+  return [];
+}
+async function repCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o ficheiro de reposição')) return;
+  const est = document.getElementById('rep-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(!/\.(xlsx|xls|xlsm|csv)$/i.test(f.name)) throw new Error('use o ficheiro Excel das reposições');
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação à internet para ler o Excel');
+    msg('A ler o ficheiro…');
+    const linhas = repLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}));
+    if(!linhas.length) throw new Error('não encontrei as colunas "Nº pess." e "Tipo Repos" — é o ficheiro de reposições?');
+    const colabs = await sb('loja_colaboradores?select=numero_pessoal,nome,secao').catch(()=>[]) || [];
+    const nomeDe = n => { const c = colabs.find(x => String(x.numero_pessoal||'').replace(/\D/g,'').replace(/^0+/,'') === n.replace(/^0+/,'')); return c ? {nome: c.nome, secao: c.secao} : {nome: 'Nº ' + n, secao: ''}; };
+    // separa por semana (segunda a domingo)
+    const semanas = {};
+    linhas.forEach(l => { const k = repSegunda(l.data); (semanas[k] = semanas[k] || []).push(l); });
+    let guardadas = 0;
+    for(const [seg, ls] of Object.entries(semanas)){
+      const pess = {};
+      ls.forEach(l => {
+        const o = pess[l.num] = pess[l.num] || {num: l.num, artigos: 0, linhas: 0, unidades: 0, paletes: new Set(), mats: new Set(), tipos: {}};
+        o.linhas++; o.tipos[l.tipo] = (o.tipos[l.tipo]||0) + 1;
+        if(l.rep > 0){ o.artigos++; o.unidades += l.rep; o.mats.add(l.mat); }
+        if(l.pal) o.paletes.add(l.pal);
+      });
+      const lista = Object.values(pess).map(o => ({...nomeDe(o.num), num: o.num, artigos: o.artigos, linhas: o.linhas, unidades: Math.round(o.unidades), artigos_diferentes: o.mats.size, paletes: o.paletes.size, tipos: o.tipos}))
+        .sort((a,b) => b.artigos - a.artigos);
+      const datas = ls.map(l => l.data).sort();
+      const dados = {colaboradores: lista, total_linhas: ls.length, total_paletes: new Set(ls.map(l => l.pal).filter(Boolean)).size, total_artigos: lista.reduce((s,x)=>s+x.artigos,0), dias: [...new Set(datas)].length};
+      await sb('loja_reposicao_semana?on_conflict=semana_inicio', {method:'POST', body: JSON.stringify({semana_inicio: seg, data_de: datas[0], data_ate: datas[datas.length-1], dados, nome_ficheiro: f.name}), prefer:'resolution=merge-duplicates,return=minimal'});
+      guardadas++;
+    }
+    msg(`<span style="color:var(--green);">✓ Ficheiro lido: ${linhas.length} reposições, ${guardadas} semana${guardadas>1?'s':''}.</span>`);
+    repSemanaSel = null;
+    renderMelhoriaContinua();
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+let repSemanaSel = null;
+async function blocoReposicaoColaboradores(){
+  const semanas = await sb('loja_reposicao_semana?select=semana_inicio,data_de,data_ate,dados&order=semana_inicio.desc&limit=8').catch(()=>[]) || [];
+  const dona = souDona();
+  let html = `<div class="section-title">📦 Reposição por colaborador — paletes e artigos</div>`;
+  if(dona) html += `<div class="card" style="margin-bottom:10px;"><input type="file" id="rep-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="repCarregar(this)">
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rep-fich').click()">📎 Carregar ficheiro de reposições (Excel)</button>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">É só escolher o ficheiro: a app conta as paletes e os artigos de cada colaborador e faz o gráfico da semana.</div><div id="rep-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+  if(!semanas.length) return html + `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem ficheiro de reposições carregado.</div></div>`;
+  const sel = semanas.find(s => s.semana_inicio === repSemanaSel) || semanas[0];
+  const d = sel.dados || {}; const lista = (d.colaboradores || []).filter(x => x.linhas > 0);
+  const ddmm = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) : '';
+  const nSem = typeof numeroSemanaISO === 'function' ? numeroSemanaISO(new Date(sel.semana_inicio+'T12:00:00')) : '';
+  const primeiro = n => { const p = String(n||'').split(' '); return p.length > 1 ? p[0] + ' ' + p[p.length-1] : n; };
+  html += `<div class="card">`;
+  if(semanas.length > 1) html += `<select onchange="repSemanaSel=this.value;renderMelhoriaContinua()" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:13px;margin-bottom:10px;">${semanas.map(s => `<option value="${s.semana_inicio}" ${s===sel?'selected':''}>Semana ${typeof numeroSemanaISO==='function'?numeroSemanaISO(new Date(s.semana_inicio+'T12:00:00')):''} · ${ddmm(s.data_de)} a ${ddmm(s.data_ate)}</option>`).join('')}</select>`;
+  html += `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Semana ${nSem} · ${ddmm(sel.data_de)} a ${ddmm(sel.data_ate)} (${d.dias||'?'} dias)</div>
+    <div class="vs-detail-grid" style="margin-bottom:12px;">
+      <div class="vs-box"><div class="vs-label">🟫 Paletes repostas</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${d.total_paletes ?? '—'}</div></div>
+      <div class="vs-box"><div class="vs-label">📦 Artigos repostos</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${(d.total_artigos ?? 0).toLocaleString('pt-PT')}</div></div>
+    </div>`;
+  // gráfico 1 — paletes por colaborador
+  const comPal = lista.filter(x => x.paletes > 0).sort((a,b) => b.paletes - a.paletes);
+  const maxP = Math.max(1, ...comPal.map(x => x.paletes));
+  html += `<div style="font-weight:700;font-size:13px;color:var(--navy);margin:4px 0 6px;">🟫 Paletes repostas por colaborador</div>`;
+  html += comPal.length ? comPal.map(x => `<div style="display:grid;grid-template-columns:minmax(90px,38%) 1fr 34px;gap:6px;align-items:center;margin:4px 0;font-size:12px;">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${rpEsc(primeiro(x.nome))}</span>
+      <span style="background:var(--line);border-radius:6px;height:14px;overflow:hidden;"><span style="display:block;height:100%;width:${(x.paletes/maxP*100).toFixed(1)}%;background:#7A4E2D;border-radius:6px;"></span></span>
+      <b style="text-align:right;">${x.paletes}</b></div>`).join('') : `<div style="font-size:12px;color:var(--ink-soft);">Sem paletes nesta semana.</div>`;
+  // gráfico 2 — artigos por colaborador, por tipo de reposição
+  const maxA = Math.max(1, ...lista.map(x => x.linhas));
+  html += `<div style="font-weight:700;font-size:13px;color:var(--navy);margin:14px 0 4px;">📦 Artigos repostos por colaborador</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">${REP_TIPOS.map(([t,c]) => `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:3px;"></span>${t}</span>`).join('')}</div>`;
+  html += lista.map(x => `<div style="display:grid;grid-template-columns:minmax(90px,38%) 1fr 40px;gap:6px;align-items:center;margin:4px 0;font-size:12px;">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${rpEsc(x.nome)}">${rpEsc(primeiro(x.nome))}</span>
+      <span style="display:flex;height:14px;border-radius:6px;overflow:hidden;background:var(--line);"><span style="display:flex;width:${(x.linhas/maxA*100).toFixed(1)}%;">${REP_TIPOS.map(([t,c]) => x.tipos && x.tipos[t] ? `<span title="${t}: ${x.tipos[t]}" style="flex:${x.tipos[t]};background:${c};"></span>` : '').join('')}</span></span>
+      <b style="text-align:right;">${x.artigos}</b></div>`).join('');
+  html += `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">Ver tabela</summary><div class="rp-tabela-box" style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;">
+    <tr style="color:var(--ink-soft);"><th style="text-align:left;padding:3px;">Colaborador</th><th style="padding:3px;">Paletes</th><th style="padding:3px;">Artigos</th><th style="padding:3px;">Unid.</th>${REP_TIPOS.map(([t]) => `<th style="padding:3px;">${t}</th>`).join('')}</tr>
+    ${lista.map(x => `<tr style="border-top:1px solid var(--line);"><td style="padding:3px;">${rpEsc(x.nome)}</td><td style="text-align:center;">${x.paletes}</td><td style="text-align:center;font-weight:700;">${x.artigos}</td><td style="text-align:center;">${x.unidades}</td>${REP_TIPOS.map(([t]) => `<td style="text-align:center;">${(x.tipos||{})[t]||0}</td>`).join('')}</tr>`).join('')}
+  </table></div></details>`;
+  html += `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">Paletes = paletes de reposição massiva (nº WPMS diferentes). Artigos = linhas com quantidade reposta. A barra mostra o tipo de reposição.</div></div>`;
+  return html;
+}
+
 async function renderMelhoriaContinua(){
   const content = document.getElementById('melhoria-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -12894,6 +13000,8 @@ async function renderMelhoriaContinua(){
       html += `</div><div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Média das semanas de cada mês. O score da rotina de validades está no cartão Quebras.</div></div>`;
     }
   }catch(e){}
+
+  try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
 
   const porDiaListas = {};
   listas7dias.forEach(l=>{
