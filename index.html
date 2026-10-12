@@ -5145,7 +5145,11 @@ async function editarResultadoDiarioSecao(secao, label){
       <input id="${id}" type="${tipo}" inputmode="decimal" value="${valor ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
     </div>`;
   let html = '';
-  html += campo('inv-resultado', 'Resultado de Inventário (€)', atual.resultado_inventario);
+  html += `<div style="margin-bottom:12px;">
+      <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Resultado de Inventário (€)</label>
+      <div style="display:flex;gap:6px;"><button type="button" onclick="invTrocarSinal('inv-resultado',-1)" style="width:44px;border-radius:8px;border:1px solid var(--red);background:#fff4f4;color:var(--red);font-size:20px;font-weight:800;">−</button>
+      <input id="inv-resultado" type="text" inputmode="decimal" placeholder="0,00" oninput="invCorSinal(this)" value="${atual.resultado_inventario ?? ''}" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;text-align:right;font-weight:700;">
+      <button type="button" onclick="invTrocarSinal('inv-resultado',1)" style="width:44px;border-radius:8px;border:1px solid var(--green);background:#f1faf3;color:var(--green);font-size:20px;font-weight:800;">+</button></div></div>`;
   html += campo('inv-listas', 'Número de listas automáticas hoje', atual.numero_listas_automaticas);
   html += campo('inv-semstock', 'Quantos "Sem Stock" tratados hoje', atual.sem_stock_tratados);
   html += `<div style="margin-bottom:12px;">
@@ -5168,7 +5172,7 @@ function fecharModalInventario(){
 async function guardarModalInventario(){
   const secao = modalInventarioSecaoAtual;
   if(!secao) return;
-  const num = (id) => { const v = parseFloat((document.getElementById(id).value||'').replace(',','.')); return isNaN(v) ? null : v; };
+  const num = (id) => { const v = parseFloat((document.getElementById(id).value||'').trim().replace(/^−/,'-').replace(/^\+/,'').replace(/\s|€/g,'').replace(',','.')); return isNaN(v) ? null : v; };
   const int = (id) => { const v = parseInt(document.getElementById(id).value||''); return isNaN(v) ? null : v; };
 
   try{
@@ -12940,7 +12944,10 @@ async function repCarregar(input){
       const lista = Object.values(pess).map(o => ({...nomeDe(o.num), num: o.num, artigos: o.artigos, linhas: o.linhas, unidades: Math.round(o.unidades), artigos_diferentes: o.mats.size, paletes: o.paletes.size, tipos: o.tipos}))
         .sort((a,b) => b.artigos - a.artigos);
       const datas = ls.map(l => l.data).sort();
-      const dados = {colaboradores: lista, total_linhas: ls.length, total_paletes: new Set(ls.map(l => l.pal).filter(Boolean)).size, total_artigos: lista.reduce((s,x)=>s+x.artigos,0), dias: [...new Set(datas)].length};
+      const porDia = {}, autoPorDia = {};
+      ls.forEach(l => { const d = porDia[l.data] = porDia[l.data] || {}; d[l.tipo] = (d[l.tipo]||0) + 1;
+        if(l.tipo === 'Automática'){ const a = autoPorDia[l.data] = autoPorDia[l.data] || {}; a[l.num] = (a[l.num]||0) + 1; } });
+      const dados = {por_dia: porDia, auto_por_dia: autoPorDia, colaboradores: lista, total_linhas: ls.length, total_paletes: new Set(ls.map(l => l.pal).filter(Boolean)).size, total_artigos: lista.reduce((s,x)=>s+x.artigos,0), dias: [...new Set(datas)].length};
       await sb('loja_reposicao_semana?on_conflict=semana_inicio', {method:'POST', body: JSON.stringify({semana_inicio: seg, data_de: datas[0], data_ate: datas[datas.length-1], dados, nome_ficheiro: f.name}), prefer:'resolution=merge-duplicates,return=minimal'});
       guardadas++;
     }
@@ -12970,6 +12977,29 @@ async function blocoReposicaoColaboradores(){
       <div class="vs-box"><div class="vs-label">🟫 Paletes repostas</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${d.total_paletes ?? '—'}</div></div>
       <div class="vs-box"><div class="vs-label">📦 Artigos repostos</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${(d.total_artigos ?? 0).toLocaleString('pt-PT')}</div></div>
     </div>`;
+  // automáticas por dia
+  if(d.por_dia && Object.keys(d.por_dia).length){
+    const diasOrd = Object.keys(d.por_dia).sort();
+    const nomeDia = iso => new Date(iso+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'short'}).replace('.','');
+    const totDia = iso => Object.values(d.por_dia[iso]).reduce((a,b)=>a+b,0);
+    const maxD = Math.max(1, ...diasOrd.map(totDia));
+    const totAuto = diasOrd.reduce((s,iso) => s + (d.por_dia[iso]['Automática']||0), 0);
+    html += `<div style="font-weight:700;font-size:13px;color:var(--navy);margin:4px 0 2px;">🤖 Automáticas por dia <span style="font-weight:400;color:var(--ink-soft);font-size:11.5px;">· ${totAuto} na semana · média ${Math.round(totAuto/diasOrd.length)} por dia</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">${REP_TIPOS.map(([t,c]) => `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:3px;"></span>${t}</span>`).join('')}</div>`;
+    diasOrd.forEach(iso => { const x = d.por_dia[iso]; const tot = totDia(iso); const au = x['Automática']||0;
+      html += `<div style="display:grid;grid-template-columns:62px 1fr 74px;gap:6px;align-items:center;margin:4px 0;font-size:12px;">
+        <span>${nomeDia(iso)} ${ddmm(iso)}</span>
+        <span style="display:flex;height:16px;border-radius:6px;overflow:hidden;background:var(--line);"><span style="display:flex;width:${(tot/maxD*100).toFixed(1)}%;">${REP_TIPOS.map(([t,c]) => x[t] ? `<span title="${t}: ${x[t]}" style="flex:${x[t]};background:${c};"></span>` : '').join('')}</span></span>
+        <span style="text-align:right;"><b style="color:#1F7A33;">${au}</b> <span style="color:var(--ink-soft);font-size:10.5px;">/ ${tot}</span></span></div>`; });
+    html += `<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">Número a verde = automáticas do dia · a seguir, o total de reposições do dia.</div>`;
+    if(d.auto_por_dia){
+      const pessoas = lista.filter(p => diasOrd.some(iso => (d.auto_por_dia[iso]||{})[p.num]));
+      if(pessoas.length) html += `<details style="margin:2px 0 12px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">Automáticas por colaborador e por dia</summary><div class="rp-tabela-box" style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11.5px;margin-top:6px;min-width:100%;">
+        <tr style="color:var(--ink-soft);"><th style="text-align:left;padding:3px;">Colaborador</th>${diasOrd.map(iso => `<th style="padding:3px;">${nomeDia(iso)}<br>${ddmm(iso)}</th>`).join('')}<th style="padding:3px;">Total</th></tr>
+        ${pessoas.map(p => { const v = diasOrd.map(iso => (d.auto_por_dia[iso]||{})[p.num]||0); return `<tr style="border-top:1px solid var(--line);"><td style="padding:3px;white-space:nowrap;">${rpEsc(primeiro(p.nome))}</td>${v.map(n => `<td style="text-align:center;${n?'':'color:var(--ink-soft);'}">${n||'·'}</td>`).join('')}<td style="text-align:center;font-weight:700;">${v.reduce((a,b)=>a+b,0)}</td></tr>`; }).join('')}
+      </table></div></details>`;
+    }
+  }
   // gráfico 1 — paletes por colaborador
   const comPal = lista.filter(x => x.paletes > 0).sort((a,b) => b.paletes - a.paletes);
   const maxP = Math.max(1, ...comPal.map(x => x.paletes));
@@ -13405,7 +13435,7 @@ async function invGridCarregar(){
     const ant = (historico||[]).find(x => x.secao === sec);
     const antTxt = ant ? `${Number(ant.resultado_inventario).toLocaleString('pt-PT',{maximumFractionDigits:0})} € <span style="font-size:10px;">(${new Date(ant.data+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})})</span>` : '—';
     const campo = podeEditar
-      ? `<input id="inv-grid-${i}" type="text" inputmode="decimal" placeholder="ex: -120,50" value="${v === null ? '' : String(v).replace('.',',')}" style="width:110px;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:14px;text-align:right;">`
+      ? `<span style="display:inline-flex;gap:4px;align-items:center;"><button type="button" onclick="invTrocarSinal('inv-grid-${i}',-1)" style="width:34px;height:36px;border-radius:8px;border:1px solid var(--red);background:#fff4f4;color:var(--red);font-size:18px;font-weight:800;">−</button><input id="inv-grid-${i}" type="text" inputmode="decimal" placeholder="0,00" value="${v === null ? '' : String(v).replace('.',',')}" oninput="invCorSinal(this)" style="width:92px;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:14px;text-align:right;font-weight:700;color:${v===null?'inherit':(v<0?'var(--red)':'var(--green)')};"><button type="button" onclick="invTrocarSinal('inv-grid-${i}',1)" style="width:34px;height:36px;border-radius:8px;border:1px solid var(--green);background:#f1faf3;color:var(--green);font-size:18px;font-weight:800;">+</button></span>`
       : `<b style="color:${v===null?'var(--ink-soft)':(v<0?'var(--red)':'var(--green)')};">${v===null?'—':v.toLocaleString('pt-PT',{maximumFractionDigits:2})+' €'}</b>`;
     html += `<tr style="border-top:1px solid var(--line);">
       <td style="padding:6px 2px;">${labelSecaoPainel(sec)}${r && r.registado_por ? `<div style="font-size:10px;color:var(--ink-soft);">${r.registado_por}</div>` : ''}</td>
@@ -13416,16 +13446,28 @@ async function invGridCarregar(){
   html += `<tr style="border-top:2px solid var(--line);"><td style="padding:8px 2px;font-weight:700;">Total da loja</td><td style="padding:8px 2px;text-align:right;font-weight:800;color:${total<0?'var(--red)':'var(--green)'};">${total.toLocaleString('pt-PT',{maximumFractionDigits:2})} €</td><td></td></tr>`;
   html += `</tbody></table>`;
   html += podeEditar
-    ? `<div style="font-size:11px;color:var(--ink-soft);margin:8px 0;">Valor negativo = falta de stock (perda). Deixe em branco as secções sem inventário nesse dia.</div>
+    ? `<div style="font-size:11px;color:var(--ink-soft);margin:8px 0;">Toque em <b style="color:var(--red);">−</b> para resultado negativo (falta de stock) ou em <b style="color:var(--green);">+</b> para positivo. Deixe em branco as secções sem inventário nesse dia.</div>
        <button class="btn-primary" style="margin-top:4px;" onclick="invGridGuardar()">💾 Guardar resultados</button>`
     : `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">🔒 Só a gestora da loja pode registar resultados.</div>`;
   box.innerHTML = html;
 }
 
+// os teclados numéricos do telemóvel muitas vezes não têm o sinal "-": os botões − e + põem o sinal
+function invTrocarSinal(id, sinal){
+  const el = document.getElementById(id); if(!el) return;
+  let t = String(el.value||'').trim().replace(/^[+\-−]\s*/, '');
+  el.value = sinal < 0 ? '-' + t : t;
+  invCorSinal(el);
+  if(!t) el.focus();
+}
+function invCorSinal(el){
+  const t = String(el.value||'').trim();
+  el.style.color = !t ? 'inherit' : (/^[\-−]/.test(t) ? 'var(--red)' : 'var(--green)');
+}
 async function invGridGuardar(){
   if(!soDona('registar resultados de inventário')) return;
   const data = (document.getElementById('inv-grid-data')||{}).value || hojeISO();
-  const lerNum = (t) => { t = String(t||'').trim().replace(/\s|€/g,''); if(!t) return null; if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.'); const v = parseFloat(t); return isNaN(v) ? NaN : v; };
+  const lerNum = (t) => { t = String(t||'').trim().replace(/\s|€/g,'').replace(/^−/,'-').replace(/^\+/,''); if(!t || t === '-') return null; if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.'); const v = parseFloat(t); return isNaN(v) ? NaN : v; };
   const linhas = []; const erros = [];
   DEPARTAMENTOS_LOJA.forEach((sec, i) => {
     const el = document.getElementById('inv-grid-'+i); if(!el) return;
