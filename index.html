@@ -9922,9 +9922,42 @@ async function gerarDocumentoWordEEmail(titulo, secoes, assinaturaNome, nomeFich
   <head><meta charset='utf-8'><title>${escaparHtmlDoc(titulo)}</title></head>
   <body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;">${corpo}</body></html>`;
 
-  const blob = new Blob(['\ufeff', htmlCompleto], { type: 'application/msword' });
-  const nomeFicheiro = `${nomeFicheiroBase}.doc`;
+  // Word verdadeiro (.docx) — abre bem no telemóvel e no computador; se não houver internet para a biblioteca, usa o formato antigo
+  let blob, nomeFicheiro;
+  try{
+    blob = await gerarDocxBlob(titulo, secoes, assinaturaNome);
+    nomeFicheiro = `${nomeFicheiroBase}.docx`;
+  }catch(e){
+    console.error('docx falhou, a usar .doc', e);
+    blob = new Blob(['\ufeff', htmlCompleto], { type: 'application/msword' });
+    nomeFicheiro = `${nomeFicheiroBase}.doc`;
+  }
   await partilharOuDescarregarFicheiro(blob, nomeFicheiro, titulo);
+}
+
+async function gerarDocxBlob(titulo, secoes, assinaturaNome){
+  if(!window.JSZip){
+    await infoCarregarScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    for(let i = 0; i < 40 && !window.JSZip; i++) await new Promise(r => setTimeout(r, 100));
+  }
+  if(!window.JSZip) throw new Error('JSZip indisponível');
+  const x = t => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+  const par = (texto, o = {}) => `<w:p><w:pPr><w:spacing w:before="${o.antes||0}" w:after="${o.depois==null?60:o.depois}"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>${o.negrito?'<w:b/>':''}${o.cor?`<w:color w:val="${o.cor}"/>`:''}<w:sz w:val="${o.tam||22}"/></w:rPr><w:t xml:space="preserve">${x(texto)}</w:t></w:r></w:p>`;
+  let corpo = par(titulo, {negrito:true, cor:'14532D', tam:36, depois:80});
+  corpo += par('Loja 747 — Viana do Castelo Portuzelo', {cor:'555555', depois:200});
+  secoes.forEach(sec => {
+    corpo += par(sec.label, {negrito:true, cor:'1B7A4A', tam:28, antes:240, depois:80});
+    const texto = (sec.valor && String(sec.valor).trim()) ? String(sec.valor) : '—';
+    texto.split('\n').forEach(l => { corpo += par(l || ' '); });
+  });
+  corpo += par('Assinado por: ' + (assinaturaNome || '—'), {antes:400});
+  corpo += par('Data: ' + new Date().toLocaleDateString('pt-PT') + ' ' + new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${corpo}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const zip = new window.JSZip();
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+  zip.file('word/document.xml', doc);
+  return await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
 }
 
 function adicionarFeedback(secao, nomePreenchido, notaAvaliacao, comentarioAvaliacao){
