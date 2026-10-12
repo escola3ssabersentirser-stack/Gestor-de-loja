@@ -8804,7 +8804,7 @@ async function renderResumoReuniao(){
     ${bloco('📉 Quebras', v.quebras)}
     ${bloco('🔍 Auditorias', v.auditorias)}
     ${v.pontos.length ? `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px;">💬 Pontos a discutir</div><ol style="margin:0 0 4px 18px;padding:0;font-size:13px;line-height:1.5;color:var(--ink);">${v.pontos.map(p => `<li>${rpEsc(p)}</li>`).join('')}</ol>` : ''}
-    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"><button class="btn-primary" style="margin:0;flex:1;background:#2B579A;" onclick="resumoWord()">📄 Word</button><button class="btn-primary" style="margin:0;flex:1;background:#217346;" onclick="resumoExcel()">📊 Excel</button></div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"><button class="btn-primary" style="margin:0;flex:1;background:#2B579A;" onclick="resumoWord()">📄 Word</button><button class="btn-primary" style="margin:0;flex:1;background:#217346;" onclick="resumoExcel()">📊 Excel</button><button class="btn-primary" style="margin:0;flex:1;background:#C0392B;" onclick="resumoEmail()">✉️ Email</button></div>
     <button class="btn-primary" style="background:#25D366;margin-top:8px;" onclick="lemEnviarResumo()">📲 Enviar resumo por WhatsApp</button>
   </div>`;
 }
@@ -8924,6 +8924,25 @@ async function resumoWord(){
   await gerarDocumentoWordEEmail(`Resumo semanal — ${semanaAtualLabel()}`, [
     {label:'Vendas (semana, mês e ano)', valor: v.vendas}, {label:'Quebras', valor: v.quebras}, {label:'Auditorias', valor: v.auditorias}, {label:'Pontos a discutir', valor: (v.pontos||[]).map((p,i) => (i+1) + '. ' + p).join('\n')}
   ], currentUser ? currentUser.name : '', `Resumo_semanal_${docNome(semanaAtualLabel())}`);
+}
+// envia o resumo semanal por email: abre o programa de email com o texto todo já escrito
+async function resumoEmail(){
+  const v = resumoReuniaoCache || await gerarResumoReuniao();
+  let ultimo = ''; try{ ultimo = localStorage.getItem('resumo_email_para') || ''; }catch(e){}
+  const para = prompt('Enviar o resumo semanal para que email?\n(pode pôr vários, separados por vírgula)', ultimo);
+  if(para === null) return;
+  try{ localStorage.setItem('resumo_email_para', para.trim()); }catch(e){}
+  const titulo = `Resumo semanal — Loja 747 Portuzelo — ${semanaAtualLabel()}`;
+  const bloco = (t, x) => `${t.toUpperCase()}\n${(x && String(x).trim()) ? String(x).trim() : '—'}\n`;
+  let corpo = `Bom dia,\n\nSegue o resumo semanal da loja 747 — Viana do Castelo Portuzelo (${semanaAtualLabel()}).\n\n`
+    + bloco('Vendas (semana, mês e ano)', v.vendas) + '\n'
+    + bloco('Quebras', v.quebras) + '\n'
+    + bloco('Auditorias', v.auditorias) + '\n'
+    + bloco('Pontos a discutir', (v.pontos||[]).map((p,i) => (i+1) + '. ' + p).join('\n'))
+    + `\nObrigada,\n${currentUser ? currentUser.name : ''}`;
+  if(corpo.length > 6000) corpo = corpo.slice(0, 5900) + '\n\n(… resumo completo no documento Word)';
+  const url = `mailto:${encodeURIComponent(para.replace(/\s+/g,'')).replace(/%2C/gi, ',').replace(/%40/g,'@')}?subject=${encodeURIComponent(titulo)}&body=${encodeURIComponent(corpo)}`;
+  window.location.href = url;
 }
 async function resumoExcel(){
   if(typeof XLSX === 'undefined'){ alert('Sem ligação para criar o Excel. Tente de novo.'); return; }
