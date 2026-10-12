@@ -13202,6 +13202,81 @@ async function marcarValidadeArtigoTratado(id){
   }
 }
 
+// ---------- RESULTADOS DE INVENTÁRIO — TODAS AS SECÇÕES NUM SÓ ECRÃ ----------
+async function blocoInventarioPorSecao(){
+  const hoje = hojeISO();
+  let html = `<div class="section-title">📋 Resultados de Inventário por Secção</div>
+  <div class="card" id="inv-grid-card">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <label style="font-size:12.5px;color:var(--ink-soft);">Data do inventário</label>
+      <input id="inv-grid-data" type="date" value="${hoje}" max="${hoje}" onchange="invGridCarregar()" style="padding:8px;border-radius:8px;border:1px solid var(--line);font-size:14px;">
+    </div>
+    <div id="inv-grid-linhas"><div style="font-size:12.5px;color:var(--ink-soft);">A carregar...</div></div>
+  </div>`;
+  // o ecrã só é desenhado depois de todos os blocos estarem prontos: espera pela caixa
+  let tent = 0; const esperar = () => { if(document.getElementById('inv-grid-linhas')) invGridCarregar(); else if(++tent < 40) setTimeout(esperar, 250); }; setTimeout(esperar, 0);
+  return html;
+}
+
+async function invGridCarregar(){
+  const box = document.getElementById('inv-grid-linhas'); if(!box) return;
+  const data = (document.getElementById('inv-grid-data')||{}).value || hojeISO();
+  const [doDia, historico] = await Promise.all([
+    sb(`loja_resultado_diario_secao?data=eq.${data}&select=secao,resultado_inventario,registado_por`).catch(()=>[]),
+    sb(`loja_resultado_diario_secao?resultado_inventario=not.is.null&data=lt.${data}&select=secao,data,resultado_inventario&order=data.desc&limit=200`).catch(()=>[])
+  ]);
+  const podeEditar = souDona();
+  let total = 0;
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+    <thead><tr><th style="text-align:left;padding:4px 2px;">Secção</th><th style="text-align:right;padding:4px 2px;">Resultado (€)</th><th style="text-align:right;padding:4px 2px;font-weight:400;color:var(--ink-soft);">Anterior</th></tr></thead><tbody>`;
+  DEPARTAMENTOS_LOJA.forEach((sec, i) => {
+    const r = (doDia||[]).find(x => x.secao === sec);
+    const v = r && r.resultado_inventario !== null && r.resultado_inventario !== undefined ? Number(r.resultado_inventario) : null;
+    if(v !== null) total += v;
+    const ant = (historico||[]).find(x => x.secao === sec);
+    const antTxt = ant ? `${Number(ant.resultado_inventario).toLocaleString('pt-PT',{maximumFractionDigits:0})} € <span style="font-size:10px;">(${new Date(ant.data+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})})</span>` : '—';
+    const campo = podeEditar
+      ? `<input id="inv-grid-${i}" type="text" inputmode="decimal" placeholder="ex: -120,50" value="${v === null ? '' : String(v).replace('.',',')}" style="width:110px;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:14px;text-align:right;">`
+      : `<b style="color:${v===null?'var(--ink-soft)':(v<0?'var(--red)':'var(--green)')};">${v===null?'—':v.toLocaleString('pt-PT',{maximumFractionDigits:2})+' €'}</b>`;
+    html += `<tr style="border-top:1px solid var(--line);">
+      <td style="padding:6px 2px;">${labelSecaoPainel(sec)}${r && r.registado_por ? `<div style="font-size:10px;color:var(--ink-soft);">${r.registado_por}</div>` : ''}</td>
+      <td style="padding:6px 2px;text-align:right;">${campo}</td>
+      <td style="padding:6px 2px;text-align:right;font-size:11px;color:var(--ink-soft);">${antTxt}</td>
+    </tr>`;
+  });
+  html += `<tr style="border-top:2px solid var(--line);"><td style="padding:8px 2px;font-weight:700;">Total da loja</td><td style="padding:8px 2px;text-align:right;font-weight:800;color:${total<0?'var(--red)':'var(--green)'};">${total.toLocaleString('pt-PT',{maximumFractionDigits:2})} €</td><td></td></tr>`;
+  html += `</tbody></table>`;
+  html += podeEditar
+    ? `<div style="font-size:11px;color:var(--ink-soft);margin:8px 0;">Valor negativo = falta de stock (perda). Deixe em branco as secções sem inventário nesse dia.</div>
+       <button class="btn-primary" style="margin-top:4px;" onclick="invGridGuardar()">💾 Guardar resultados</button>`
+    : `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">🔒 Só a gestora da loja pode registar resultados.</div>`;
+  box.innerHTML = html;
+}
+
+async function invGridGuardar(){
+  if(!soDona('registar resultados de inventário')) return;
+  const data = (document.getElementById('inv-grid-data')||{}).value || hojeISO();
+  const lerNum = (t) => { t = String(t||'').trim().replace(/\s|€/g,''); if(!t) return null; if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.'); const v = parseFloat(t); return isNaN(v) ? NaN : v; };
+  const linhas = []; const erros = [];
+  DEPARTAMENTOS_LOJA.forEach((sec, i) => {
+    const el = document.getElementById('inv-grid-'+i); if(!el) return;
+    const v = lerNum(el.value);
+    if(Number.isNaN(v)) erros.push(labelSecaoPainel(sec));
+    else if(v !== null) linhas.push({data, secao: sec, resultado_inventario: Math.round(v*100)/100, registado_por: currentUser ? currentUser.name : null});
+  });
+  if(erros.length){ alert('Valor inválido em: ' + erros.join(', ') + '. Use só números, por exemplo -120,50'); return; }
+  if(!linhas.length){ alert('Escreva pelo menos um resultado.'); return; }
+  try{
+    await sb('loja_resultado_diario_secao?on_conflict=data,secao', {method:'POST', body: JSON.stringify(linhas), prefer:'resolution=merge-duplicates,return=minimal'});
+    showToast();
+    invGridCarregar();
+    try{ if(typeof atualizarTudo === 'function') atualizarTudo(false); }catch(e){}
+  }catch(e){
+    console.error('Erro ao guardar inventário', e);
+    alert('Não consegui guardar os resultados. ' + (e && e.message ? e.message : ''));
+  }
+}
+
 async function renderControloQuebra(){
   const content = document.getElementById('controlo-quebra-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -13215,6 +13290,7 @@ async function renderControloQuebra(){
 
   let html = '';
 
+  html += await blocoInventarioPorSecao();
   html += await blocoScoreValidades();
   html += await blocoAlertasQuebraArtigo(null);
 
@@ -13338,7 +13414,7 @@ async function renderControloQuebra(){
   html += `<div class="section-title">📊 Resultados de Inventários Diários — Evolução</div>`;
   html += `<div class="card">`;
   if(!dias.length){
-    html += `<div style="font-size:13px;color:var(--ink-soft);">Ainda sem resultados diários registados. Registe em cada secção, aba Tarefas → "Resultados de Inventário".</div>`;
+    html += `<div style="font-size:13px;color:var(--ink-soft);">Ainda sem resultados registados. Registe no topo deste ecrã, em "Resultados de Inventário por Secção".</div>`;
   } else {
     const max = Math.max(...dias.map(d=>Math.abs(porDia[d])), 1);
     html += `<div class="rchart" style="height:90px;">`;
