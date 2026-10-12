@@ -11633,20 +11633,29 @@ function horDesc(x){ return `Troca de horário — Dia ${x.dia.slice(8,10)}/${x.
 function horChave(numero, desc){ const m = String(desc||'').match(/Dia (\d{2}\/\d{2}):\s*(\S+)\s*→\s*(\S+)/); return horNum(numero) + '|' + (m ? m[1] + '|' + m[2] + '|' + m[3] : desc); }
 function horIso(v){ if(v == null || v === '') return null; if(typeof v === 'number'){ const d = new Date(Date.UTC(1899,11,30) + Math.round(v)*864e5); return d.toISOString().slice(0,10); } const m = String(v).match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); return m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : null; }
 function horLerExcel(wb){
-  const out = [];
+  const out = []; const vistos = new Set(); let lidas = false;
   for(const n of wb.SheetNames){
     const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
     const hi = R.findIndex(r => r.some(c => /Nome de Colaborador/i.test(String(c))) && r.some(c => /^Dia$/i.test(String(c).trim())));
-    if(hi < 0) continue;
+    if(hi < 0 || R.length - hi < 2) continue;
+    lidas = true;
     const H = R[hi].map(c => String(c).trim());
     const ci = re => H.findIndex(h => re.test(h));
     const cNum = ci(/N\.?º? ?de Colaborador/i), cNome = ci(/Nome de Colaborador/i), cDia = ci(/^Dia$/i), cTipo = ci(/Tipo de Troca/i), cData = ci(/Data da Troca/i), cSt = ci(/Status/i);
     const hors = H.map((h,i) => /^Hor[áa]rio/i.test(h) ? i : -1).filter(i => i >= 0);
+    const cSec = ci(/^Sec[çc][ãa]o$/i);
     for(let i = hi+1; i < R.length; i++){
       const r = R[i]; const nome = String(r[cNome]||'').trim(); const dia = horIso(r[cDia]); if(!nome || !dia) continue;
-      out.push({numero: horNum(r[cNum]), nome, dia, de: String(r[hors[0]]||'').trim(), para: String(r[hors[1]]||'').trim(), tipo: cTipo >= 0 ? String(r[cTipo]||'').trim() : '', data: horIso(r[cData]) || dia, status: cSt >= 0 ? String(r[cSt]||'').trim() : ''});
+      const status = cSt >= 0 ? String(r[cSt]||'').trim() : '';
+      // o mapa do Hello traz o histórico todo: só ficam as que ainda faltam assinar
+      if(/efetuad|efectuad|cancelad/i.test(status)) continue;
+      const x = {numero: horNum(r[cNum]), nome, dia, de: String(r[hors[0]]||'').trim(), para: String(r[hors[1]]||'').trim(), tipo: cTipo >= 0 ? String(r[cTipo]||'').trim() : '', data: horIso(r[cData]) || dia, status: status || 'Por assinar', secao: cSec >= 0 ? String(r[cSec]||'').replace(/^\d+\s*/,'').trim() : ''};
+      const k = x.numero + '|' + x.dia + '|' + x.de + '|' + x.para;
+      if(vistos.has(k)) continue; vistos.add(k); out.push(x);
     }
+    if(lidas) break; // as outras folhas do ficheiro são cópias da mesma lista
   }
+  out.sort((a,b) => a.nome.localeCompare(b.nome) || a.dia.localeCompare(b.dia));
   return out;
 }
 function horLerTextoOCR(t){
