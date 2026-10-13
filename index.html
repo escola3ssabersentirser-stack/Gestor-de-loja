@@ -4196,7 +4196,7 @@ async function renderDashboard(){
     renderAniversariosHoje();
     renderPlanoAcaoGestores();
     renderFeedbackGestores();
-    blocoAvaliacaoClienteSecao(null, null, true).then(html => document.getElementById('avaliacao-gestores-wrap').innerHTML = html);
+    Promise.all([blocoAvaliacaoClienteSecao(null, null, true), blocoAquiObservacoes().catch(()=>'')]).then(([h1, h2]) => document.getElementById('avaliacao-gestores-wrap').innerHTML = h1 + `<div class="aqui-obs-wrap">${h2}</div>`);
   } else {
     chefeOnly1.classList.add('hidden');
     chefeOnly2.classList.add('hidden');
@@ -8313,8 +8313,24 @@ async function infoNegocioDaSemana(d){
   const n = numeroSemanaISO(d || new Date());
   const rows = await sb('loja_informacao_negocio_historico?select=semana,resumo,data_documento&order=data_documento.desc.nullslast,id.desc&limit=12') || [];
   const nDe = r => Number(String(r.semana || '').replace(/\D/g,'')) || 0;
-  const a = rows.find(r => nDe(r) === n);
-  return a ? [a] : [];
+  const daSemana = rows.filter(r => nDe(r) === n);
+  const principal = daSemana.find(r => !infoEhExtra(r));
+  const extras = daSemana.filter(r => infoEhExtra(r));
+  if(!principal && !extras.length) return [];
+  const dm = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
+  // os extras (mais recentes) aparecem primeiro em resumo curto; o texto completo fica no fim
+  const topo = extras.map(e => `⚡ EXTRA ${dm(e.data_documento)}: ${infoIndice(e.resumo) || String(e.resumo||'').split(/\n\s*\n/)[0].replace(/^Índice:\s*/i,'').slice(0, 300)}`).join('\n');
+  const fim = extras.map(e => `\n\n— INFORMAÇÃO EXTRA ${dm(e.data_documento)} —\n${e.resumo || ''}`).join('');
+  const base = principal || extras[0];
+  return [{...base, resumo: (topo ? topo + '\n\n' : '') + (principal ? (principal.resumo || '') : '') + fim}];
+}
+function infoEhExtra(r){ return /\bextra\b/i.test(String((r && (r.titulo || r.nome_ficheiro)) || '')); }
+// títulos do índice do documento (linhas com "....." até ao número da página)
+function infoIndice(t){
+  const vistos = new Set(); const out = [];
+  String(t||'').split('\n').forEach(l => { const m = l.match(/^\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 ,.ºª&()\/'’\-–]{3,}?)\s*\.{4,}\s*\d+\s*$/);
+    if(m){ const h = m[1].trim().replace(/\s+/g,' '); const k = h.toUpperCase(); if(!vistos.has(k) && !/^ÍNDICE$/.test(k)){ vistos.add(k); out.push(h.charAt(0) + h.slice(1).toLowerCase()); } } });
+  return out.slice(0, 12).join(' · ');
 }
 async function renderInfoNegocioHistorico(){
   const wrap = document.getElementById('info-negocio-historico-wrap');
@@ -8329,25 +8345,28 @@ async function renderInfoNegocioHistorico(){
   // a semana em destaque é sempre a semana atual; a seguinte aparece como "próxima"; o resto vai para o arquivo
   const cur = numeroSemanaISO(new Date());
   const nDe = r => Number(String(r.semana || '').replace(/\D/g,'')) || 0;
-  const atual = rows.find(r => nDe(r) === cur), proxima = rows.find(r => nDe(r) === cur + 1);
-  const arquivo = rows.filter(r => r !== atual && r !== proxima);
+  const atual = rows.find(r => nDe(r) === cur && !infoEhExtra(r)), proxima = rows.find(r => nDe(r) === cur + 1 && !infoEhExtra(r));
+  const extrasAtual = rows.filter(r => nDe(r) === cur && infoEhExtra(r)), extrasProx = rows.filter(r => nDe(r) === cur + 1 && infoEhExtra(r));
+  const arquivo = rows.filter(r => r !== atual && r !== proxima && !extrasAtual.includes(r) && !extrasProx.includes(r));
   const cartao = (r, etiqueta, cor) => `<div class="card" style="border-left:5px solid ${cor};margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">
-        <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(r.semana || r.titulo)} <span style="font-size:11px;font-weight:700;color:${cor};">· ${etiqueta}</span></span>
+        <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(infoEhExtra(r) ? r.titulo : (r.semana || r.titulo))} <span style="font-size:11px;font-weight:700;color:${cor};">· ${etiqueta}</span></span>
         <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${fmt(r.data_documento)}</span>
       </div>
       ${infoTexto(r.resumo)}
       ${r.caminho ? `<button class="econ-btn" style="margin-top:10px;" onclick="infoNegAbrir(${r.id})">📄 Abrir documento original</button>` : ''}
       ${gestora ? `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn-primary" style="margin-top:0;flex:1;padding:8px;font-size:12.5px;" onclick="infoNegForm(${r.id})">✏️ Editar</button></div>` : ''}
     </div>`;
+  extrasAtual.forEach(e => { html += cartao(e, 'extra desta semana', '#C0392B'); });
   if(atual) html += cartao(atual, 'esta semana', 'var(--teal)');
   else html += `<div class="card" style="border-left:5px solid #C77F12;margin-bottom:10px;font-size:12.5px;">⚠️ Ainda não há informação de negócio da <b>Semana ${cur}</b> (esta semana).</div>`;
   if(proxima) html += cartao(proxima, 'próxima semana', '#1F7A33');
+  extrasProx.forEach(e => { html += cartao(e, 'extra da próxima semana', '#C0392B'); });
   if(arquivo.length){
     html += `<details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);padding:6px 2px;">📁 Arquivo (${arquivo.length})</summary>`;
     arquivo.forEach(o => { html += `<div class="card" style="margin:8px 0;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-          <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(o.semana || o.titulo)}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(infoEhExtra(o) ? o.titulo : (o.semana || o.titulo))}</span>
           <span style="font-size:11px;color:var(--ink-soft);">${fmt(o.data_documento)}</span>
         </div>
         ${infoTexto(o.resumo)}${o.caminho ? `<button class="econ-btn" style="margin-top:8px;" onclick="infoNegAbrir(${o.id})">📄 Abrir documento</button>` : ''}
@@ -8405,6 +8424,8 @@ async function infoNegCarregar(input){
     const hoje = new Date();
     const dataDoc = mData ? `${mData[3]}-${mData[2].padStart(2,'0')}-${mData[1].padStart(2,'0')}` : dataLocalISO(hoje);
     const semana = 'Semana ' + nSem;
+    // "Extra 2.ª feira" e outros extras juntam-se à semana, não substituem a informação semanal
+    const extra = /\bextra\b/i.test(f.name) || /\bextra\b/i.test(texto.slice(0, 300));
     msg('A guardar…');
     const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
     const caminho = `informacao-negocio/${Date.now()}_${limpo}`;
@@ -8413,12 +8434,13 @@ async function infoNegCarregar(input){
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
       guardouFicheiro = res.ok;
     }catch(e){}
-    const dados = {semana, titulo: 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
-    const ja = await sb(`loja_informacao_negocio_historico?semana=eq.${encodeURIComponent(semana)}&select=id`);
+    const dados = {semana, titulo: extra ? `Informação de Negócio Extra ${/2\.?\s*ª?\s*feira/i.test(texto.slice(0,300) + f.name) ? '2.ª feira ' : ''}· ${semana}` : 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
+    const jaTodos = await sb(`loja_informacao_negocio_historico?semana=eq.${encodeURIComponent(semana)}&select=id,titulo,data_documento`) || [];
+    const ja = jaTodos.filter(r => extra ? (infoEhExtra(r) && r.data_documento === dataDoc) : !infoEhExtra(r));
     if(ja && ja.length) await sb(`loja_informacao_negocio_historico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)});
     else await sb('loja_informacao_negocio_historico', {method:'POST', body: JSON.stringify(dados)});
     await renderInfoNegocioHistorico();
-    const e2 = document.getElementById('info-neg-estado'); if(e2) e2.textContent = `✓ ${semana} carregada${mSem ? '' : ' (não encontrei o número da semana no documento — confirme e corrija em Editar)'}.`;
+    const e2 = document.getElementById('info-neg-estado'); if(e2) e2.textContent = `✓ ${extra ? 'Extra da ' : ''}${semana} carregad${extra ? 'o (junta-se à informação semanal)' : 'a'}${mSem ? '' : ' (não encontrei o número da semana no documento — confirme e corrija em Editar)'}.`;
   }catch(e){ msg('✕ Não consegui carregar: ' + (e && e.message || e)); }
 }
 async function infoNegAbrir(id){
@@ -10596,6 +10618,69 @@ async function enviarPedidosEconomatoEmail(){
 
 const LINK_FORM_AQUI_CLIENTE = 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=fVI7hPGtkE27GYPYg87TmSzZw09yyZhJkCYb0zr5YoRUNVI4MTdFUU5RUlFDRTBNSVFHWlcxUFZCNy4u&route=shorturl';
 
+// ---------- Nº de Observações "AQUI para o Cliente" (ficheiro da região) ----------
+function aquiLerExcel(wb, nomeFicheiro){
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
+    const N = t => String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+    const hi = R.findIndex(r => r.some(c => /observa/.test(N(c))) && r.some(c => /loja/.test(N(c))));
+    if(hi < 0) continue;
+    const H = R[hi].map(N); const ci = re => H.findIndex(h => re.test(h));
+    const c = {cod: ci(/codigo|cod\.? retail/), nome: ci(/nome da loja|^loja$/), obs: ci(/observa/), dm: ci(/^dm|diretor/), dao: ci(/^dao$/), reg: ci(/regiao/)};
+    const lojas = [];
+    for(let i = hi+1; i < R.length; i++){ const r = R[i]; const nome = String(r[c.nome]||'').trim(); if(!nome) continue;
+      lojas.push({cod: String(r[c.cod]||'').trim(), nome, obs: Number(r[c.obs]) || 0, dm: c.dm >= 0 ? String(r[c.dm]||'').trim() : '', dao: c.dao >= 0 ? String(r[c.dao]||'').trim() : '', regiao: c.reg >= 0 ? String(r[c.reg]||'').trim() : ''}); }
+    if(!lojas.length) continue;
+    const nossa = lojas.find(l => l.cod === '747') || lojas.find(l => /portuz/i.test(l.nome));
+    if(!nossa) throw new Error('não encontrei a loja 747 no ficheiro');
+    const ord = lojas.slice().sort((a,b) => b.obs - a.obs);
+    const area = lojas.filter(l => l.dm && l.dm === nossa.dm).sort((a,b) => b.obs - a.obs);
+    const m = String(nomeFicheiro||'').match(/(\d{1,2})[-_.](\d{1,2})(?:[-_.](\d{2,4}))?/);
+    const hoje = new Date(); let data = dataLocalISO(hoje);
+    if(m){ const ano = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : String(hoje.getFullYear()); data = `${ano}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+    return {data, dados: {loja: nossa, posicao: lojas.filter(l => l.obs > nossa.obs).length + 1, total_lojas: lojas.length, total_obs: lojas.reduce((s,l)=>s+l.obs,0), media: Math.round(lojas.reduce((s,l)=>s+l.obs,0)/lojas.length*10)/10, sem_obs: lojas.filter(l => !l.obs).length, area_dm: nossa.dm, area, top: ord.slice(0,5)}};
+  }
+  return null;
+}
+async function aquiCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o ficheiro AQUI para o Cliente')) return;
+  const est = document.getElementById('aqui-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    const r = aquiLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}), f.name);
+    if(!r) throw new Error('não reconheci o ficheiro — precisa das colunas "Nome da Loja" e "Nº Observações"');
+    await sb('loja_aqui_observacoes?on_conflict=data', {method:'POST', body: JSON.stringify(r), prefer:'resolution=merge-duplicates,return=minimal'});
+    msg(`<span style="color:var(--green);">✓ Lido: loja 747 com ${r.dados.loja.obs} observações (${r.dados.posicao}.º de ${r.dados.total_lojas} lojas).</span>`);
+    document.querySelectorAll('.aqui-obs-wrap').forEach(async w => { w.innerHTML = await blocoAquiObservacoes(); });
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+async function blocoAquiObservacoes(){
+  const rows = await sb('loja_aqui_observacoes?select=data,dados&order=data.desc&limit=6').catch(()=>[]) || [];
+  const dona = souDona();
+  let html = `<div class="section-title">👀 Observações "AQUI para o Cliente" — loja vs área</div><div class="card">`;
+  if(dona) html += `<input type="file" id="aqui-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="aquiCarregar(this)"><button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('aqui-fich').click()">📎 Carregar ficheiro Nº Observações (Excel)</button><div id="aqui-estado" style="font-size:12px;margin-bottom:8px;"></div>`;
+  if(!rows.length) return html + `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem ficheiro carregado.</div></div>`;
+  const r = rows[0], d = r.dados || {}, ant = rows[1] && rows[1].dados;
+  const dt = new Date(r.data+'T12:00:00').toLocaleDateString('pt-PT');
+  const dif = ant ? d.loja.obs - ant.loja.obs : null;
+  html += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Dados de ${dt}</div>
+    <div class="vs-detail-grid" style="margin-bottom:10px;">
+      <div class="vs-box"><div class="vs-label">Loja 747</div><div class="vs-value" style="font-size:22px;color:var(--navy);">${d.loja.obs}${dif !== null ? ` <span style="font-size:12px;color:${dif>=0?'var(--green)':'var(--red)'};">${dif>=0?'▲ +':'▼ '}${dif}</span>` : ''}</div><div style="font-size:11px;color:var(--ink-soft);">observações</div></div>
+      <div class="vs-box"><div class="vs-label">Posição</div><div class="vs-value" style="font-size:22px;color:var(--navy);">${d.posicao}.º</div><div style="font-size:11px;color:var(--ink-soft);">de ${d.total_lojas} lojas · média ${String(d.media).replace('.',',')}</div></div>
+    </div>`;
+  if(d.area && d.area.length){
+    const max = Math.max(1, ...d.area.map(l => l.obs));
+    html += `<div style="font-weight:700;font-size:12.5px;color:var(--navy);margin:4px 0 6px;">Área ${rpEsc(d.area_dm)}</div>`;
+    d.area.forEach((l, i) => { const eu = l.cod === d.loja.cod;
+      html += `<div style="display:grid;grid-template-columns:18px minmax(80px,40%) 1fr 28px;gap:6px;align-items:center;margin:4px 0;font-size:12px;${eu?'font-weight:800;':''}">
+        <span style="color:var(--ink-soft);">${i+1}.</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${rpEsc(l.nome)}</span>
+        <span style="background:var(--line);border-radius:6px;height:12px;overflow:hidden;"><span style="display:block;height:100%;width:${(l.obs/max*100).toFixed(1)}%;background:${eu?'#1F7A33':'#8A938D'};border-radius:6px;"></span></span>
+        <b style="text-align:right;">${l.obs}</b></div>`; });
+  }
+  html += `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">Região: ${d.total_obs} observações em ${d.total_lojas} lojas · ${d.sem_obs} lojas sem nenhuma.</div></div>`;
+  return html;
+}
+
 async function blocoAvaliacaoClienteSecao(secao, label, modoSimples){
   if(modoSimples){
     const total = await sb('loja_avaliacoes_cliente?select=nota');
@@ -11621,7 +11706,11 @@ function rhLerFormacoes(wb){
   const cc = {codigo_conduta: c(/conduta/), data_privacy: c(/privacy|privacidade/), politica_anticorrupcao: c(/anticorrup/), seguranca_protecao: c(/seguranca/)};
   const cCurso = c(/curso|percurso|acao|formacao/), cData = c(/data/), cEstado = c(/estado|situacao|status|observ/);
   const out = [];
-  t.linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return; const numero = num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '';
+  // ficheiros da empresa toda (todas as lojas): fica só a loja 747 Portuzelo
+  const cLoja = c(/^loja$|^nome da loja$|^loja /);
+  let linhas = t.linhas;
+  if(cLoja >= 0){ const nossa = v => /portuz|\b747\b/i.test(String(v||'')); if(linhas.some(r => nossa(r[cLoja]))) linhas = linhas.filter(r => nossa(r[cLoja])); }
+  linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return; const numero = num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '';
     if(Object.values(cc).some(i => i >= 0)){ const o = {tipo: 'compliance', numero, nome: nm}; Object.entries(cc).forEach(([k,i]) => { if(i >= 0) o[k] = String(r[i]||'').trim() || null; }); out.push(o); }
     else if(cCurso >= 0 && String(r[cCurso]||'').trim()) out.push({tipo: 'percurso', numero, nome: nm, curso: String(r[cCurso]).trim(), data: cData >= 0 ? horIso(r[cData]) : null, obs: cEstado >= 0 ? String(r[cEstado]||'').trim() || null : null});
   });
@@ -13065,6 +13154,7 @@ async function renderMelhoriaContinua(){
   }catch(e){}
 
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
+  try{ html += `<div class="aqui-obs-wrap">${await blocoAquiObservacoes()}</div>`; }catch(e){}
 
   const porDiaListas = {};
   listas7dias.forEach(l=>{
