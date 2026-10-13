@@ -824,6 +824,10 @@
               <span class="h3s-ic">📈</span><span class="h3s-tile-tit">Melhoria Contínua</span>
               <span class="h3s-tile-num h3s-abrir">Abrir ›</span><span class="h3s-tile-sub">planos e auditorias</span>
             </button>
+            <button class="h3s-tile" onclick="selectMenu('objetivos2027','Objetivos 2027')">
+              <span class="h3s-ic">🎯</span><span class="h3s-tile-tit">2027</span>
+              <span class="h3s-tile-num">7,5 M€</span><span class="h3s-tile-sub">objetivos da loja e secções</span>
+            </button>
             <button class="h3s-tile" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')">
               <span class="h3s-ic">👥</span><span class="h3s-tile-tit">Recursos Humanos</span>
               <span class="h3s-tile-num" id="h3s-t-rh">—</span><span class="h3s-tile-sub">absentismo</span>
@@ -1357,6 +1361,23 @@
     </div>
   </div>
 
+  <!-- ===================== OBJETIVOS 2027 ===================== -->
+  <div id="objetivos-screen" class="hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="menu-btn" onclick="botaoTopo()" aria-label="Voltar ao início"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h5v-6h4v6h5V10"></path></svg></button>
+        <div>
+          <div class="who">Objetivos</div>
+          <div class="name">2027</div>
+        </div>
+      </div>
+      <button class="logout" onclick="logout()">Sair</button>
+    </div>
+    <div class="content" id="objetivos-content">
+      <div class="placeholder-body"><p>A carregar...</p></div>
+    </div>
+  </div>
+
   <!-- ===================== MELHORIA CONTÍNUA ===================== -->
   <div id="melhoria-screen" class="hidden">
     <div class="topbar">
@@ -1715,6 +1736,7 @@ const MENU_ITEMS = [
   {id:"economato", icon:"🧴", label:"Economato"},
   {id:"planogramas", icon:"🗺️", label:"Planogramas"},
   {id:"melhoria", icon:"📈", label:"Melhoria Contínua"},
+  {id:"objetivos2027", icon:"🎯", label:"Objetivos 2027"},
   {id:"rastreabilidade", icon:"🏷️", label:"Rastreabilidades"},
   {id:"secao:Talho", icon:"🥩", label:"Talho"},
   {id:"secao:Peixaria", icon:"🐟", label:"Peixaria"},
@@ -3242,7 +3264,7 @@ async function areaRelatoriosHtml(){
   const dets = await sb(`loja_auditoria_detalhe?data_auditoria=gte.${anoA}-01-01&resultado_final=not.is.null&select=tipo,resultado_final`).catch(()=>[]) || [];
   const mediaDe = n => { const r = dets.filter(x => x.tipo === n); return r.length ? (r.reduce((a,x) => a + Number(x.resultado_final), 0) / r.length) : null; };
   const nomes = {Ambiental:'Ambiente', Controlo:'Controlo Operacional'};
-  let h = `<p class="com-ajuda" style="margin:0 4px 10px;">Escolha a auditoria para ver ou carregar os relatórios (PDF ou foto).</p><div class="card">`;
+  let h = audBotaoAuto() + `<p class="com-ajuda" style="margin:0 4px 10px;">Ou escolha a auditoria para ver os relatórios guardados.</p><div class="card">`;
   (auds||[]).forEach(a => { const n = (rels||[]).filter(r => r.auditoria === a.nome).length; const nj = String(a.nome).replace(/'/g,"\\'");
     h += `<div class="rel-linha"><span class="rel-ic">📄</span><div class="rel-info"><b>${rpEsc(nomes[a.nome] || a.nome)}</b><small>${n ? n + (n === 1 ? ' relatório' : ' relatórios') : 'sem relatórios ainda'}${a.percentagem != null ? ' · última nota ' + String(a.percentagem).replace('.', ',') + '%' : ''}${mediaDe(a.nome) != null ? ' · média ' + anoA + ': ' + mediaDe(a.nome).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</small></div><button class="lem-w" style="background:#1F7A33" onclick="selectMenu('auditoria:${nj}','Auditoria ${rpEsc(nomes[a.nome] || a.nome)}')">Abrir</button></div>`; });
   return h + `</div>`;
@@ -3383,6 +3405,154 @@ async function areaTratarValidade(id){
 }
 
 
+// ===================== OBJETIVOS 2027 — loja e secções =====================
+const OBJ_ANO = 2027, OBJ_MINIMO = 7500000;
+let objEstado = null;
+const objEur = v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString('pt-PT') + ' €';
+const objPct = v => v == null || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + (v*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%';
+const objLerNum = t => { t = String(t||'').replace(/[€\s]/g,'').replace(/\./g,'').replace(',','.'); if(!t) return null; const n = Number(t); return isNaN(n) ? null : n; };
+async function renderObjetivos2027(){
+  const box = document.getElementById('objetivos-content'); if(!box) return;
+  box.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
+  try{ await carregarResumoPainel(); }catch(e){}
+  const r = resumoPainel || RESUMO_PADRAO;
+  const [guardadoRows, auds, colabsBH] = await Promise.all([
+    sb(`loja_objetivos?ano=eq.${OBJ_ANO}&select=dados,atualizado_em,atualizado_por`).catch(()=>[]),
+    sb('loja_auditorias?select=nome,percentagem&order=id.asc').catch(()=>[]),
+    sb('loja_colaboradores?select=nome,bh_positivo&bh_positivo=gt.20&order=bh_positivo.desc').catch(()=>[])
+  ]);
+  const guardado = (guardadoRows || [])[0];
+  const meses = r.meses || [];
+  const v25 = meses.reduce((s,m) => s + (Number(m.v_ant)||0), 0);
+  const v26 = meses.reduce((s,m) => s + (Number(m.v) > 0 ? Number(m.v) : (Number(m.budget) || Number(m.v_ant) || 0)), 0);
+  const secs = (r.secoes || []).filter(x => Number(x.real) > 0);
+  const somaReal = secs.reduce((s,x) => s + Number(x.real), 0) || 1;
+  const g = (guardado && guardado.dados) || {};
+  objEstado = {v25, v26, meses, total: Number(g.total) || OBJ_MINIMO,
+    secoes: secs.map(x => ({sec: x.sec, peso: Number(x.real)/somaReal, est26: Number(x.real)/somaReal*v26, obj: g.secoes && g.secoes[x.sec] != null ? Number(g.secoes[x.sec]) : null})),
+    quebraObj: g.quebra_obj != null ? Number(g.quebra_obj) : 1.96, notas: g.notas || '', auds: auds || [], bhAcima: colabsBH || [], resumo: r,
+    atualizado: guardado ? guardado.atualizado_em : null, por: guardado ? guardado.atualizado_por : null};
+  objEstado.secoes.forEach(x => { if(x.obj == null) x.obj = Math.round(x.peso * objEstado.total); });
+  objDesenhar();
+}
+function objDesenhar(){
+  const box = document.getElementById('objetivos-content'); const e = objEstado; if(!box || !e) return;
+  const dona = souDona();
+  const somaSec = e.secoes.reduce((s,x) => s + (Number(x.obj)||0), 0);
+  const falta = OBJ_MINIMO - e.total;
+  const difSec = e.total - somaSec;
+  const ultMes = (e.meses.filter(m => Number(m.v) > 0).slice(-1)[0] || {}).mes;
+  let h = `<div class="card" style="text-align:center;border-top:5px solid #1F7A33;">
+    <div style="font-size:12px;color:var(--ink-soft);letter-spacing:.08em;">OBJETIVO DE VENDAS · LOJA 747 PORTUZELO</div>
+    <div style="font-size:44px;font-weight:900;color:var(--navy);line-height:1.1;margin:4px 0;">2027</div>
+    ${dona ? `<div style="display:flex;gap:6px;justify-content:center;align-items:center;margin:6px 0;"><input id="obj-total" type="text" inputmode="decimal" value="${Math.round(e.total).toLocaleString('pt-PT')}" style="width:170px;padding:10px;border-radius:10px;border:2px solid #1F7A33;font-size:20px;font-weight:800;text-align:right;"> <b style="font-size:18px;">€</b></div>
+      <button class="econ-btn" onclick="objMudarTotal()">Aplicar novo total</button>`
+      : `<div style="font-size:28px;font-weight:800;color:#1F7A33;">${objEur(e.total)}</div>`}
+    <div style="font-size:12px;color:${falta > 0 ? 'var(--red)' : 'var(--ink-soft)'};margin-top:6px;">${falta > 0 ? `⚠️ Abaixo do mínimo de ${objEur(OBJ_MINIMO)} (faltam ${objEur(falta)})` : `Mínimo: ${objEur(OBJ_MINIMO)}`}</div>
+  </div>
+  <div class="vs-detail-grid" style="margin-bottom:12px;">
+    <div class="vs-box"><div class="vs-label">vs 2025 (${objEur(e.v25)})</div><div class="vs-value" style="font-size:20px;color:${e.total>=e.v25?'var(--green)':'var(--red)'};">${objPct(e.total/e.v25-1)}</div></div>
+    <div class="vs-box"><div class="vs-label">vs 2026 estimado (${objEur(e.v26)})</div><div class="vs-value" style="font-size:20px;color:${e.total>=e.v26?'var(--green)':'var(--red)'};">${objPct(e.total/e.v26-1)}</div></div>
+    <div class="vs-box"><div class="vs-label">Por semana</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${objEur(e.total/52)}</div></div>
+    <div class="vs-box"><div class="vs-label">Por dia (363 dias)</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${objEur(e.total/363)}</div></div>
+  </div>
+  <div style="font-size:11px;color:var(--ink-soft);margin:-4px 4px 12px;">2026 estimado = vendas reais de janeiro${ultMes ? ' a ' + ultMes.toLowerCase() : ''} + orçamento dos meses que faltam.</div>`;
+  h += `<div class="section-title">🏪 Objetivos por secção</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:430px;">
+    <tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:4px;">Secção</th><th style="padding:4px;">Peso</th><th style="padding:4px;">2026 est.</th><th style="padding:4px;">Objetivo 2027</th><th style="padding:4px;">Cresc.</th><th style="padding:4px;">/semana</th></tr>
+    ${e.secoes.map((x,i) => { const cr = x.est26 ? x.obj/x.est26 - 1 : null; return `<tr style="border-top:1px solid var(--line);">
+      <td style="padding:5px 4px;font-weight:600;">${rpEsc(impTitulo(x.sec))}</td>
+      <td style="text-align:center;">${(x.peso*100).toLocaleString('pt-PT',{maximumFractionDigits:1})}%</td>
+      <td style="text-align:right;">${objEur(x.est26)}</td>
+      <td style="text-align:right;">${dona ? `<input type="text" inputmode="decimal" value="${Math.round(x.obj).toLocaleString('pt-PT')}" onchange="objMudarSec(${i}, this.value)" style="width:100px;padding:6px;border-radius:8px;border:1px solid var(--line);text-align:right;font-weight:700;">` : `<b>${objEur(x.obj)}</b>`}</td>
+      <td style="text-align:center;font-weight:700;color:${cr==null?'inherit':cr>=0?'var(--green)':'var(--red)'};">${objPct(cr)}</td>
+      <td style="text-align:right;">${objEur(x.obj/52)}</td></tr>`; }).join('')}
+    <tr style="border-top:2px solid var(--line);font-weight:800;"><td style="padding:6px 4px;">Total secções</td><td></td><td style="text-align:right;">${objEur(e.secoes.reduce((s,x)=>s+x.est26,0))}</td><td style="text-align:right;color:${Math.abs(difSec) > 1 ? 'var(--red)' : 'var(--green)'};">${objEur(somaSec)}</td><td></td><td style="text-align:right;">${objEur(somaSec/52)}</td></tr>
+    </table>
+    ${Math.abs(difSec) > 1 ? `<div style="font-size:12px;color:var(--red);margin:6px 2px;">${difSec > 0 ? `Faltam ${objEur(difSec)} nas secções para chegar ao objetivo da loja.` : `As secções somam mais ${objEur(-difSec)} do que o objetivo da loja.`}</div>` : `<div style="font-size:12px;color:var(--green);margin:6px 2px;">✓ As secções somam o objetivo da loja.</div>`}
+    ${dona ? `<button class="econ-btn" style="margin-top:4px;" onclick="objRepartir()">↺ Repartir pelo peso de cada secção</button>` : ''}
+    <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Peso = parte de cada secção nas vendas atuais. Pode mudar o objetivo de cada secção; o crescimento é comparado com a estimativa de 2026.</div>
+  </div>`;
+  h += `<div class="section-title">📅 Objetivo mês a mês</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:380px;">
+    <tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:4px;">Mês</th><th style="padding:4px;">2025</th><th style="padding:4px;">2026</th><th style="padding:4px;">Objetivo 2027</th><th style="padding:4px;">/dia</th></tr>
+    ${e.meses.map((m, i) => { const peso = e.v25 ? (Number(m.v_ant)||0)/e.v25 : 1/12; const o = e.total * peso; const dias = new Date(OBJ_ANO, i+1, 0).getDate(); const real = Number(m.v) > 0; const v26m = real ? Number(m.v) : (Number(m.budget) || null);
+      return `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 4px;">${m.mes}</td><td style="text-align:right;">${objEur(m.v_ant)}</td><td style="text-align:right;${real ? '' : 'color:var(--ink-soft);'}">${objEur(v26m)}${real ? '' : '*'}</td><td style="text-align:right;font-weight:800;">${objEur(o)}</td><td style="text-align:right;">${objEur(o/dias)}</td></tr>`; }).join('')}
+    </table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Os meses seguem o mesmo ritmo de 2025. * = orçamento 2026 (mês ainda por fechar).</div></div>`;
+  h += objMetasHtml();
+  h += `<div class="section-title">📝 Outras metas e notas</div><div class="card">
+    <label style="font-size:12.5px;color:var(--ink-soft);">Quebra máxima da loja em 2027 (% das vendas)</label>
+    ${dona ? `<input id="obj-quebra" type="text" inputmode="decimal" value="${e.quebraObj != null ? String(e.quebraObj).replace('.',',') : ''}" placeholder="ex: 2,8" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);margin:4px 0 10px;box-sizing:border-box;">` : `<div style="font-weight:700;margin:4px 0 10px;">${e.quebraObj != null ? String(e.quebraObj).replace('.',',') + '%' : '—'}</div>`}
+    <label style="font-size:12.5px;color:var(--ink-soft);">Notas / estratégia</label>
+    ${dona ? `<textarea id="obj-notas" rows="4" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);margin-top:4px;box-sizing:border-box;">${rpEsc(e.notas)}</textarea>` : `<div style="white-space:pre-line;font-size:13px;margin-top:4px;">${rpEsc(e.notas || '—')}</div>`}
+  </div>`;
+  if(dona) h += `<button class="btn-primary" onclick="objGuardar()">💾 Guardar objetivos 2027</button>`;
+  if(e.atualizado) h += `<div style="font-size:11px;color:var(--ink-soft);text-align:center;margin:8px 0 20px;">Guardado a ${new Date(e.atualizado).toLocaleDateString('pt-PT')}${e.por ? ' por ' + rpEsc(e.por) : ''}</div>`;
+  box.innerHTML = h;
+}
+// metas de 2027 (definidas pela gestora) com o valor atual quando a app o tem
+function objMetasHtml(){
+  const e = objEstado, r = e.resumo || {};
+  const per = r.periodo || [];
+  const rub = n => per.find(x => String(x.rub||'').toLowerCase().startsWith(n.toLowerCase()));
+  const nMeses = Math.max(1, (r.custos || []).filter(c => Number(c.agua) > 0 || Number(c.luz) > 0).length);
+  const anual = v => v == null ? null : v / nMeses * 12;
+  const p1 = v => v == null ? '—' : (v*100).toLocaleString('pt-PT',{maximumFractionDigits:2}) + '%';
+  const qAtual = (r.secoes_total && r.secoes_total.qp != null) ? r.secoes_total.qp : (rub('Quebra em %') || {}).atual;
+  const abs = (rub('Absentismo') || {}).atual;
+  const agua = (rub('Água') || {}).atual, luz = (rub('Luz') || {}).atual, eco = (rub('Economato') || {}).atual;
+  const pessoal = (rub('Encargos c/ pessoal') || {}).atual;
+  const custos3 = [agua, luz, eco].every(v => v != null) ? agua + luz + eco : null;
+  const nomes = {Ambiental:'Ambiente', Controlo:'Controlo Operacional', Distrito:'Distrito'};
+  const estado = (ok) => ok == null ? '<span style="color:var(--ink-soft);">—</span>' : ok ? '<span style="color:var(--green);font-weight:800;">✓ cumpre</span>' : '<span style="color:var(--red);font-weight:800;">✗ por atingir</span>';
+  const linha = (ic, tit, meta, atual, ok, nota) => `<div style="display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);">
+      <span style="font-size:18px;">${ic}</span>
+      <div><div style="font-size:13px;font-weight:700;color:var(--ink);">${tit}</div><div style="font-size:11.5px;color:var(--ink-soft);">Meta: <b style="color:var(--navy);">${meta}</b>${atual != null ? ` · Agora: <b>${atual}</b>` : ''}${nota ? ` · ${nota}` : ''}</div></div>
+      <div style="font-size:11.5px;text-align:right;">${estado(ok)}</div></div>`;
+  let h = `<div class="section-title">🎯 Metas da loja para 2027</div><div class="card" style="padding:4px 12px;">`;
+  h += linha('💶', 'Vendas', objEur(e.total), objEur(e.v26) + ' (2026 est.)', e.v26 >= e.total, objPct(e.total/e.v26-1) + ' de crescimento');
+  h += linha('📉', 'Quebra', (e.quebraObj ?? 1.96).toLocaleString('pt-PT') + '% das vendas', qAtual != null ? p1(qAtual) : null, qAtual != null ? qAtual*100 <= (e.quebraObj ?? 1.96) : null);
+  const audsCom = (e.auds||[]).filter(a => a.nome !== 'Distrito');
+  const audTxt = audsCom.map(a => `${nomes[a.nome] || a.nome} ${a.percentagem != null ? String(a.percentagem).replace('.',',') + '%' : '—'}`).join(' · ');
+  const audOk = audsCom.filter(a => a.percentagem != null);
+  h += linha('✅', 'Auditorias — todas', '95%', audTxt || null, audOk.length ? audOk.every(a => Number(a.percentagem) >= 95) : null, audOk.length ? `${audOk.filter(a => Number(a.percentagem) >= 95).length} de ${audOk.length} já cumprem` : '');
+  h += linha('📈', 'Melhoria Contínua', '96%', r.score_media != null ? Number(r.score_media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '% (média do ano)' : null, r.score_media != null ? Number(r.score_media) >= 96 : null);
+  h += linha('🤒', 'Absentismo', 'máximo 14%', abs != null ? p1(abs) : null, abs != null ? abs <= 0.14 : null);
+  h += linha('💡', 'Água, luz e economato', '−5% vs 2026', custos3 != null ? objEur(anual(custos3)) + '/ano (est.)' : null, null, custos3 != null ? `limite 2027: <b>${objEur(anual(custos3)*0.95)}</b> (água ${objEur(anual(agua)*0.95)}, luz ${objEur(anual(luz)*0.95)}, economato ${objEur(anual(eco)*0.95)})` : '');
+  h += linha('👥', 'Custo com pessoal', '−2% vs 2026', pessoal != null ? objEur(anual(pessoal)) + '/ano (est.)' : null, null, pessoal != null ? `limite 2027: <b>${objEur(anual(pessoal)*0.98)}</b>` : '');
+  h += linha('⏰', 'Banco de horas', 'máximo 20h acumuladas por pessoa', e.bhAcima.length ? `${e.bhAcima.length} acima de 20h` : '0 acima de 20h', e.bhAcima.length === 0, e.bhAcima.length ? e.bhAcima.slice(0,4).map(c => rpEsc(String(c.nome).split(' ')[0]) + ' ' + Number(c.bh_positivo).toLocaleString('pt-PT',{maximumFractionDigits:1}) + 'h').join(', ') : '');
+  h += linha('🎓', 'Formações', 'planeamento mensal', null, null, 'planear todas as formações do mês no início de cada mês');
+  h += linha('🖐️', 'Picagens manuais — loja', 'máximo 5 por mês', null, null);
+  h += linha('🧑‍💼', 'Picagens manuais — gerência', '0 por mês', null, null);
+  h += `</div>`;
+  h += `<div class="card" style="background:#f1faf3;border-left:5px solid #1F7A33;">
+    <div style="font-size:13px;font-weight:800;color:#1F7A33;margin-bottom:6px;">🤝 Objetivo com as pessoas</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${['📚 Formar', '💚 Responsabilidade emocional', '🔄 Partilha', '💬 Comunicação'].map(t => `<span style="background:#fff;border:1px solid #1F7A33;border-radius:16px;padding:5px 10px;font-size:12.5px;font-weight:600;color:#14532D;">${t}</span>`).join('')}</div>
+  </div>`;
+  return h;
+}
+function objMudarTotal(){
+  const v = objLerNum((document.getElementById('obj-total')||{}).value); if(!v){ alert('Escreva o valor do objetivo, por exemplo 7 500 000'); return; }
+  if(v < OBJ_MINIMO && !confirm(`O valor é inferior ao mínimo de ${objEur(OBJ_MINIMO)}. Quer mesmo usar ${objEur(v)}?`)) return;
+  const fator = v / (objEstado.total || v); objEstado.total = v;
+  objEstado.secoes.forEach(x => { x.obj = Math.round(x.obj * fator); });
+  objDesenhar();
+}
+function objMudarSec(i, t){ const v = objLerNum(t); if(v == null) return; objEstado.secoes[i].obj = v; objDesenhar(); }
+function objRepartir(){ objEstado.secoes.forEach(x => { x.obj = Math.round(x.peso * objEstado.total); }); objDesenhar(); }
+async function objGuardar(){
+  if(!soDona('alterar os objetivos')) return;
+  const e = objEstado; const q = (document.getElementById('obj-quebra')||{}).value;
+  e.quebraObj = q && q.trim() ? Number(q.replace(',','.')) : null; e.notas = (document.getElementById('obj-notas')||{}).value || '';
+  if(e.total < OBJ_MINIMO && !confirm('O objetivo está abaixo do mínimo de 7,5 milhões. Guardar mesmo assim?')) return;
+  const secoes = {}; e.secoes.forEach(x => { secoes[x.sec] = Math.round(x.obj); });
+  const mensal = e.meses.map(m => ({mes: m.mes, objetivo: Math.round(e.total * (e.v25 ? (Number(m.v_ant)||0)/e.v25 : 1/12))}));
+  try{
+    await sb('loja_objetivos?on_conflict=ano', {method:'POST', body: JSON.stringify({ano: OBJ_ANO, dados: {total: Math.round(e.total), secoes, mensal, quebra_obj: e.quebraObj, notas: e.notas, base_2025: Math.round(e.v25), base_2026: Math.round(e.v26)}, atualizado_em: new Date().toISOString(), atualizado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'});
+    showToast(); renderObjetivos2027();
+  }catch(err){ alert('Não consegui guardar. Tente novamente.'); }
+}
+
 // ===================== RELATÓRIOS DAS AUDITORIAS (ficheiros) =====================
 const REL_BUCKET = 'loja-relatorios';
 async function renderRelatoriosAuditoria(nome){
@@ -3412,9 +3582,9 @@ async function carregarRelatorioAuditoria(input, nome){
   const caminho = `auditorias/${nome.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9_-]+/g,'_')}/${Date.now()}_${limpo}`;
   try{
     if(est) est.textContent = 'A carregar…';
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false'}, body: f});
-    if(!res.ok) throw new Error(await res.text());
-    const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: (document.getElementById('rel-titulo')||{}).value || null, data_auditoria: (document.getElementById('rel-data')||{}).value || null, caminho, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
+    let res = {ok:false}; try{ res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false'}, body: f}); }catch(e){}
+    const caminhoFinal = res.ok ? caminho : null;
+    const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: (document.getElementById('rel-titulo')||{}).value || null, data_auditoria: (document.getElementById('rel-data')||{}).value || null, caminho: caminhoFinal, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
     const relId = novo && novo[0] && novo[0].id;
     // ler o relatório: data, resultado, técnico e pontos a melhorar → liga à auditoria e atualiza a nota e a média do ano
     if(relId && /\.(pdf|docx)$/i.test(f.name)){
@@ -3433,6 +3603,7 @@ async function abrirRelatorioAuditoria(id){
   const janela = window.open('', '_blank');
   try{
     const rows = await sb(`loja_auditoria_relatorios?id=eq.${id}&select=caminho,tipo_ficheiro`); const r = rows && rows[0]; if(!r) throw new Error('não existe');
+    if(!r.caminho){ if(janela) janela.close(); alert('Deste relatório só ficou guardada a nota (o ficheiro original não foi arquivado).'); return; }
     const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
     if(!res.ok) throw new Error('erro');
     const url = URL.createObjectURL(await res.blob());
@@ -3704,7 +3875,7 @@ function abrirSubHome(qual){
   const box = document.getElementById('h3s-sub-auditorias');
   if(box.style.display === 'block'){ box.style.display = 'none'; return; }
   const audits = (storeData && storeData.audits) || [];
-  let html = `<div style="font-size:17px;font-weight:700;color:var(--ink);">✅ Auditorias</div><div class="h3s-sub-lista">`;
+  let html = `<div style="font-size:17px;font-weight:700;color:var(--ink);">✅ Auditorias</div>` + audBotaoAuto() + `<div class="h3s-sub-lista">`;
   audits.forEach(a=>{
     const semDados = a.pct === null || a.pct === undefined;
     const nomeJs = String(a.name).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -3775,6 +3946,7 @@ function selectMenu(id, label){
   document.getElementById('economato-screen').classList.add('hidden');
   document.getElementById('planogramas-screen').classList.add('hidden');
   document.getElementById('melhoria-screen').classList.add('hidden');
+  { const _o = document.getElementById('objetivos-screen'); if(_o) _o.classList.add('hidden'); }
   document.getElementById('rastreabilidade-screen').classList.add('hidden');
   document.getElementById('controlo-quebra-screen').classList.add('hidden');
   document.getElementById('markdown-screen').classList.add('hidden');
@@ -3816,6 +3988,9 @@ function selectMenu(id, label){
   } else if(id === 'melhoria'){
     document.getElementById('melhoria-screen').classList.remove('hidden');
     renderMelhoriaContinua();
+  } else if(id === 'objetivos2027'){
+    document.getElementById('objetivos-screen').classList.remove('hidden');
+    renderObjetivos2027();
   } else if(id === 'rastreabilidade'){
     document.getElementById('rastreabilidade-screen').classList.remove('hidden');
     renderRastreabilidade();
@@ -4101,6 +4276,7 @@ function logout(){
   document.getElementById('economato-screen').classList.add('hidden');
   document.getElementById('planogramas-screen').classList.add('hidden');
   document.getElementById('melhoria-screen').classList.add('hidden');
+  { const _o = document.getElementById('objetivos-screen'); if(_o) _o.classList.add('hidden'); }
   document.getElementById('rastreabilidade-screen').classList.add('hidden');
   document.getElementById('controlo-quebra-screen').classList.add('hidden');
   document.getElementById('markdown-screen').classList.add('hidden');
@@ -8080,6 +8256,71 @@ async function audLigarRelatorio(nome, relId, texto){
   if(ult && ult[0] && ult[0].data_auditoria === d.data) await sb(`loja_auditorias?nome=eq.${encodeURIComponent(nome)}`, {method:'PATCH', body: JSON.stringify({percentagem: Math.round(d.resultado*100)/100, atualizado_em: new Date().toISOString()})});
   return d;
 }
+// ===== Um só botão: carregar qualquer relatório de auditoria; a app descobre qual é e muda a nota =====
+const AUD_TIPOS = [
+  ['HACCP', /\bHACCP\b|seguran[çc]a alimentar|higiene e seguran[çc]a alimentar/gi],
+  ['Ambiental', /ambient/gi],
+  ['SHT', /\bSHT\b|seguran[çc]a e sa[úu]de no trabalho|seguran[çc]a no trabalho/gi],
+  ['RH', /recursos humanos|auditoria (?:de )?RH\b/gi],
+  ['Controlo', /controlo operacional|auditoria operacional/gi],
+  ['Marketing', /marketing|comunica[çc][ãa]o comercial/gi],
+  ['Distrito', /distrito|melhoria cont[íi]nua/gi]
+];
+const AUD_NOMES = {HACCP:'HACCP', Ambiental:'Ambiente', SHT:'SHT', RH:'RH', Controlo:'Controlo Operacional', Marketing:'Marketing', Distrito:'Distrito / Melhoria Contínua'};
+function audDetetarTipo(texto, nomeFicheiro){
+  const nf = String(nomeFicheiro||'');
+  for(const [n, re] of AUD_TIPOS){ re.lastIndex = 0; if(re.test(nf)) return n; }
+  const t = String(texto||'').slice(0, 4000); let melhor = null, max = 0;
+  for(const [n, re] of AUD_TIPOS){ const c = (t.match(re) || []).length; if(c > max){ max = c; melhor = n; } }
+  return melhor;
+}
+async function audCarregarAuto(input){
+  const f = input.files && input.files[0]; input.value = '';
+  if(!f || !soDona('carregar relatórios de auditoria')) return;
+  const est = document.getElementById('aud-auto-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  if(f.size > 20*1024*1024){ alert('O ficheiro é demasiado grande (máximo 20 MB).'); return; }
+  try{
+    let texto = '';
+    if(/\.(pdf|docx|txt)$/i.test(f.name)){ msg('A ler o relatório…'); texto = await infoLerTexto(f); }
+    let nome = audDetetarTipo(texto, f.name);
+    const lista = Object.keys(AUD_NOMES);
+    if(!nome || !confirm(`Este relatório é da auditoria ${AUD_NOMES[nome]}?\n\nOK = sim · Cancelar = escolher outra`)){
+      const esc = prompt('De que auditoria é este relatório? Escreva o número:\n\n' + lista.map((n,i) => `${i+1} — ${AUD_NOMES[n]}`).join('\n'), nome ? String(lista.indexOf(nome)+1) : '');
+      if(esc === null){ msg(''); return; }
+      nome = lista[Number(esc)-1]; if(!nome){ alert('Número inválido.'); msg(''); return; }
+    }
+    msg('A guardar o relatório…');
+    // guardar o ficheiro (se falhar, continua na mesma: o importante é ler a nota)
+    const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+    let caminho = `auditorias/${nome}/${Date.now()}_${limpo}`;
+    try{ const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f}); if(!res.ok) caminho = null; }catch(e){ caminho = null; }
+    const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: f.name.replace(/\.[^.]+$/,''), caminho, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
+    const relId = novo && novo[0] && novo[0].id;
+    let d = null;
+    if(relId && texto) d = await audLigarRelatorio(nome, relId, texto);
+    if(!d || d.resultado == null || !d.data){
+      const v = prompt(`Guardei o relatório de ${AUD_NOMES[nome]}, mas não consegui ler ${d && d.resultado != null ? 'a data' : 'a nota'} no documento.\n\nEscreva a nota (%) para atualizar a auditoria, ou deixe em branco:`, d && d.resultado != null ? String(d.resultado).replace('.',',') : '');
+      const n = v ? Number(String(v).replace('%','').replace(',','.')) : null;
+      if(n != null && !isNaN(n)){
+        await sb(`loja_auditorias?nome=eq.${encodeURIComponent(nome)}`, {method:'PATCH', body: JSON.stringify({percentagem: Math.round(n*100)/100, atualizado_em: new Date().toISOString()})});
+        if(relId) await sb(`loja_auditoria_relatorios?id=eq.${relId}`, {method:'PATCH', body: JSON.stringify({resultado_pct: n})});
+        msg(`<span style="color:var(--green);">✓ ${AUD_NOMES[nome]}: nota atualizada para ${String(n).replace('.',',')}%.</span>`);
+      } else msg(`<span style="color:var(--ink-soft);">Relatório de ${AUD_NOMES[nome]} guardado (nota não alterada).</span>`);
+    } else {
+      msg(`<span style="color:var(--green);">✓ ${AUD_NOMES[nome]} · ${d.data.split('-').reverse().join('/')} · <b>${String(d.resultado).replace('.',',')}%</b>${d.ncs.length ? ' · ' + d.ncs.length + ' pontos a melhorar' : ''} — nota e média do ano atualizadas.</span>`);
+    }
+    if(!caminho) msg((est ? est.innerHTML : '') + '<div style="font-size:11px;color:var(--ink-soft);">O ficheiro original não ficou guardado (sem ligação ao arquivo), mas a nota foi lida.</div>');
+    try{ if(typeof atualizarTudo === 'function') atualizarTudo(false); }catch(e){}
+  }catch(e){ console.error(e); msg('<span style="color:var(--red);">✕ Não consegui carregar o relatório. Tente novamente.</span>'); }
+}
+function audBotaoAuto(){
+  if(!souDona()) return '';
+  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="aud-auto-fich" class="hidden" accept=".pdf,.docx,image/*" onchange="audCarregarAuto(this)">
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('aud-auto-fich').click()">📎 Adicionar relatório de auditoria</button>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Escolha o PDF do relatório: a app descobre de que auditoria é, lê a data e a nota e atualiza a nota e a média do ano.</div>
+    <div id="aud-auto-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+}
+
 // Média do ano de uma auditoria (todas as visitas do ano com resultado)
 async function audMediaAno(nome){
   const ano = new Date().getFullYear();
@@ -13128,7 +13369,7 @@ async function renderMelhoriaContinua(){
   const totalListas = listasHoje.reduce((s,l)=>s+(l.numero_listas||0),0);
 
   const editavel = currentUser && souDona();
-  let html = `<div class="vs-detail-grid" style="margin-bottom:16px;">
+  let html = audBotaoAuto() + `<div class="vs-detail-grid" style="margin-bottom:16px;">
     <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score de Melhoria Contínua${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
   </div>`;
