@@ -3456,6 +3456,8 @@ async function renderObjetivos2027(){
     quebraObj: g.quebra_obj != null ? Number(g.quebra_obj) : 1.96, notas: g.notas || '', auds: auds || [], bhAcima: colabsBH || [], resumo: r,
     atualizado: guardado ? guardado.atualizado_em : null, por: guardado ? guardado.atualizado_por : null};
   objEstado.secoes.forEach(x => { if(x.obj == null) x.obj = Math.round(x.peso * objEstado.total); });
+  objEstado.mensal = (Array.isArray(g.mensal) && g.mensal.length === 12 && g.mensal_editado) ? g.mensal.map(m => Number(m.objetivo) || 0) : objMensalBase(objEstado.total);
+  objEstado.mensalEditado = !!g.mensal_editado;
   objDesenhar();
 }
 function objDesenhar(){
@@ -3499,9 +3501,12 @@ function objDesenhar(){
   h += `<div class="section-title">📅 Objetivo mês a mês</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:380px;">
     <tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:4px;">Mês</th><th style="padding:4px;">2025</th><th style="padding:4px;">2026</th><th style="padding:4px;">Objetivo 2027</th><th style="padding:4px;">/dia</th></tr>
-    ${e.meses.map((m, i) => { const peso = e.v25 ? (Number(m.v_ant)||0)/e.v25 : 1/12; const o = e.total * peso; const dias = new Date(OBJ_ANO, i+1, 0).getDate(); const real = Number(m.v) > 0; const v26m = real ? Number(m.v) : (Number(m.budget) || null);
-      return `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 4px;">${m.mes}</td><td style="text-align:right;">${objEur(m.v_ant)}</td><td style="text-align:right;${real ? '' : 'color:var(--ink-soft);'}">${objEur(v26m)}${real ? '' : '*'}</td><td style="text-align:right;font-weight:800;">${objEur(o)}</td><td style="text-align:right;">${objEur(o/dias)}</td></tr>`; }).join('')}
-    </table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Os meses seguem o mesmo ritmo de 2025. * = orçamento 2026 (mês ainda por fechar).</div></div>`;
+    ${e.meses.map((m, i) => { const o = e.mensal[i] || 0; const dias = new Date(OBJ_ANO, i+1, 0).getDate(); const real = Number(m.v) > 0; const v26m = real ? Number(m.v) : (Number(m.budget) || null); const cr25 = m.v_ant ? o/Number(m.v_ant) - 1 : null;
+      return `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 4px;">${m.mes}</td><td style="text-align:right;">${objEur(m.v_ant)}</td><td style="text-align:right;${real ? '' : 'color:var(--ink-soft);'}">${objEur(v26m)}${real ? '' : '*'}</td><td style="text-align:right;font-weight:800;">${dona ? `<input type="text" inputmode="decimal" value="${Math.round(o).toLocaleString('pt-PT')}" onchange="objMudarMes(${i}, this.value)" style="width:92px;padding:5px;border-radius:8px;border:1px solid var(--line);text-align:right;font-weight:700;">` : objEur(o)}<div style="font-size:10px;font-weight:600;color:${cr25==null?'inherit':cr25>=0?'var(--green)':'var(--red)'};">${objPct(cr25)} vs 2025</div></td><td style="text-align:right;">${objEur(o/dias)}</td></tr>`; }).join('')}
+    ${(() => { const sm = e.mensal.reduce((a,b)=>a+(Number(b)||0),0); const d = e.total - sm; return `<tr style="border-top:2px solid var(--line);font-weight:800;"><td style="padding:6px 4px;">Total</td><td style="text-align:right;">${objEur(e.v25)}</td><td style="text-align:right;">${objEur(e.v26)}</td><td style="text-align:right;color:${Math.abs(d) > 1 ? 'var(--red)' : 'var(--green)'};">${objEur(sm)}</td><td></td></tr>`; })()}
+    </table>${(() => { const d = e.total - e.mensal.reduce((a,b)=>a+(Number(b)||0),0); return Math.abs(d) > 1 ? `<div style="font-size:12px;color:var(--red);margin:6px 2px;">${d > 0 ? 'Faltam ' + objEur(d) + ' nos meses para chegar ao objetivo.' : 'Os meses somam mais ' + objEur(-d) + ' do que o objetivo.'}</div>` : ''; })()}
+    ${dona ? `<button class="econ-btn" style="margin-top:6px;" onclick="objRepartirMeses()">↺ Repartir pelo ritmo de 2025</button>` : ''}
+    <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Os meses seguem o ritmo de 2025, com agosto 50 mil € mais baixo e dezembro 50 mil € mais alto. Pode mudar cada mês. * = orçamento 2026 (mês ainda por fechar).</div></div>`;
   h += objMetasHtml();
   h += `<div class="section-title">📝 Outras metas e notas</div><div class="card">
     <label style="font-size:12.5px;color:var(--ink-soft);">Quebra máxima da loja em 2027 (% das vendas)</label>
@@ -3554,11 +3559,23 @@ function objMetasHtml(){
   </div>`;
   return h;
 }
+// ritmo de 2025, com agosto um pouco mais baixo e dezembro mais alto (Natal)
+const OBJ_AJUSTE_MES = 50000;
+function objMensalBase(total){
+  const e = objEstado; const v25 = e.v25 || 1;
+  const m = e.meses.map(x => Math.round(total * ((Number(x.v_ant)||0) / v25)));
+  if(m.length === 12){ m[7] -= OBJ_AJUSTE_MES; m[11] += OBJ_AJUSTE_MES; }
+  const dif = Math.round(total) - m.reduce((a,b)=>a+b,0); if(m.length) m[11] += dif;
+  return m;
+}
+function objMudarMes(i, t){ const v = objLerNum(t); if(v == null) return; objEstado.mensal[i] = v; objEstado.mensalEditado = true; objDesenhar(); }
+function objRepartirMeses(){ objEstado.mensal = objMensalBase(objEstado.total); objEstado.mensalEditado = false; objDesenhar(); }
 function objMudarTotal(){
   const v = objLerNum((document.getElementById('obj-total')||{}).value); if(!v){ alert('Escreva o valor do objetivo, por exemplo 7 500 000'); return; }
   if(v < OBJ_MINIMO && !confirm(`O valor é inferior ao mínimo de ${objEur(OBJ_MINIMO)}. Quer mesmo usar ${objEur(v)}?`)) return;
   const fator = v / (objEstado.total || v); objEstado.total = v;
   objEstado.secoes.forEach(x => { x.obj = Math.round(x.obj * fator); });
+  objEstado.mensal = objEstado.mensal.map(v => Math.round(v * fator));
   objDesenhar();
 }
 function objMudarSec(i, t){ const v = objLerNum(t); if(v == null) return; objEstado.secoes[i].obj = v; objDesenhar(); }
@@ -3569,9 +3586,9 @@ async function objGuardar(){
   e.quebraObj = q && q.trim() ? Number(q.replace(',','.')) : null; e.notas = (document.getElementById('obj-notas')||{}).value || '';
   if(e.total < OBJ_MINIMO && !confirm('O objetivo está abaixo do mínimo de 7,5 milhões. Guardar mesmo assim?')) return;
   const secoes = {}; e.secoes.forEach(x => { secoes[x.sec] = Math.round(x.obj); });
-  const mensal = e.meses.map(m => ({mes: m.mes, objetivo: Math.round(e.total * (e.v25 ? (Number(m.v_ant)||0)/e.v25 : 1/12))}));
+  const mensal = e.meses.map((m, i) => ({mes: m.mes, objetivo: Math.round(e.mensal[i] || 0)}));
   try{
-    await sb('loja_objetivos?on_conflict=ano', {method:'POST', body: JSON.stringify({ano: OBJ_ANO, dados: {total: Math.round(e.total), secoes, mensal, quebra_obj: e.quebraObj, notas: e.notas, base_2025: Math.round(e.v25), base_2026: Math.round(e.v26)}, atualizado_em: new Date().toISOString(), atualizado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'});
+    await sb('loja_objetivos?on_conflict=ano', {method:'POST', body: JSON.stringify({ano: OBJ_ANO, dados: {total: Math.round(e.total), secoes, mensal, mensal_editado: true, quebra_obj: e.quebraObj, notas: e.notas, base_2025: Math.round(e.v25), base_2026: Math.round(e.v26)}, atualizado_em: new Date().toISOString(), atualizado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'});
     showToast(); renderObjetivos2027();
   }catch(err){ alert('Não consegui guardar. Tente novamente.'); }
 }
