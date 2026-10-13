@@ -2338,7 +2338,7 @@ function impTipo(wb){
   for(const n of nomes){
     const R = impLinhas(wb.Sheets[n]);
     if(impCabecalho(R, ['Nome Operador','Vendas Operador'])) return 'vendasugestiva';
-    if(impCabecalho(R, ['Numero Factura','Valor Fact'])) return 'notascredito';
+    if(impCabecalho(R, ['Numero Factura','Valor Fact']) || impCabecalho(R, ['Loja','Numero Factura','Numero da Transaccao'])) return 'notascredito';
   }
   return null;
 }
@@ -2795,12 +2795,26 @@ async function blocoRelatorioValidades(){
 }
 
 // ---------- NOTAS DE CRÉDITO ----------
+async function ncCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar as notas de crédito')) return;
+  const est = document.getElementById('nc-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    msg('A ler o ficheiro…');
+    const r = await impNotas(XLSX.read(await f.arrayBuffer(), {type:'array'}));
+    msg('<span style="color:var(--green);">✓ ' + rpEsc(r) + '</span>');
+    setTimeout(() => renderArea('notas'), 1500);
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+function impHoraNC(v){ if(v == null || v === '') return null; const d = String(v).replace(/\D/g,'').padStart(6,'0'); return d.length >= 4 ? d.slice(0,2) + ':' + d.slice(2,4) : null; }
 async function impNotas(wb){
   let novas = 0, total = 0;
   for(const n of wb.SheetNames){
     const R = impLinhas(wb.Sheets[n]);
-    const h = impCabecalho(R, ['Loja','Numero Factura','Valor Fact']);
+    // há dois formatos: com "Valor Fact" e o "Com Dados Ontem (Validar Loja)", sem valor
+    const h = impCabecalho(R, ['Loja','Numero Factura']);
     if(!h) continue;
+    const temValor = h.col('Valor Fact') >= 0;
     for(let i=h.i+1;i<R.length;i++){
       const r = R[i]||[]; if(impTxt(r[h.col('Loja')]).replace(/\.0$/,'') !== IMP_LOJA) continue;
       const data = impData(r[h.col('Data')]); const fat = impTxt(r[h.col('Numero Factura')]).replace(/\.0$/,'');
@@ -2808,7 +2822,7 @@ async function impNotas(wb){
       total++;
       const ja = await impTodos(`loja_notas_credito?numero_factura=eq.${encodeURIComponent(fat)}&data=eq.${data}&select=id`);
       if(ja.length) continue;
-      await sb('loja_notas_credito', {method:'POST', body: JSON.stringify({data, numero_factura: fat, numero_transacao: impTxt(r[h.col('Numero da Transaccao')]).replace(/\.0$/,''), valor: impR2(impNum(r[h.col('Valor Fact')])), validado: false})});
+      await sb('loja_notas_credito', {method:'POST', body: JSON.stringify({data, numero_factura: fat, numero_transacao: impTxt(r[h.col('Numero da Transaccao')]).replace(/\.0$/,''), valor: temValor ? impR2(impNum(r[h.col('Valor Fact')])) : null, hora: impHoraNC(r[h.col('Hora Txs')]), pos: h.col('Id do Pos') >= 0 ? impTxt(r[h.col('Id do Pos')]) || null : null, operador: h.col('Id do Operador') >= 0 ? impTxt(r[h.col('Id do Operador')]) || null : null, validado: false})});
       novas++;
     }
   }
@@ -3252,7 +3266,7 @@ async function renderArea(qual){
   box.innerHTML = `<div class="card" style="color:var(--ink-soft);font-size:13px;">A carregar…</div>`;
   try{
     if(qual === 'validades') box.innerHTML = await areaValidadesHtml();
-    else if(qual === 'notas') box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 10px;">As notas chegam ao carregar o relatório "Notas de Crédito" nos ficheiros do dia. Valide cada uma aqui.</p><div class="card">${await blocoNotasCredito('area', true)}</div>`;
+    else if(qual === 'notas') box.innerHTML = (souDona() ? `<div class="card" style="margin-bottom:10px;"><input type="file" id="nc-fich" class="hidden" accept=".xlsx,.xls" onchange="ncCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('nc-fich').click()">📎 Carregar ficheiro Notas de Crédito (Excel)</button><div id="nc-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '') + `<p class="com-ajuda" style="margin:0 4px 10px;">A app fica só com as notas da loja 747. Valide cada uma aqui.</p><div class="card">${await blocoNotasCredito('area', true)}</div>`;
     else if(qual === 'relatorios') box.innerHTML = await areaRelatoriosHtml();
     else if(qual === 'vendasugestiva') box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 10px;">Atualiza ao carregar o relatório "Venda Sugestiva" nos ficheiros do dia.</p>` + await blocoVendaSugestiva();
   }catch(e){ box.innerHTML = `<div class="card" style="color:var(--red);font-size:13px;">Não consegui carregar os dados.</div>`; }
@@ -6225,7 +6239,7 @@ async function blocoNotasCredito(contextoId, modoCompleto){
   const esteAno = todas.filter(r => new Date(r.data+'T00:00:00').getFullYear()===hoje.getFullYear());
   const naoConformes = todas.filter(r => r.conforme === false);
 
-  const soma = (arr) => arr.reduce((s,r)=> s + Number(r.valor), 0);
+  const soma = (arr) => arr.reduce((s,r)=> s + (r.valor == null ? 0 : Number(r.valor)), 0);
 
   let html = `<div style="display:flex;justify-content:space-between;padding:6px 0;">
     <span style="font-size:12px;color:var(--ink-soft);">Por validar</span>
@@ -6282,8 +6296,8 @@ async function blocoNotasCredito(contextoId, modoCompleto){
     porValidar.forEach(r=>{
       html += `<div class="card" style="padding:10px 12px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;">
-          <span style="font-size:12.5px;color:var(--ink);">Fatura ${r.numero_factura} · ${new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT')}</span>
-          <span style="font-size:13px;font-weight:700;color:var(--red);">${fmtEuroPreciso(r.valor)}</span>
+          <span style="font-size:12.5px;color:var(--ink);">Fatura ${r.numero_factura} · ${new Date(r.data+'T00:00:00').toLocaleDateString('pt-PT')}${r.hora ? ' · ' + r.hora : ''}${r.pos ? '<br><span style="font-size:11px;color:var(--ink-soft);">Caixa ' + r.pos + (r.operador ? ' · operador ' + r.operador : '') + (r.numero_transacao ? ' · transação ' + r.numero_transacao : '') + '</span>' : ''}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--red);">${r.valor == null ? '' : fmtEuroPreciso(r.valor)}</span>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px;">
           <button class="econ-btn filled" style="flex:1;" onclick="validarNotaCredito(${r.id}, true)">✓ Conforme</button>
