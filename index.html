@@ -3346,10 +3346,7 @@ async function blocoScoreValidades(){
       + d.secoes.filter(x => x.tarefas || x.aceitacao != null).sort((a,b) => (a.aceitacao ?? 999) - (b.aceitacao ?? 999)).map(x => `<tr><td style="text-align:left;">${rpEsc(x.secao)}</td><td style="color:${cor(x.execucao,98,95)};font-weight:700;">${pct(x.execucao)}</td><td style="color:${cor(x.aceitacao,75,60)};font-weight:800;">${pct(x.aceitacao)}</td><td style="color:${corInv(x.nao_realizado,5,10)};font-weight:700;">${pct(x.nao_realizado)}</td><td>${eur(x.quebra_evitada)}</td><td style="color:#C77F12;font-weight:700;">${eur(x.md_quebrado)}</td></tr>`).join('')
       + `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);padding:4px 2px;">Ordenado pela aceitação, da pior para a melhor.</div></div>`;
   }
-  if((d.area||[]).length){
-    h += `<div class="rp-bloco-tit">Lojas da área</div><div class="card rp-tabela-box" style="padding:4px 8px;"><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">Loja</th><th>Score</th><th>Posição</th><th>Aceitação</th><th>Não realiz.</th></tr></thead><tbody>`
-      + [...d.area].sort((a,b) => b.score - a.score).map(x => `<tr${x.loja === IMP_LOJA ? ' style="background:#E3F2E6;font-weight:800;"' : ''}><td style="text-align:left;">${x.loja} ${rpEsc(impTitulo(x.nome))}</td><td>${pct(x.score,2)}</td><td>${x.posicao}.º</td><td>${pct(x.aceitacao)}</td><td>${pct(x.nao_realizado)}</td></tr>`).join('') + `</tbody></table></div>`;
-  }
+  // só dados da loja 747 Portuzelo (sem comparação com outras lojas)
   if((d.artigos||[]).length){
     h += `<details class="card" style="margin-top:10px;"><summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:13px;">Top ${d.artigos.length} artigos com maior quebra</summary><div class="rp-tabela-box"><table class="rp-tab" style="font-size:12px;margin-top:6px;"><thead><tr><th style="text-align:left;">Artigo</th><th>Quebra evitada</th><th>MD não realiz.</th><th>MD quebrado</th></tr></thead><tbody>`
       + d.artigos.map(x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}</td><td>${eur(x.quebra_evitada)}</td><td style="color:${x.mnr_valor > 0 ? '#B4231A' : 'inherit'}">${eur(x.mnr_valor)}</td><td style="color:${x.md_quebrado > 0 ? '#C77F12' : 'inherit'}">${eur(x.md_quebrado)}</td></tr>`).join('') + `</tbody></table></div></details>`;
@@ -4196,7 +4193,7 @@ async function renderDashboard(){
     renderAniversariosHoje();
     renderPlanoAcaoGestores();
     renderFeedbackGestores();
-    blocoAvaliacaoClienteSecao(null, null, true).then(html => document.getElementById('avaliacao-gestores-wrap').innerHTML = html);
+    Promise.all([blocoAvaliacaoClienteSecao(null, null, true), blocoAquiObservacoes().catch(()=>'')]).then(([h1, h2]) => document.getElementById('avaliacao-gestores-wrap').innerHTML = h1 + `<div class="aqui-obs-wrap">${h2}</div>`);
   } else {
     chefeOnly1.classList.add('hidden');
     chefeOnly2.classList.add('hidden');
@@ -5145,7 +5142,11 @@ async function editarResultadoDiarioSecao(secao, label){
       <input id="${id}" type="${tipo}" inputmode="decimal" value="${valor ?? ''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;">
     </div>`;
   let html = '';
-  html += campo('inv-resultado', 'Resultado de Inventário (€)', atual.resultado_inventario);
+  html += `<div style="margin-bottom:12px;">
+      <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Resultado de Inventário (€)</label>
+      <div style="display:flex;gap:6px;"><button type="button" onclick="invTrocarSinal('inv-resultado',-1)" style="width:44px;border-radius:8px;border:1px solid var(--red);background:#fff4f4;color:var(--red);font-size:20px;font-weight:800;">−</button>
+      <input id="inv-resultado" type="text" inputmode="decimal" placeholder="0,00" oninput="invCorSinal(this)" value="${atual.resultado_inventario ?? ''}" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;text-align:right;font-weight:700;">
+      <button type="button" onclick="invTrocarSinal('inv-resultado',1)" style="width:44px;border-radius:8px;border:1px solid var(--green);background:#f1faf3;color:var(--green);font-size:20px;font-weight:800;">+</button></div></div>`;
   html += campo('inv-listas', 'Número de listas automáticas hoje', atual.numero_listas_automaticas);
   html += campo('inv-semstock', 'Quantos "Sem Stock" tratados hoje', atual.sem_stock_tratados);
   html += `<div style="margin-bottom:12px;">
@@ -5168,7 +5169,7 @@ function fecharModalInventario(){
 async function guardarModalInventario(){
   const secao = modalInventarioSecaoAtual;
   if(!secao) return;
-  const num = (id) => { const v = parseFloat((document.getElementById(id).value||'').replace(',','.')); return isNaN(v) ? null : v; };
+  const num = (id) => { const v = parseFloat((document.getElementById(id).value||'').trim().replace(/^−/,'-').replace(/^\+/,'').replace(/\s|€/g,'').replace(',','.')); return isNaN(v) ? null : v; };
   const int = (id) => { const v = parseInt(document.getElementById(id).value||''); return isNaN(v) ? null : v; };
 
   try{
@@ -8309,8 +8310,24 @@ async function infoNegocioDaSemana(d){
   const n = numeroSemanaISO(d || new Date());
   const rows = await sb('loja_informacao_negocio_historico?select=semana,resumo,data_documento&order=data_documento.desc.nullslast,id.desc&limit=12') || [];
   const nDe = r => Number(String(r.semana || '').replace(/\D/g,'')) || 0;
-  const a = rows.find(r => nDe(r) === n);
-  return a ? [a] : [];
+  const daSemana = rows.filter(r => nDe(r) === n);
+  const principal = daSemana.find(r => !infoEhExtra(r));
+  const extras = daSemana.filter(r => infoEhExtra(r));
+  if(!principal && !extras.length) return [];
+  const dm = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
+  // os extras (mais recentes) aparecem primeiro em resumo curto; o texto completo fica no fim
+  const topo = extras.map(e => `⚡ EXTRA ${dm(e.data_documento)}: ${infoIndice(e.resumo) || String(e.resumo||'').split(/\n\s*\n/)[0].replace(/^Índice:\s*/i,'').slice(0, 300)}`).join('\n');
+  const fim = extras.map(e => `\n\n— INFORMAÇÃO EXTRA ${dm(e.data_documento)} —\n${e.resumo || ''}`).join('');
+  const base = principal || extras[0];
+  return [{...base, resumo: (topo ? topo + '\n\n' : '') + (principal ? (principal.resumo || '') : '') + fim}];
+}
+function infoEhExtra(r){ return /\bextra\b/i.test(String((r && (r.titulo || r.nome_ficheiro)) || '')); }
+// títulos do índice do documento (linhas com "....." até ao número da página)
+function infoIndice(t){
+  const vistos = new Set(); const out = [];
+  String(t||'').split('\n').forEach(l => { const m = l.match(/^\s*([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 ,.ºª&()\/'’\-–]{3,}?)\s*\.{4,}\s*\d+\s*$/);
+    if(m){ const h = m[1].trim().replace(/\s+/g,' '); const k = h.toUpperCase(); if(!vistos.has(k) && !/^ÍNDICE$/.test(k)){ vistos.add(k); out.push(h.charAt(0) + h.slice(1).toLowerCase()); } } });
+  return out.slice(0, 12).join(' · ');
 }
 async function renderInfoNegocioHistorico(){
   const wrap = document.getElementById('info-negocio-historico-wrap');
@@ -8325,25 +8342,28 @@ async function renderInfoNegocioHistorico(){
   // a semana em destaque é sempre a semana atual; a seguinte aparece como "próxima"; o resto vai para o arquivo
   const cur = numeroSemanaISO(new Date());
   const nDe = r => Number(String(r.semana || '').replace(/\D/g,'')) || 0;
-  const atual = rows.find(r => nDe(r) === cur), proxima = rows.find(r => nDe(r) === cur + 1);
-  const arquivo = rows.filter(r => r !== atual && r !== proxima);
+  const atual = rows.find(r => nDe(r) === cur && !infoEhExtra(r)), proxima = rows.find(r => nDe(r) === cur + 1 && !infoEhExtra(r));
+  const extrasAtual = rows.filter(r => nDe(r) === cur && infoEhExtra(r)), extrasProx = rows.filter(r => nDe(r) === cur + 1 && infoEhExtra(r));
+  const arquivo = rows.filter(r => r !== atual && r !== proxima && !extrasAtual.includes(r) && !extrasProx.includes(r));
   const cartao = (r, etiqueta, cor) => `<div class="card" style="border-left:5px solid ${cor};margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;">
-        <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(r.semana || r.titulo)} <span style="font-size:11px;font-weight:700;color:${cor};">· ${etiqueta}</span></span>
+        <span style="font-size:14px;font-weight:700;color:var(--navy);">${infoEsc(infoEhExtra(r) ? r.titulo : (r.semana || r.titulo))} <span style="font-size:11px;font-weight:700;color:${cor};">· ${etiqueta}</span></span>
         <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${fmt(r.data_documento)}</span>
       </div>
       ${infoTexto(r.resumo)}
       ${r.caminho ? `<button class="econ-btn" style="margin-top:10px;" onclick="infoNegAbrir(${r.id})">📄 Abrir documento original</button>` : ''}
       ${gestora ? `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn-primary" style="margin-top:0;flex:1;padding:8px;font-size:12.5px;" onclick="infoNegForm(${r.id})">✏️ Editar</button></div>` : ''}
     </div>`;
+  extrasAtual.forEach(e => { html += cartao(e, 'extra desta semana', '#C0392B'); });
   if(atual) html += cartao(atual, 'esta semana', 'var(--teal)');
   else html += `<div class="card" style="border-left:5px solid #C77F12;margin-bottom:10px;font-size:12.5px;">⚠️ Ainda não há informação de negócio da <b>Semana ${cur}</b> (esta semana).</div>`;
   if(proxima) html += cartao(proxima, 'próxima semana', '#1F7A33');
+  extrasProx.forEach(e => { html += cartao(e, 'extra da próxima semana', '#C0392B'); });
   if(arquivo.length){
     html += `<details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-soft);padding:6px 2px;">📁 Arquivo (${arquivo.length})</summary>`;
     arquivo.forEach(o => { html += `<div class="card" style="margin:8px 0;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-          <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(o.semana || o.titulo)}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--navy);">${infoEsc(infoEhExtra(o) ? o.titulo : (o.semana || o.titulo))}</span>
           <span style="font-size:11px;color:var(--ink-soft);">${fmt(o.data_documento)}</span>
         </div>
         ${infoTexto(o.resumo)}${o.caminho ? `<button class="econ-btn" style="margin-top:8px;" onclick="infoNegAbrir(${o.id})">📄 Abrir documento</button>` : ''}
@@ -8401,6 +8421,8 @@ async function infoNegCarregar(input){
     const hoje = new Date();
     const dataDoc = mData ? `${mData[3]}-${mData[2].padStart(2,'0')}-${mData[1].padStart(2,'0')}` : dataLocalISO(hoje);
     const semana = 'Semana ' + nSem;
+    // "Extra 2.ª feira" e outros extras juntam-se à semana, não substituem a informação semanal
+    const extra = /\bextra\b/i.test(f.name) || /\bextra\b/i.test(texto.slice(0, 300));
     msg('A guardar…');
     const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
     const caminho = `informacao-negocio/${Date.now()}_${limpo}`;
@@ -8409,12 +8431,13 @@ async function infoNegCarregar(input){
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
       guardouFicheiro = res.ok;
     }catch(e){}
-    const dados = {semana, titulo: 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
-    const ja = await sb(`loja_informacao_negocio_historico?semana=eq.${encodeURIComponent(semana)}&select=id`);
+    const dados = {semana, titulo: extra ? `Informação de Negócio Extra ${/2\.?\s*ª?\s*feira/i.test(texto.slice(0,300) + f.name) ? '2.ª feira ' : ''}· ${semana}` : 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
+    const jaTodos = await sb(`loja_informacao_negocio_historico?semana=eq.${encodeURIComponent(semana)}&select=id,titulo,data_documento`) || [];
+    const ja = jaTodos.filter(r => extra ? (infoEhExtra(r) && r.data_documento === dataDoc) : !infoEhExtra(r));
     if(ja && ja.length) await sb(`loja_informacao_negocio_historico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)});
     else await sb('loja_informacao_negocio_historico', {method:'POST', body: JSON.stringify(dados)});
     await renderInfoNegocioHistorico();
-    const e2 = document.getElementById('info-neg-estado'); if(e2) e2.textContent = `✓ ${semana} carregada${mSem ? '' : ' (não encontrei o número da semana no documento — confirme e corrija em Editar)'}.`;
+    const e2 = document.getElementById('info-neg-estado'); if(e2) e2.textContent = `✓ ${extra ? 'Extra da ' : ''}${semana} carregad${extra ? 'o (junta-se à informação semanal)' : 'a'}${mSem ? '' : ' (não encontrei o número da semana no documento — confirme e corrija em Editar)'}.`;
   }catch(e){ msg('✕ Não consegui carregar: ' + (e && e.message || e)); }
 }
 async function infoNegAbrir(id){
@@ -9922,9 +9945,42 @@ async function gerarDocumentoWordEEmail(titulo, secoes, assinaturaNome, nomeFich
   <head><meta charset='utf-8'><title>${escaparHtmlDoc(titulo)}</title></head>
   <body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;">${corpo}</body></html>`;
 
-  const blob = new Blob(['\ufeff', htmlCompleto], { type: 'application/msword' });
-  const nomeFicheiro = `${nomeFicheiroBase}.doc`;
+  // Word verdadeiro (.docx) — abre bem no telemóvel e no computador; se não houver internet para a biblioteca, usa o formato antigo
+  let blob, nomeFicheiro;
+  try{
+    blob = await gerarDocxBlob(titulo, secoes, assinaturaNome);
+    nomeFicheiro = `${nomeFicheiroBase}.docx`;
+  }catch(e){
+    console.error('docx falhou, a usar .doc', e);
+    blob = new Blob(['\ufeff', htmlCompleto], { type: 'application/msword' });
+    nomeFicheiro = `${nomeFicheiroBase}.doc`;
+  }
   await partilharOuDescarregarFicheiro(blob, nomeFicheiro, titulo);
+}
+
+async function gerarDocxBlob(titulo, secoes, assinaturaNome){
+  if(!window.JSZip){
+    await infoCarregarScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    for(let i = 0; i < 40 && !window.JSZip; i++) await new Promise(r => setTimeout(r, 100));
+  }
+  if(!window.JSZip) throw new Error('JSZip indisponível');
+  const x = t => String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+  const par = (texto, o = {}) => `<w:p><w:pPr><w:spacing w:before="${o.antes||0}" w:after="${o.depois==null?60:o.depois}"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>${o.negrito?'<w:b/>':''}${o.cor?`<w:color w:val="${o.cor}"/>`:''}<w:sz w:val="${o.tam||22}"/></w:rPr><w:t xml:space="preserve">${x(texto)}</w:t></w:r></w:p>`;
+  let corpo = par(titulo, {negrito:true, cor:'14532D', tam:36, depois:80});
+  corpo += par('Loja 747 — Viana do Castelo Portuzelo', {cor:'555555', depois:200});
+  secoes.forEach(sec => {
+    corpo += par(sec.label, {negrito:true, cor:'1B7A4A', tam:28, antes:240, depois:80});
+    const texto = (sec.valor && String(sec.valor).trim()) ? String(sec.valor) : '—';
+    texto.split('\n').forEach(l => { corpo += par(l || ' '); });
+  });
+  corpo += par('Assinado por: ' + (assinaturaNome || '—'), {antes:400});
+  corpo += par('Data: ' + new Date().toLocaleDateString('pt-PT') + ' ' + new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${corpo}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const zip = new window.JSZip();
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+  zip.file('word/document.xml', doc);
+  return await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
 }
 
 function adicionarFeedback(secao, nomePreenchido, notaAvaliacao, comentarioAvaliacao){
@@ -10558,6 +10614,64 @@ async function enviarPedidosEconomatoEmail(){
 }
 
 const LINK_FORM_AQUI_CLIENTE = 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=fVI7hPGtkE27GYPYg87TmSzZw09yyZhJkCYb0zr5YoRUNVI4MTdFUU5RUlFDRTBNSVFHWlcxUFZCNy4u&route=shorturl';
+
+// ---------- Nº de Observações "AQUI para o Cliente" (ficheiro da região) ----------
+function aquiLerExcel(wb, nomeFicheiro){
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
+    const N = t => String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+    const hi = R.findIndex(r => r.some(c => /observa/.test(N(c))) && r.some(c => /loja/.test(N(c))));
+    if(hi < 0) continue;
+    const H = R[hi].map(N); const ci = re => H.findIndex(h => re.test(h));
+    const c = {cod: ci(/codigo|cod\.? retail/), nome: ci(/nome da loja|^loja$/), obs: ci(/observa/), dm: ci(/^dm|diretor/), dao: ci(/^dao$/), reg: ci(/regiao/)};
+    const lojas = [];
+    for(let i = hi+1; i < R.length; i++){ const r = R[i]; const nome = String(r[c.nome]||'').trim(); if(!nome) continue;
+      lojas.push({cod: String(r[c.cod]||'').trim(), nome, obs: Number(r[c.obs]) || 0, dm: c.dm >= 0 ? String(r[c.dm]||'').trim() : '', dao: c.dao >= 0 ? String(r[c.dao]||'').trim() : '', regiao: c.reg >= 0 ? String(r[c.reg]||'').trim() : ''}); }
+    if(!lojas.length) continue;
+    const nossa = lojas.find(l => l.cod === '747') || lojas.find(l => /portuz/i.test(l.nome));
+    if(!nossa) throw new Error('não encontrei a loja 747 no ficheiro');
+    const m = String(nomeFicheiro||'').match(/(\d{1,2})[-_.](\d{1,2})(?:[-_.](\d{2,4}))?/);
+    const hoje = new Date(); let data = dataLocalISO(hoje);
+    if(m){ const ano = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : String(hoje.getFullYear()); data = `${ano}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+    // só os dados da loja 747 Portuzelo
+    return {data, dados: {loja: {cod: nossa.cod, nome: nossa.nome, obs: nossa.obs}}};
+  }
+  return null;
+}
+async function aquiCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o ficheiro AQUI para o Cliente')) return;
+  const est = document.getElementById('aqui-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    const r = aquiLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}), f.name);
+    if(!r) throw new Error('não reconheci o ficheiro — precisa das colunas "Nome da Loja" e "Nº Observações"');
+    await sb('loja_aqui_observacoes?on_conflict=data', {method:'POST', body: JSON.stringify(r), prefer:'resolution=merge-duplicates,return=minimal'});
+    msg(`<span style="color:var(--green);">✓ Lido: Portuzelo com ${r.dados.loja.obs} observações.</span>`);
+    document.querySelectorAll('.aqui-obs-wrap').forEach(async w => { w.innerHTML = await blocoAquiObservacoes(); });
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+async function blocoAquiObservacoes(){
+  const rows = await sb('loja_aqui_observacoes?select=data,dados&order=data.desc&limit=6').catch(()=>[]) || [];
+  const dona = souDona();
+  let html = `<div class="section-title">👀 Observações "AQUI para o Cliente" — Portuzelo</div><div class="card">`;
+  if(dona) html += `<input type="file" id="aqui-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="aquiCarregar(this)"><button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('aqui-fich').click()">📎 Carregar ficheiro Nº Observações (Excel)</button><div id="aqui-estado" style="font-size:12px;margin-bottom:8px;"></div>`;
+  if(!rows.length) return html + `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem ficheiro carregado.</div></div>`;
+  const r = rows[0], d = r.dados || {}, ant = rows[1] && rows[1].dados;
+  const dt = iso => new Date(iso+'T12:00:00').toLocaleDateString('pt-PT');
+  const dif = ant ? d.loja.obs - ant.loja.obs : null;
+  html += `<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">
+      <span style="font-size:30px;font-weight:800;color:var(--navy);">${d.loja.obs}</span>
+      <span style="font-size:12.5px;color:var(--ink-soft);">observações · dados de ${dt(r.data)}</span>
+      ${dif !== null ? `<span style="font-size:12.5px;font-weight:700;color:${dif>=0?'var(--green)':'var(--red)'};">${dif>=0?'▲ +':'▼ '}${dif} vs ${dt(rows[1].data)}</span>` : ''}
+    </div>`;
+  if(rows.length > 1){
+    const hist = rows.slice().reverse(); const max = Math.max(1, ...hist.map(x => (x.dados && x.dados.loja && x.dados.loja.obs) || 0));
+    html += hist.map(x => { const v = (x.dados && x.dados.loja && x.dados.loja.obs) || 0;
+      return `<div style="display:grid;grid-template-columns:60px 1fr 28px;gap:6px;align-items:center;margin:3px 0;font-size:12px;"><span>${dt(x.data).slice(0,5)}</span><span style="background:var(--line);border-radius:6px;height:12px;overflow:hidden;"><span style="display:block;height:100%;width:${(v/max*100).toFixed(1)}%;background:#1F7A33;border-radius:6px;"></span></span><b style="text-align:right;">${v}</b></div>`; }).join('');
+  }
+  html += `</div>`;
+  return html;
+}
 
 async function blocoAvaliacaoClienteSecao(secao, label, modoSimples){
   if(modoSimples){
@@ -11584,7 +11698,11 @@ function rhLerFormacoes(wb){
   const cc = {codigo_conduta: c(/conduta/), data_privacy: c(/privacy|privacidade/), politica_anticorrupcao: c(/anticorrup/), seguranca_protecao: c(/seguranca/)};
   const cCurso = c(/curso|percurso|acao|formacao/), cData = c(/data/), cEstado = c(/estado|situacao|status|observ/);
   const out = [];
-  t.linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return; const numero = num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '';
+  // ficheiros da empresa toda (todas as lojas): fica só a loja 747 Portuzelo
+  const cLoja = c(/^loja$|^nome da loja$|^loja /);
+  let linhas = t.linhas;
+  if(cLoja >= 0){ const nossa = v => /portuz|\b747\b/i.test(String(v||'')); if(linhas.some(r => nossa(r[cLoja]))) linhas = linhas.filter(r => nossa(r[cLoja])); }
+  linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return; const numero = num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '';
     if(Object.values(cc).some(i => i >= 0)){ const o = {tipo: 'compliance', numero, nome: nm}; Object.entries(cc).forEach(([k,i]) => { if(i >= 0) o[k] = String(r[i]||'').trim() || null; }); out.push(o); }
     else if(cCurso >= 0 && String(r[cCurso]||'').trim()) out.push({tipo: 'percurso', numero, nome: nm, curso: String(r[cCurso]).trim(), data: cData >= 0 ? horIso(r[cData]) : null, obs: cEstado >= 0 ? String(r[cEstado]||'').trim() || null : null});
   });
@@ -12907,7 +13025,10 @@ async function repCarregar(input){
       const lista = Object.values(pess).map(o => ({...nomeDe(o.num), num: o.num, artigos: o.artigos, linhas: o.linhas, unidades: Math.round(o.unidades), artigos_diferentes: o.mats.size, paletes: o.paletes.size, tipos: o.tipos}))
         .sort((a,b) => b.artigos - a.artigos);
       const datas = ls.map(l => l.data).sort();
-      const dados = {colaboradores: lista, total_linhas: ls.length, total_paletes: new Set(ls.map(l => l.pal).filter(Boolean)).size, total_artigos: lista.reduce((s,x)=>s+x.artigos,0), dias: [...new Set(datas)].length};
+      const porDia = {}, autoPorDia = {};
+      ls.forEach(l => { const d = porDia[l.data] = porDia[l.data] || {}; d[l.tipo] = (d[l.tipo]||0) + 1;
+        if(l.tipo === 'Automática'){ const a = autoPorDia[l.data] = autoPorDia[l.data] || {}; a[l.num] = (a[l.num]||0) + 1; } });
+      const dados = {por_dia: porDia, auto_por_dia: autoPorDia, colaboradores: lista, total_linhas: ls.length, total_paletes: new Set(ls.map(l => l.pal).filter(Boolean)).size, total_artigos: lista.reduce((s,x)=>s+x.artigos,0), dias: [...new Set(datas)].length};
       await sb('loja_reposicao_semana?on_conflict=semana_inicio', {method:'POST', body: JSON.stringify({semana_inicio: seg, data_de: datas[0], data_ate: datas[datas.length-1], dados, nome_ficheiro: f.name}), prefer:'resolution=merge-duplicates,return=minimal'});
       guardadas++;
     }
@@ -12937,6 +13058,29 @@ async function blocoReposicaoColaboradores(){
       <div class="vs-box"><div class="vs-label">🟫 Paletes repostas</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${d.total_paletes ?? '—'}</div></div>
       <div class="vs-box"><div class="vs-label">📦 Artigos repostos</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${(d.total_artigos ?? 0).toLocaleString('pt-PT')}</div></div>
     </div>`;
+  // automáticas por dia
+  if(d.por_dia && Object.keys(d.por_dia).length){
+    const diasOrd = Object.keys(d.por_dia).sort();
+    const nomeDia = iso => new Date(iso+'T12:00:00').toLocaleDateString('pt-PT',{weekday:'short'}).replace('.','');
+    const totDia = iso => Object.values(d.por_dia[iso]).reduce((a,b)=>a+b,0);
+    const maxD = Math.max(1, ...diasOrd.map(totDia));
+    const totAuto = diasOrd.reduce((s,iso) => s + (d.por_dia[iso]['Automática']||0), 0);
+    html += `<div style="font-weight:700;font-size:13px;color:var(--navy);margin:4px 0 2px;">🤖 Automáticas por dia <span style="font-weight:400;color:var(--ink-soft);font-size:11.5px;">· ${totAuto} na semana · média ${Math.round(totAuto/diasOrd.length)} por dia</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">${REP_TIPOS.map(([t,c]) => `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:3px;"></span>${t}</span>`).join('')}</div>`;
+    diasOrd.forEach(iso => { const x = d.por_dia[iso]; const tot = totDia(iso); const au = x['Automática']||0;
+      html += `<div style="display:grid;grid-template-columns:62px 1fr 74px;gap:6px;align-items:center;margin:4px 0;font-size:12px;">
+        <span>${nomeDia(iso)} ${ddmm(iso)}</span>
+        <span style="display:flex;height:16px;border-radius:6px;overflow:hidden;background:var(--line);"><span style="display:flex;width:${(tot/maxD*100).toFixed(1)}%;">${REP_TIPOS.map(([t,c]) => x[t] ? `<span title="${t}: ${x[t]}" style="flex:${x[t]};background:${c};"></span>` : '').join('')}</span></span>
+        <span style="text-align:right;"><b style="color:#1F7A33;">${au}</b> <span style="color:var(--ink-soft);font-size:10.5px;">/ ${tot}</span></span></div>`; });
+    html += `<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:6px;">Número a verde = automáticas do dia · a seguir, o total de reposições do dia.</div>`;
+    if(d.auto_por_dia){
+      const pessoas = lista.filter(p => diasOrd.some(iso => (d.auto_por_dia[iso]||{})[p.num]));
+      if(pessoas.length) html += `<details style="margin:2px 0 12px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">Automáticas por colaborador e por dia</summary><div class="rp-tabela-box" style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11.5px;margin-top:6px;min-width:100%;">
+        <tr style="color:var(--ink-soft);"><th style="text-align:left;padding:3px;">Colaborador</th>${diasOrd.map(iso => `<th style="padding:3px;">${nomeDia(iso)}<br>${ddmm(iso)}</th>`).join('')}<th style="padding:3px;">Total</th></tr>
+        ${pessoas.map(p => { const v = diasOrd.map(iso => (d.auto_por_dia[iso]||{})[p.num]||0); return `<tr style="border-top:1px solid var(--line);"><td style="padding:3px;white-space:nowrap;">${rpEsc(primeiro(p.nome))}</td>${v.map(n => `<td style="text-align:center;${n?'':'color:var(--ink-soft);'}">${n||'·'}</td>`).join('')}<td style="text-align:center;font-weight:700;">${v.reduce((a,b)=>a+b,0)}</td></tr>`; }).join('')}
+      </table></div></details>`;
+    }
+  }
   // gráfico 1 — paletes por colaborador
   const comPal = lista.filter(x => x.paletes > 0).sort((a,b) => b.paletes - a.paletes);
   const maxP = Math.max(1, ...comPal.map(x => x.paletes));
@@ -13002,6 +13146,7 @@ async function renderMelhoriaContinua(){
   }catch(e){}
 
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
+  try{ html += `<div class="aqui-obs-wrap">${await blocoAquiObservacoes()}</div>`; }catch(e){}
 
   const porDiaListas = {};
   listas7dias.forEach(l=>{
@@ -13372,7 +13517,7 @@ async function invGridCarregar(){
     const ant = (historico||[]).find(x => x.secao === sec);
     const antTxt = ant ? `${Number(ant.resultado_inventario).toLocaleString('pt-PT',{maximumFractionDigits:0})} € <span style="font-size:10px;">(${new Date(ant.data+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})})</span>` : '—';
     const campo = podeEditar
-      ? `<input id="inv-grid-${i}" type="text" inputmode="decimal" placeholder="ex: -120,50" value="${v === null ? '' : String(v).replace('.',',')}" style="width:110px;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:14px;text-align:right;">`
+      ? `<span style="display:inline-flex;gap:4px;align-items:center;"><button type="button" onclick="invTrocarSinal('inv-grid-${i}',-1)" style="width:34px;height:36px;border-radius:8px;border:1px solid var(--red);background:#fff4f4;color:var(--red);font-size:18px;font-weight:800;">−</button><input id="inv-grid-${i}" type="text" inputmode="decimal" placeholder="0,00" value="${v === null ? '' : String(v).replace('.',',')}" oninput="invCorSinal(this)" style="width:92px;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:14px;text-align:right;font-weight:700;color:${v===null?'inherit':(v<0?'var(--red)':'var(--green)')};"><button type="button" onclick="invTrocarSinal('inv-grid-${i}',1)" style="width:34px;height:36px;border-radius:8px;border:1px solid var(--green);background:#f1faf3;color:var(--green);font-size:18px;font-weight:800;">+</button></span>`
       : `<b style="color:${v===null?'var(--ink-soft)':(v<0?'var(--red)':'var(--green)')};">${v===null?'—':v.toLocaleString('pt-PT',{maximumFractionDigits:2})+' €'}</b>`;
     html += `<tr style="border-top:1px solid var(--line);">
       <td style="padding:6px 2px;">${labelSecaoPainel(sec)}${r && r.registado_por ? `<div style="font-size:10px;color:var(--ink-soft);">${r.registado_por}</div>` : ''}</td>
@@ -13383,16 +13528,28 @@ async function invGridCarregar(){
   html += `<tr style="border-top:2px solid var(--line);"><td style="padding:8px 2px;font-weight:700;">Total da loja</td><td style="padding:8px 2px;text-align:right;font-weight:800;color:${total<0?'var(--red)':'var(--green)'};">${total.toLocaleString('pt-PT',{maximumFractionDigits:2})} €</td><td></td></tr>`;
   html += `</tbody></table>`;
   html += podeEditar
-    ? `<div style="font-size:11px;color:var(--ink-soft);margin:8px 0;">Valor negativo = falta de stock (perda). Deixe em branco as secções sem inventário nesse dia.</div>
+    ? `<div style="font-size:11px;color:var(--ink-soft);margin:8px 0;">Toque em <b style="color:var(--red);">−</b> para resultado negativo (falta de stock) ou em <b style="color:var(--green);">+</b> para positivo. Deixe em branco as secções sem inventário nesse dia.</div>
        <button class="btn-primary" style="margin-top:4px;" onclick="invGridGuardar()">💾 Guardar resultados</button>`
     : `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">🔒 Só a gestora da loja pode registar resultados.</div>`;
   box.innerHTML = html;
 }
 
+// os teclados numéricos do telemóvel muitas vezes não têm o sinal "-": os botões − e + põem o sinal
+function invTrocarSinal(id, sinal){
+  const el = document.getElementById(id); if(!el) return;
+  let t = String(el.value||'').trim().replace(/^[+\-−]\s*/, '');
+  el.value = sinal < 0 ? '-' + t : t;
+  invCorSinal(el);
+  if(!t) el.focus();
+}
+function invCorSinal(el){
+  const t = String(el.value||'').trim();
+  el.style.color = !t ? 'inherit' : (/^[\-−]/.test(t) ? 'var(--red)' : 'var(--green)');
+}
 async function invGridGuardar(){
   if(!soDona('registar resultados de inventário')) return;
   const data = (document.getElementById('inv-grid-data')||{}).value || hojeISO();
-  const lerNum = (t) => { t = String(t||'').trim().replace(/\s|€/g,''); if(!t) return null; if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.'); const v = parseFloat(t); return isNaN(v) ? NaN : v; };
+  const lerNum = (t) => { t = String(t||'').trim().replace(/\s|€/g,'').replace(/^−/,'-').replace(/^\+/,''); if(!t || t === '-') return null; if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.'); const v = parseFloat(t); return isNaN(v) ? NaN : v; };
   const linhas = []; const erros = [];
   DEPARTAMENTOS_LOJA.forEach((sec, i) => {
     const el = document.getElementById('inv-grid-'+i); if(!el) return;
