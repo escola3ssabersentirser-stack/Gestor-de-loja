@@ -8833,6 +8833,102 @@ async function gerarAtaAutomatica(dReun){
 
 // ===== Apresentação semanal: gerada na hora com os dados mais recentes =====
 let apSlides = [], apIdx = 0;
+// ===================== PDF e PowerPoint para partilhar =====================
+const LIB_JSPDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+const LIB_H2C = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+const LIB_PPTX = 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
+async function libCarregar(src, teste){
+  if(teste()) return;
+  await infoCarregarScript(src);
+  for(let i = 0; i < 60 && !teste(); i++) await new Promise(r => setTimeout(r, 100));
+  if(!teste()) throw new Error('sem ligação à internet para criar o ficheiro');
+}
+// o tipo de letra do PDF não tem emojis nem alguns símbolos: troca-os por texto simples
+function pdfLimpo(t){
+  return String(t == null ? '' : t)
+    .replace(/[−–—]/g, '-').replace(/→/g, '->').replace(/←/g, '<-').replace(/[▲↑]/g, '+').replace(/[▼↓]/g, '-')
+    .replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...').replace(/•/g, '-').replace(/✓/g, 'OK').replace(/✗|✕/g, 'X').replace(/·/g, '-')
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{2700}-\u{27BF}]/gu, '')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ€]/g, '');
+}
+// documento de texto (ata, resumo) em PDF A4
+async function pdfTexto(titulo, secoes, assinatura, nomeBase){
+  await libCarregar(LIB_JSPDF, () => window.jspdf && window.jspdf.jsPDF);
+  const doc = new window.jspdf.jsPDF({unit:'mm', format:'a4'});
+  const W = 210, M = 16, larg = W - 2*M; let y = 0;
+  const cab = () => { doc.setFillColor(20,48,30); doc.rect(0,0,W,24,'F'); doc.setTextColor(246,248,242); doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.text(pdfLimpo(titulo).slice(0,80), M, 11); doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(201,221,205); doc.text('Loja 747 - Viana do Castelo Portuzelo', M, 18); y = 34; };
+  const novaPag = () => { doc.addPage(); cab(); };
+  const espaco = h => { if(y + h > 284){ novaPag(); } };
+  cab();
+  secoes.forEach(s => {
+    espaco(14);
+    doc.setFont('helvetica','bold'); doc.setFontSize(12.5); doc.setTextColor(27,122,74); doc.text(pdfLimpo(s.label), M, y); y += 2;
+    doc.setDrawColor(200,220,205); doc.line(M, y, W - M, y); y += 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(30,30,30);
+    const texto = (s.valor && String(s.valor).trim()) ? String(s.valor) : '-';
+    texto.split('\n').forEach(l => { const linhas = doc.splitTextToSize(pdfLimpo(l) || ' ', larg); linhas.forEach(x => { espaco(5.2); doc.text(x, M, y); y += 5.2; }); });
+    y += 4;
+  });
+  espaco(16); y += 4; doc.setFontSize(10); doc.setTextColor(80,80,80);
+  doc.text('Assinado por: ' + pdfLimpo(assinatura || '-'), M, y); y += 5.5;
+  doc.text('Data: ' + new Date().toLocaleDateString('pt-PT') + ' ' + new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}), M, y);
+  const n = doc.getNumberOfPages(); for(let i = 1; i <= n; i++){ doc.setPage(i); doc.setFontSize(8.5); doc.setTextColor(140,140,140); doc.text(`Página ${i} de ${n}`, W - M, 292, {align:'right'}); }
+  await partilharOuDescarregarFicheiro(doc.output('blob'), `${nomeBase}.pdf`, titulo);
+}
+async function ataPDF(id){
+  const a = ataAtualOuPreview(id); if(!a){ alert('Ainda não há ata.'); return; }
+  try{ await pdfTexto(`Ata da reunião semanal - ${a.semana || ''}`, ATA_CAMPOS.map(([k,l]) => ({label: l, valor: a[k]})), a.criado_por && a.criado_por !== 'automático' ? a.criado_por : (currentUser ? currentUser.name : ''), `Ata_${docNome(a.semana || a.data_reuniao)}`); }
+  catch(e){ alert('Não consegui criar o PDF: ' + (e && e.message || e)); }
+}
+async function resumoPDF(){
+  try{
+    const v = resumoReuniaoCache || await gerarResumoReuniao();
+    await pdfTexto(`Resumo semanal - ${semanaAtualLabel()}`, [
+      {label:'Vendas (semana, mês e ano)', valor: v.vendas}, {label:'Quebras', valor: v.quebras}, {label:'Auditorias', valor: v.auditorias}, {label:'Pontos a discutir', valor: (v.pontos||[]).map((p,i) => (i+1) + '. ' + p).join('\n')}
+    ], currentUser ? currentUser.name : '', `Resumo_semanal_${docNome(semanaAtualLabel())}`);
+  }catch(e){ alert('Não consegui criar o PDF: ' + (e && e.message || e)); }
+}
+// apresentação semanal: cada diapositivo vira uma imagem → PDF ou PowerPoint
+async function apExportar(fmt){
+  const ov = document.getElementById('ap-overlay'); if(!ov || !apSlides || !apSlides.length) return;
+  const aviso = document.createElement('div');
+  aviso.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:10001;background:#fff;color:#14301E;padding:10px 16px;border-radius:12px;font:600 14px Arial;box-shadow:0 6px 20px rgba(0,0,0,.3);';
+  aviso.textContent = 'A preparar o ' + (fmt === 'pptx' ? 'PowerPoint' : 'PDF') + '…'; document.body.appendChild(aviso);
+  const caixa = document.createElement('div');
+  caixa.style.cssText = 'position:fixed;left:-20000px;top:0;width:1100px;display:flex;z-index:-1;';
+  caixa.className = 'ap-export';
+  if(!document.getElementById('ap-export-css')){ const st = document.createElement('style'); st.id = 'ap-export-css';
+    st.textContent = '#ap-overlay .ap-export .ap-slide{font-size:22px !important;padding:56px 72px 70px !important;} #ap-overlay .ap-export .ap-slide h1{font-size:66px !important;} #ap-overlay .ap-export .ap-slide h2{font-size:42px !important;}';
+    document.head.appendChild(st); }
+  ov.appendChild(caixa);
+  try{
+    await libCarregar(LIB_H2C, () => window.html2canvas);
+    if(fmt === 'pptx') await libCarregar(LIB_PPTX, () => window.PptxGenJS); else await libCarregar(LIB_JSPDF, () => window.jspdf && window.jspdf.jsPDF);
+    const imgs = [];
+    for(let i = 0; i < apSlides.length; i++){
+      aviso.textContent = `A preparar o ${fmt === 'pptx' ? 'PowerPoint' : 'PDF'}… ${i+1}/${apSlides.length}`;
+      caixa.innerHTML = apSlides[i];
+      const el = caixa.firstElementChild; if(!el) continue;
+      el.style.minHeight = '619px'; el.style.width = '1100px'; el.style.flex = 'none';
+      await new Promise(r => setTimeout(r, 60));
+      const cv = await window.html2canvas(el, {scale: 2, backgroundColor: '#F6F8F2', logging: false, useCORS: true});
+      imgs.push({src: cv.toDataURL('image/jpeg', 0.9), w: cv.width, h: cv.height});
+    }
+    const titulo = `Apresentação semanal - ${semanaAtualLabel()}`; const nome = `Apresentacao_${docNome(semanaAtualLabel())}`;
+    if(fmt === 'pptx'){
+      const pptx = new window.PptxGenJS(); pptx.layout = 'LAYOUT_16x9'; pptx.title = titulo;
+      imgs.forEach(im => { const s = pptx.addSlide(); s.background = {color:'F6F8F2'}; const W = 10, H = 5.625; const k = Math.min(W/im.w, H/im.h); const w = im.w*k, h = im.h*k; s.addImage({data: im.src, x: (W-w)/2, y: (H-h)/2, w, h}); });
+      const blob = await pptx.write({outputType:'blob'});
+      await partilharOuDescarregarFicheiro(blob, `${nome}.pptx`, titulo);
+    } else {
+      const doc = new window.jspdf.jsPDF({orientation:'landscape', unit:'pt', format:[960,540]});
+      imgs.forEach((im, i) => { if(i) doc.addPage([960,540], 'landscape'); doc.setFillColor(246,248,242); doc.rect(0,0,960,540,'F'); const k = Math.min(960/im.w, 540/im.h); const w = im.w*k, h = im.h*k; doc.addImage(im.src, 'JPEG', (960-w)/2, (540-h)/2, w, h); });
+      await partilharOuDescarregarFicheiro(doc.output('blob'), `${nome}.pdf`, titulo);
+    }
+  }catch(e){ alert('Não consegui criar o ficheiro: ' + (e && e.message || e)); }
+  finally{ caixa.remove(); aviso.remove(); }
+}
+
 async function abrirApresentacao(){
   let ov = document.getElementById('ap-overlay');
   if(!ov){ ov = document.createElement('div'); ov.id = 'ap-overlay'; document.body.appendChild(ov); }
@@ -8846,7 +8942,7 @@ function apIr(d){ apIdx = Math.max(0, Math.min(apSlides.length - 1, apIdx + d));
 function apMostrar(){
   const ov = document.getElementById('ap-overlay'); if(!ov) return;
   ov.innerHTML = `<div class="ap-palco">${apSlides[apIdx]}</div>
-    <div class="ap-barra"><button onclick="apIr(-1)" ${apIdx === 0 ? 'disabled' : ''} aria-label="Anterior">‹</button><span>${apIdx + 1} / ${apSlides.length}</span><button onclick="apIr(1)" ${apIdx === apSlides.length - 1 ? 'disabled' : ''} aria-label="Seguinte">›</button><button onclick="apFechar()" aria-label="Fechar">✕</button></div>`;
+    <div class="ap-barra"><button onclick="apIr(-1)" ${apIdx === 0 ? 'disabled' : ''} aria-label="Anterior">‹</button><span>${apIdx + 1} / ${apSlides.length}</span><button onclick="apIr(1)" ${apIdx === apSlides.length - 1 ? 'disabled' : ''} aria-label="Seguinte">›</button><button onclick="apExportar('pdf')" aria-label="Guardar em PDF" style="width:auto;padding:0 12px;font-size:14px;">PDF</button><button onclick="apExportar('pptx')" aria-label="Guardar em PowerPoint" style="width:auto;padding:0 12px;font-size:14px;">PPT</button><button onclick="apFechar()" aria-label="Fechar">✕</button></div>`;
 }
 document.addEventListener('keydown', e => { const ov = document.getElementById('ap-overlay'); if(!ov || ov.style.display !== 'flex') return; if(e.key === 'ArrowRight' || e.key === ' ') apIr(1); else if(e.key === 'ArrowLeft') apIr(-1); else if(e.key === 'Escape') apFechar(); });
 (() => { let x0 = null; document.addEventListener('touchstart', e => { if(e.target.closest && e.target.closest('#ap-overlay')) x0 = e.touches[0].clientX; }, {passive:true}); document.addEventListener('touchend', e => { if(x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if(Math.abs(dx) > 50) apIr(dx < 0 ? 1 : -1); }, {passive:true}); })();
@@ -8983,6 +9079,7 @@ async function renderAtaSemanal(){
   }
   html += `</div><div style="display:flex;gap:8px;margin:-6px 0 16px;flex-wrap:wrap;">`;
   if(ataAtual || ataPreview){
+    html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#B4231A;" onclick="ataPDF()">📕 PDF</button>`;
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#2B579A;" onclick="ataWord()">📄 Word</button>`;
     html += `<button class="btn-primary" style="margin-top:0;flex:1;background:#217346;" onclick="ataExcel()">📊 Excel</button>`;
   }
@@ -8995,7 +9092,7 @@ async function renderAtaSemanal(){
   try{
     ataLista = await sb('loja_ata_semanal?select=*&order=data_reuniao.desc.nullslast,id.desc&limit=30') || [];
     const ant = ataLista.filter(a => !ataAtual || a.id !== ataAtual.id);
-    if(ant.length) html += `<details class="card" style="margin-bottom:16px;"><summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:13px;">📁 Atas anteriores (${ant.length})</summary>${ant.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;">${rpEsc(a.semana || a.data_reuniao || 'Ata')}</span><span style="display:flex;gap:4px;"><button class="lem-w" style="background:#2B579A" onclick="ataWord(${a.id})">Word</button><button class="lem-w" style="background:#217346" onclick="ataExcel(${a.id})">Excel</button></span></div>`).join('')}</details>`;
+    if(ant.length) html += `<details class="card" style="margin-bottom:16px;"><summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:13px;">📁 Atas anteriores (${ant.length})</summary>${ant.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--line);"><span style="font-size:12.5px;">${rpEsc(a.semana || a.data_reuniao || 'Ata')}</span><span style="display:flex;gap:4px;"><button class="lem-w" style="background:#B4231A" onclick="ataPDF(${a.id})">PDF</button><button class="lem-w" style="background:#2B579A" onclick="ataWord(${a.id})">Word</button><button class="lem-w" style="background:#217346" onclick="ataExcel(${a.id})">Excel</button></span></div>`).join('')}</details>`;
   }catch(e){}
   wrap.innerHTML = html;
 }
@@ -9108,7 +9205,7 @@ async function renderResumoReuniao(){
     ${bloco('📉 Quebras', v.quebras)}
     ${bloco('🔍 Auditorias', v.auditorias)}
     ${v.pontos.length ? `<div style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:6px;">💬 Pontos a discutir</div><ol style="margin:0 0 4px 18px;padding:0;font-size:13px;line-height:1.5;color:var(--ink);">${v.pontos.map(p => `<li>${rpEsc(p)}</li>`).join('')}</ol>` : ''}
-    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"><button class="btn-primary" style="margin:0;flex:1;background:#2B579A;" onclick="resumoWord()">📄 Word</button><button class="btn-primary" style="margin:0;flex:1;background:#217346;" onclick="resumoExcel()">📊 Excel</button><button class="btn-primary" style="margin:0;flex:1;background:#C0392B;" onclick="resumoEmail()">✉️ Email</button></div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"><button class="btn-primary" style="margin:0;flex:1;background:#B4231A;" onclick="resumoPDF()">📕 PDF</button><button class="btn-primary" style="margin:0;flex:1;background:#2B579A;" onclick="resumoWord()">📄 Word</button><button class="btn-primary" style="margin:0;flex:1;background:#217346;" onclick="resumoExcel()">📊 Excel</button><button class="btn-primary" style="margin:0;flex:1;background:#C0392B;" onclick="resumoEmail()">✉️ Email</button></div>
     <button class="btn-primary" style="background:#25D366;margin-top:8px;" onclick="lemEnviarResumo()">📲 Enviar resumo por WhatsApp</button>
   </div>`;
 }
@@ -13683,6 +13780,20 @@ async function editarValidadesExecPct(id){
   }
 }
 
+async function mdCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o markdown')) return;
+  const est = document.getElementById('md-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    msg('A ler o ficheiro…');
+    const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+    if(impTipo(wb) !== 'markdown') throw new Error('este ficheiro não é o relatório de Markdown (falta a folha "Markdown da Loja por Divisão")');
+    const r = await impMarkdown(wb);
+    msg('<span style="color:var(--green);">✓ ' + rpEsc(r || 'Markdown atualizado') + '</span>');
+    try{ if(typeof atualizarTudo === 'function') atualizarTudo(false); }catch(e){}
+    setTimeout(renderMarkdownScreen, 1500);
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
 async function renderMarkdownScreen(){
   const content = document.getElementById('markdown-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -13694,7 +13805,8 @@ async function renderMarkdownScreen(){
   ]);
   const editavel = currentUser && souDona();
 
-  let html = `<div class="section-title">🏷️ % Markdown Não Realizado — Por Secção (real, ${pctDivisoes[0]?.mes_referencia || ''})</div>`;
+  let html = editavel ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="md-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="mdCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('md-fich').click()">📎 Carregar ficheiro de Markdown (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">A app lê o markdown não realizado por secção e artigo e as etiquetas impressas, vendidas e sem venda.</div><div id="md-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '';
+  html += `<div class="section-title">🏷️ % Markdown Não Realizado — Por Secção (real, ${pctDivisoes[0]?.mes_referencia || ''})</div>`;
   html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   DEPARTAMENTOS_LOJA.forEach(secao=>{
     const divisoesMatch = pctDivisoes.filter(d=>d.secao_app === secao);
