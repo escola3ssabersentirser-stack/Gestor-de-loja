@@ -3346,10 +3346,7 @@ async function blocoScoreValidades(){
       + d.secoes.filter(x => x.tarefas || x.aceitacao != null).sort((a,b) => (a.aceitacao ?? 999) - (b.aceitacao ?? 999)).map(x => `<tr><td style="text-align:left;">${rpEsc(x.secao)}</td><td style="color:${cor(x.execucao,98,95)};font-weight:700;">${pct(x.execucao)}</td><td style="color:${cor(x.aceitacao,75,60)};font-weight:800;">${pct(x.aceitacao)}</td><td style="color:${corInv(x.nao_realizado,5,10)};font-weight:700;">${pct(x.nao_realizado)}</td><td>${eur(x.quebra_evitada)}</td><td style="color:#C77F12;font-weight:700;">${eur(x.md_quebrado)}</td></tr>`).join('')
       + `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);padding:4px 2px;">Ordenado pela aceitação, da pior para a melhor.</div></div>`;
   }
-  if((d.area||[]).length){
-    h += `<div class="rp-bloco-tit">Lojas da área</div><div class="card rp-tabela-box" style="padding:4px 8px;"><table class="rp-tab" style="font-size:12px;"><thead><tr><th style="text-align:left;">Loja</th><th>Score</th><th>Posição</th><th>Aceitação</th><th>Não realiz.</th></tr></thead><tbody>`
-      + [...d.area].sort((a,b) => b.score - a.score).map(x => `<tr${x.loja === IMP_LOJA ? ' style="background:#E3F2E6;font-weight:800;"' : ''}><td style="text-align:left;">${x.loja} ${rpEsc(impTitulo(x.nome))}</td><td>${pct(x.score,2)}</td><td>${x.posicao}.º</td><td>${pct(x.aceitacao)}</td><td>${pct(x.nao_realizado)}</td></tr>`).join('') + `</tbody></table></div>`;
-  }
+  // só dados da loja 747 Portuzelo (sem comparação com outras lojas)
   if((d.artigos||[]).length){
     h += `<details class="card" style="margin-top:10px;"><summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:13px;">Top ${d.artigos.length} artigos com maior quebra</summary><div class="rp-tabela-box"><table class="rp-tab" style="font-size:12px;margin-top:6px;"><thead><tr><th style="text-align:left;">Artigo</th><th>Quebra evitada</th><th>MD não realiz.</th><th>MD quebrado</th></tr></thead><tbody>`
       + d.artigos.map(x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}</td><td>${eur(x.quebra_evitada)}</td><td style="color:${x.mnr_valor > 0 ? '#B4231A' : 'inherit'}">${eur(x.mnr_valor)}</td><td style="color:${x.md_quebrado > 0 ? '#C77F12' : 'inherit'}">${eur(x.md_quebrado)}</td></tr>`).join('') + `</tbody></table></div></details>`;
@@ -10633,12 +10630,11 @@ function aquiLerExcel(wb, nomeFicheiro){
     if(!lojas.length) continue;
     const nossa = lojas.find(l => l.cod === '747') || lojas.find(l => /portuz/i.test(l.nome));
     if(!nossa) throw new Error('não encontrei a loja 747 no ficheiro');
-    const ord = lojas.slice().sort((a,b) => b.obs - a.obs);
-    const area = lojas.filter(l => l.dm && l.dm === nossa.dm).sort((a,b) => b.obs - a.obs);
     const m = String(nomeFicheiro||'').match(/(\d{1,2})[-_.](\d{1,2})(?:[-_.](\d{2,4}))?/);
     const hoje = new Date(); let data = dataLocalISO(hoje);
     if(m){ const ano = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : String(hoje.getFullYear()); data = `${ano}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
-    return {data, dados: {loja: nossa, posicao: lojas.filter(l => l.obs > nossa.obs).length + 1, total_lojas: lojas.length, total_obs: lojas.reduce((s,l)=>s+l.obs,0), media: Math.round(lojas.reduce((s,l)=>s+l.obs,0)/lojas.length*10)/10, sem_obs: lojas.filter(l => !l.obs).length, area_dm: nossa.dm, area, top: ord.slice(0,5)}};
+    // só os dados da loja 747 Portuzelo
+    return {data, dados: {loja: {cod: nossa.cod, nome: nossa.nome, obs: nossa.obs}}};
   }
   return null;
 }
@@ -10650,34 +10646,30 @@ async function aquiCarregar(input){
     const r = aquiLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}), f.name);
     if(!r) throw new Error('não reconheci o ficheiro — precisa das colunas "Nome da Loja" e "Nº Observações"');
     await sb('loja_aqui_observacoes?on_conflict=data', {method:'POST', body: JSON.stringify(r), prefer:'resolution=merge-duplicates,return=minimal'});
-    msg(`<span style="color:var(--green);">✓ Lido: loja 747 com ${r.dados.loja.obs} observações (${r.dados.posicao}.º de ${r.dados.total_lojas} lojas).</span>`);
+    msg(`<span style="color:var(--green);">✓ Lido: Portuzelo com ${r.dados.loja.obs} observações.</span>`);
     document.querySelectorAll('.aqui-obs-wrap').forEach(async w => { w.innerHTML = await blocoAquiObservacoes(); });
   }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
 }
 async function blocoAquiObservacoes(){
   const rows = await sb('loja_aqui_observacoes?select=data,dados&order=data.desc&limit=6').catch(()=>[]) || [];
   const dona = souDona();
-  let html = `<div class="section-title">👀 Observações "AQUI para o Cliente" — loja vs área</div><div class="card">`;
+  let html = `<div class="section-title">👀 Observações "AQUI para o Cliente" — Portuzelo</div><div class="card">`;
   if(dona) html += `<input type="file" id="aqui-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="aquiCarregar(this)"><button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('aqui-fich').click()">📎 Carregar ficheiro Nº Observações (Excel)</button><div id="aqui-estado" style="font-size:12px;margin-bottom:8px;"></div>`;
   if(!rows.length) return html + `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem ficheiro carregado.</div></div>`;
   const r = rows[0], d = r.dados || {}, ant = rows[1] && rows[1].dados;
-  const dt = new Date(r.data+'T12:00:00').toLocaleDateString('pt-PT');
+  const dt = iso => new Date(iso+'T12:00:00').toLocaleDateString('pt-PT');
   const dif = ant ? d.loja.obs - ant.loja.obs : null;
-  html += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Dados de ${dt}</div>
-    <div class="vs-detail-grid" style="margin-bottom:10px;">
-      <div class="vs-box"><div class="vs-label">Loja 747</div><div class="vs-value" style="font-size:22px;color:var(--navy);">${d.loja.obs}${dif !== null ? ` <span style="font-size:12px;color:${dif>=0?'var(--green)':'var(--red)'};">${dif>=0?'▲ +':'▼ '}${dif}</span>` : ''}</div><div style="font-size:11px;color:var(--ink-soft);">observações</div></div>
-      <div class="vs-box"><div class="vs-label">Posição</div><div class="vs-value" style="font-size:22px;color:var(--navy);">${d.posicao}.º</div><div style="font-size:11px;color:var(--ink-soft);">de ${d.total_lojas} lojas · média ${String(d.media).replace('.',',')}</div></div>
+  html += `<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">
+      <span style="font-size:30px;font-weight:800;color:var(--navy);">${d.loja.obs}</span>
+      <span style="font-size:12.5px;color:var(--ink-soft);">observações · dados de ${dt(r.data)}</span>
+      ${dif !== null ? `<span style="font-size:12.5px;font-weight:700;color:${dif>=0?'var(--green)':'var(--red)'};">${dif>=0?'▲ +':'▼ '}${dif} vs ${dt(rows[1].data)}</span>` : ''}
     </div>`;
-  if(d.area && d.area.length){
-    const max = Math.max(1, ...d.area.map(l => l.obs));
-    html += `<div style="font-weight:700;font-size:12.5px;color:var(--navy);margin:4px 0 6px;">Área ${rpEsc(d.area_dm)}</div>`;
-    d.area.forEach((l, i) => { const eu = l.cod === d.loja.cod;
-      html += `<div style="display:grid;grid-template-columns:18px minmax(80px,40%) 1fr 28px;gap:6px;align-items:center;margin:4px 0;font-size:12px;${eu?'font-weight:800;':''}">
-        <span style="color:var(--ink-soft);">${i+1}.</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${rpEsc(l.nome)}</span>
-        <span style="background:var(--line);border-radius:6px;height:12px;overflow:hidden;"><span style="display:block;height:100%;width:${(l.obs/max*100).toFixed(1)}%;background:${eu?'#1F7A33':'#8A938D'};border-radius:6px;"></span></span>
-        <b style="text-align:right;">${l.obs}</b></div>`; });
+  if(rows.length > 1){
+    const hist = rows.slice().reverse(); const max = Math.max(1, ...hist.map(x => (x.dados && x.dados.loja && x.dados.loja.obs) || 0));
+    html += hist.map(x => { const v = (x.dados && x.dados.loja && x.dados.loja.obs) || 0;
+      return `<div style="display:grid;grid-template-columns:60px 1fr 28px;gap:6px;align-items:center;margin:3px 0;font-size:12px;"><span>${dt(x.data).slice(0,5)}</span><span style="background:var(--line);border-radius:6px;height:12px;overflow:hidden;"><span style="display:block;height:100%;width:${(v/max*100).toFixed(1)}%;background:#1F7A33;border-radius:6px;"></span></span><b style="text-align:right;">${v}</b></div>`; }).join('');
   }
-  html += `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">Região: ${d.total_obs} observações em ${d.total_lojas} lojas · ${d.sem_obs} lojas sem nenhuma.</div></div>`;
+  html += `</div>`;
   return html;
 }
 
