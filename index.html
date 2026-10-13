@@ -11981,23 +11981,31 @@ async function rhCarregar(input, tipo){
     if(!linhas.length) throw new Error('não reconheci as colunas do ficheiro. Envie-o no chat ao Claude para ele ensinar a app a ler este formato.');
     rhLidos = {tipo, linhas};
     msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">${linhas.length} linhas lidas</b><div style="max-height:220px;overflow:auto;margin:6px 0;font-size:12px;">${linhas.slice(0,60).map(x => `<div style="padding:4px 0;border-top:1px solid var(--line);"><b>${rpEsc(x.nome)}</b> · ${tipo === 'bh' ? `${x.pos ? '+' + x.pos.toLocaleString('pt-PT',{maximumFractionDigits:2}) + 'h' : ''}${x.neg ? ' ' + x.neg.toLocaleString('pt-PT',{maximumFractionDigits:2}) + 'h' : ''}${x.data ? ' · gozo ' + x.data.split('-').reverse().join('/') : ''}` : x.tipo === 'compliance' ? ['codigo_conduta','data_privacy','politica_anticorrupcao','seguranca_protecao'].filter(k => x[k]).map(k => x[k]).join(' / ') : rpEsc(x.curso) + (x.data ? ' · ' + x.data.split('-').reverse().join('/') : '')}</div>`).join('')}</div>
-      ${tipo === 'form' ? '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="rh-subst" checked> Substituir a lista atual por esta</label>' : ''}
+      ${tipo === 'form' ? '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="rh-subst" checked> Substituir a lista atual por esta</label>' : '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="rh-zerar" checked> Quem não vem no ficheiro fica sem banco de horas (0h)</label>'}
       <button class="btn-primary" onclick="rhGuardar()">Guardar</button></div>`);
   }catch(e){ msg('✕ ' + (e && e.message || e)); }
 }
+let rhZerados = [];
 async function rhGuardar(){
+  rhZerados = [];
   if(!soDona('atualizar os dados de RH')) return;
   const {tipo, linhas} = rhLidos; let ok = 0, falta = [];
   try{
     if(tipo === 'bh'){
-      const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome') || [];
+      const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome,bh_positivo,bh_negativo') || [];
+      const atualizados = new Set();
       const porNum = new Map(colabs.map(c => [String(c.numero_pessoal||'').replace(/\D/g,'').replace(/^0+/,''), c]));
       const porNome = new Map(colabs.map(c => [rhN(c.nome), c]));
       for(const x of linhas){
         const c = (x.numero && porNum.get(x.numero.replace(/^0+/,''))) || porNome.get(rhN(x.nome)) || colabs.find(k => rhN(k.nome).startsWith(rhN(x.nome).split(' ')[0]) && rhN(k.nome).endsWith(rhN(x.nome).split(' ').pop()));
         if(!c){ falta.push(x.nome); continue; }
         const dados = {bh_positivo: Math.round(x.pos*100)/100, bh_negativo: Math.round(x.neg*100)/100}; if(x.data) dados.data_prevista_gozar_horas = x.data;
-        await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify(dados)}); ok++;
+        await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify(dados)}); ok++; atualizados.add(c.id);
+      }
+      if((document.getElementById('rh-zerar')||{}).checked){
+        const zerar = colabs.filter(c => !atualizados.has(c.id) && (Number(c.bh_positivo) || Number(c.bh_negativo)));
+        for(const c of zerar) await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({bh_positivo: 0, bh_negativo: 0})});
+        rhZerados = zerar.map(c => c.nome);
       }
     } else {
       const subst = (document.getElementById('rh-subst')||{}).checked;
@@ -12007,7 +12015,7 @@ async function rhGuardar(){
       if(perc.length){ if(subst) await sb('loja_formacoes_percurso?id=gt.0', {method:'DELETE'}); await sb('loja_formacoes_percurso', {method:'POST', body: JSON.stringify(perc)}); }
       ok = comp.length + perc.length;
     }
-    alert(`Guardado ✓\n\n${ok} linhas atualizadas${falta.length ? '\n\nNão encontrei na app: ' + falta.slice(0,10).join(', ') + (falta.length > 10 ? '…' : '') : ''}`);
+    alert(`Guardado ✓\n\n${ok} linhas atualizadas${tipo === 'bh' && rhZerados.length ? '\n' + rhZerados.length + ' pessoas que não vinham no ficheiro ficaram com 0h: ' + rhZerados.slice(0,6).join(', ') : ''}${falta.length ? '\n\nNão encontrei na app: ' + falta.slice(0,10).join(', ') + (falta.length > 10 ? '…' : '') : ''}`);
     lemDados = null; renderFormacoesScreen();
   }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
 }
