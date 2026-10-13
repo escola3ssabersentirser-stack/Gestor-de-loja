@@ -11932,18 +11932,26 @@ function rhLerTabela(wb, testeCab){
   }
   return null;
 }
-function rhCols(H){ const c = re => H.findIndex(h => re.test(h)); return {num: c(/(n\.?\s*º?|numero|nº).*(colab|pessoal|func)|^n\.?º?$|^numero$|pessoal|sap/), nome: c(/nome/)}; }
+function rhCols(H){ const c = re => H.findIndex(h => re.test(h)); return {num: c(/(n\.?\s*º?|numero|nº).*(colab|pessoal|func)|^n\.?º?$|^numero$|pessoal|sap/), nome: (c(/nome (do |de )?(colaborador|funcionario|trabalhador)/) >= 0 ? c(/nome (do |de )?(colaborador|funcionario|trabalhador)/) : c(/^nome$|nome(?! da sub| da loja| da funcao| de sub)/))}; }
 function rhLerBancoHoras(wb){
   const t = rhLerTabela(wb, H => H.some(h => /nome/.test(h)) && H.some(h => /banco|saldo|horas|bh/.test(h))); if(!t) return [];
   const {num, nome} = rhCols(t.H); const c = re => t.H.findIndex(h => re.test(h));
-  const cPos = c(/positiv|a gozar|credito|saldo positivo/), cNeg = c(/negativ|a compensar|debito|saldo negativo/), cSaldo = c(/^saldo|banco de horas|^bh$|total horas|^horas$/), cData = c(/data.*(gozo|gozar|prevista)|previsao/);
+  const cPos = c(/positiv|a gozar|credito|saldo positivo/), cNeg = c(/negativ|a compensar|debito|saldo negativo/), cSaldo = c(/^saldo|banco de horas|^bh$|^bh\b|total horas|^horas$/), cData = c(/data.*(gozo|gozar|prevista)|previsao/);
+  // colunas com datas (dias do mapa de gozo): a primeira com valor é a data prevista para gozar
+  const colsDia = t.H.map((h,i) => /^4\d{4}$/.test(h) ? i : -1).filter(i => i >= 0);
+  // ficheiros da área (várias lojas): fica só a loja 747 Portuzelo
+  const cLoja = c(/sub-?area|^loja$|nome da loja/);
+  let linhas = t.linhas;
+  if(cLoja >= 0){ const nossa = v => /portuz|\b747\b/i.test(String(v||'')); if(linhas.some(r => nossa(r[cLoja]))) linhas = linhas.filter(r => nossa(r[cLoja])); }
   const out = [];
-  t.linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return;
+  linhas.forEach(r => { const nm = String(r[nome]||'').trim(); if(!nm) return;
     let pos = cPos >= 0 ? rhNum(r[cPos]) : null, neg = cNeg >= 0 ? rhNum(r[cNeg]) : null;
     if(pos == null && neg == null && cSaldo >= 0){ const sv = rhNum(r[cSaldo]); if(sv != null){ pos = sv > 0 ? sv : 0; neg = sv < 0 ? sv : 0; } }
     if(neg != null && neg > 0) neg = -neg;
     if(pos == null && neg == null) return;
-    out.push({numero: num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '', nome: nm, pos: pos || 0, neg: neg || 0, data: cData >= 0 ? horIso(r[cData]) : null});
+    let data = cData >= 0 ? horIso(r[cData]) : null;
+    if(!data && colsDia.length){ const i = colsDia.find(i => String(r[i]||'').trim() !== ''); if(i != null) data = horIso(Number(t.H[i])); }
+    out.push({numero: num >= 0 ? String(r[num]||'').replace(/\D/g,'') : '', nome: nm, pos: pos || 0, neg: neg || 0, data});
   });
   return out;
 }
