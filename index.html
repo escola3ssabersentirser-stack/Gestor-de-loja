@@ -12228,6 +12228,65 @@ async function blocoIndicadoresRH(){
   return h;
 }
 
+// ===== Contactos (telefones) da equipa — ficheiro Excel =====
+function ctNorm(t){ return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim(); }
+function ctTelefone(v){ let d = String(v||'').replace(/\D/g,''); if(!d) return null; if(d.length === 9) d = '351' + d; if(d.startsWith('00')) d = d.slice(2); return d.length >= 11 ? d : null; }
+function ctLerExcel(wb){
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:false});
+    const hi = R.findIndex((r,i) => i < 30 && r.some(c => /telefone|telem[oó]vel|contacto|phone/i.test(String(c))) && r.some(c => /nome|conhecido/i.test(String(c))));
+    if(hi < 0) continue;
+    const H = R[hi].map(c => String(c).trim().toLowerCase());
+    const cNome = H.findIndex(h => /conhecido|nome/.test(h)), cTel = H.findIndex(h => /telefone|telem|contacto|phone/.test(h)), cNum = H.findIndex(h => /n\.?º|numero|sap|pessoal/.test(h));
+    const out = [];
+    for(let i = hi+1; i < R.length; i++){ const r = R[i]; const nome = String(r[cNome]||'').trim(); const tel = ctTelefone(r[cTel]); if(!nome || !tel) continue;
+      out.push({nome, tel, numero: cNum >= 0 ? String(r[cNum]||'').replace(/\D/g,'') : ''}); }
+    if(out.length) return out;
+  }
+  return [];
+}
+// "Ana Rosário" → "Ana Maria Mendes do Rosário": todas as palavras do nome curto aparecem no nome completo, pela mesma ordem
+function ctEncontrar(x, colabs){
+  if(x.numero){ const c = colabs.find(k => String(k.numero_pessoal||'').replace(/^0+/,'') === x.numero.replace(/^0+/,'')); if(c) return [c]; }
+  const p = ctNorm(x.nome).split(' ').filter(w => w.length > 1);
+  const exato = colabs.filter(k => ctNorm(k.nome) === ctNorm(x.nome)); if(exato.length) return exato;
+  return colabs.filter(k => { const t = ctNorm(k.nome).split(' '); let j = 0; for(const w of p){ j = t.indexOf(w, j); if(j < 0) return false; j++; } return p.length > 0 && t[0] === p[0] || (p.length > 1 && t[t.length-1] === p[p.length-1] && t.includes(p[0])); });
+}
+let ctLidos = [];
+async function ctCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('atualizar os contactos')) return;
+  const est = document.getElementById('ct-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    const linhas = ctLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}));
+    if(!linhas.length) throw new Error('não encontrei as colunas "Nome" (ou "Conhecido como") e "Telefone"');
+    const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome,telefone') || [];
+    ctLidos = linhas.map(x => { const m = ctEncontrar(x, colabs); return {...x, colab: m.length === 1 ? m[0] : null, ambiguo: m.length > 1}; });
+    const muda = ctLidos.filter(x => x.colab && String(x.colab.telefone||'') !== x.tel);
+    const igual = ctLidos.filter(x => x.colab && String(x.colab.telefone||'') === x.tel);
+    const fora = ctLidos.filter(x => !x.colab);
+    msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">${linhas.length} contactos lidos</b>
+      <div style="font-size:12.5px;margin:6px 0;">✏️ <b>${muda.length}</b> telefones novos ou diferentes · ✓ ${igual.length} já estavam certos${fora.length ? ` · ⚠️ ${fora.length} não encontrados na app` : ''}</div>
+      ${muda.length ? `<div style="max-height:220px;overflow:auto;font-size:12px;">${muda.map(x => `<div style="padding:4px 0;border-top:1px solid var(--line);"><b>${rpEsc(x.colab.nome)}</b><br><span style="color:var(--ink-soft);">${x.colab.telefone ? '+' + rpEsc(x.colab.telefone) + ' → ' : ''}</span><b>+${rpEsc(x.tel)}</b></div>`).join('')}</div>` : ''}
+      ${fora.length ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Não encontrados (adicione primeiro como colaboradores): ${fora.map(x => rpEsc(x.nome) + (x.ambiguo ? ' (mais do que uma pessoa com este nome)' : '')).join(', ')}</div>` : ''}
+      ${muda.length ? `<button class="btn-primary" style="margin-top:8px;" onclick="ctGuardar()">Guardar ${muda.length} contactos</button>` : '<div style="font-size:12.5px;color:var(--green);margin-top:6px;">✓ Os contactos já estão todos atualizados.</div>'}</div>`);
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+async function ctGuardar(){
+  if(!soDona('atualizar os contactos')) return;
+  const muda = ctLidos.filter(x => x.colab && String(x.colab.telefone||'') !== x.tel);
+  try{
+    for(const x of muda) await sb(`loja_colaboradores?id=eq.${x.colab.id}`, {method:'PATCH', body: JSON.stringify({telefone: x.tel})});
+    lemDados = null;
+    const est = document.getElementById('ct-estado'); if(est) est.innerHTML = `<span style="color:var(--green);">✓ ${muda.length} contactos atualizados. As mensagens de WhatsApp já usam os números novos.</span>`;
+    showToast();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
+function ctBotao(){
+  if(!souDona()) return '';
+  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="ct-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="ctCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('ct-fich').click()">📎 Atualizar contactos da equipa (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Ficheiro com o nome e o telefone de cada pessoa. A app junta pelo nome e mostra o que muda antes de guardar.</div><div id="ct-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+}
+
 async function renderFormacoesScreen(){
   const content = document.getElementById('formacoes-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -12236,7 +12295,7 @@ async function renderFormacoesScreen(){
   const alteracoesHtml = await blocoAlteracoesHorarioPendentes();
   const formacaoHtml = await blocoFormacaoCompliance();
   const sec = (t, i) => `<div class="section-title" style="margin-top:6px;">${t}</div>`;
-  content.innerHTML = indHtml + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
+  content.innerHTML = indHtml + ctBotao() + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
 }
 
 // ===== Horários por assinar (lista do Hello) — RH =====
