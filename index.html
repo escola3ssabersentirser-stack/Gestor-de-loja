@@ -11981,23 +11981,31 @@ async function rhCarregar(input, tipo){
     if(!linhas.length) throw new Error('não reconheci as colunas do ficheiro. Envie-o no chat ao Claude para ele ensinar a app a ler este formato.');
     rhLidos = {tipo, linhas};
     msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">${linhas.length} linhas lidas</b><div style="max-height:220px;overflow:auto;margin:6px 0;font-size:12px;">${linhas.slice(0,60).map(x => `<div style="padding:4px 0;border-top:1px solid var(--line);"><b>${rpEsc(x.nome)}</b> · ${tipo === 'bh' ? `${x.pos ? '+' + x.pos.toLocaleString('pt-PT',{maximumFractionDigits:2}) + 'h' : ''}${x.neg ? ' ' + x.neg.toLocaleString('pt-PT',{maximumFractionDigits:2}) + 'h' : ''}${x.data ? ' · gozo ' + x.data.split('-').reverse().join('/') : ''}` : x.tipo === 'compliance' ? ['codigo_conduta','data_privacy','politica_anticorrupcao','seguranca_protecao'].filter(k => x[k]).map(k => x[k]).join(' / ') : rpEsc(x.curso) + (x.data ? ' · ' + x.data.split('-').reverse().join('/') : '')}</div>`).join('')}</div>
-      ${tipo === 'form' ? '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="rh-subst" checked> Substituir a lista atual por esta</label>' : ''}
+      ${tipo === 'form' ? '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="rh-subst" checked> Substituir a lista atual por esta</label>' : '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="rh-zerar" checked> Quem não vem no ficheiro fica sem banco de horas (0h)</label>'}
       <button class="btn-primary" onclick="rhGuardar()">Guardar</button></div>`);
   }catch(e){ msg('✕ ' + (e && e.message || e)); }
 }
+let rhZerados = [];
 async function rhGuardar(){
+  rhZerados = [];
   if(!soDona('atualizar os dados de RH')) return;
   const {tipo, linhas} = rhLidos; let ok = 0, falta = [];
   try{
     if(tipo === 'bh'){
-      const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome') || [];
+      const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome,bh_positivo,bh_negativo') || [];
+      const atualizados = new Set();
       const porNum = new Map(colabs.map(c => [String(c.numero_pessoal||'').replace(/\D/g,'').replace(/^0+/,''), c]));
       const porNome = new Map(colabs.map(c => [rhN(c.nome), c]));
       for(const x of linhas){
         const c = (x.numero && porNum.get(x.numero.replace(/^0+/,''))) || porNome.get(rhN(x.nome)) || colabs.find(k => rhN(k.nome).startsWith(rhN(x.nome).split(' ')[0]) && rhN(k.nome).endsWith(rhN(x.nome).split(' ').pop()));
         if(!c){ falta.push(x.nome); continue; }
         const dados = {bh_positivo: Math.round(x.pos*100)/100, bh_negativo: Math.round(x.neg*100)/100}; if(x.data) dados.data_prevista_gozar_horas = x.data;
-        await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify(dados)}); ok++;
+        await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify(dados)}); ok++; atualizados.add(c.id);
+      }
+      if((document.getElementById('rh-zerar')||{}).checked){
+        const zerar = colabs.filter(c => !atualizados.has(c.id) && (Number(c.bh_positivo) || Number(c.bh_negativo)));
+        for(const c of zerar) await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({bh_positivo: 0, bh_negativo: 0})});
+        rhZerados = zerar.map(c => c.nome);
       }
     } else {
       const subst = (document.getElementById('rh-subst')||{}).checked;
@@ -12007,7 +12015,7 @@ async function rhGuardar(){
       if(perc.length){ if(subst) await sb('loja_formacoes_percurso?id=gt.0', {method:'DELETE'}); await sb('loja_formacoes_percurso', {method:'POST', body: JSON.stringify(perc)}); }
       ok = comp.length + perc.length;
     }
-    alert(`Guardado ✓\n\n${ok} linhas atualizadas${falta.length ? '\n\nNão encontrei na app: ' + falta.slice(0,10).join(', ') + (falta.length > 10 ? '…' : '') : ''}`);
+    alert(`Guardado ✓\n\n${ok} linhas atualizadas${tipo === 'bh' && rhZerados.length ? '\n' + rhZerados.length + ' pessoas que não vinham no ficheiro ficaram com 0h: ' + rhZerados.slice(0,6).join(', ') : ''}${falta.length ? '\n\nNão encontrei na app: ' + falta.slice(0,10).join(', ') + (falta.length > 10 ? '…' : '') : ''}`);
     lemDados = null; renderFormacoesScreen();
   }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
 }
@@ -12016,14 +12024,96 @@ function rhBotaoUpload(tipo, texto){
   return `<div class="card" style="margin-bottom:10px;"><input type="file" id="rh-fich-${tipo}" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="rhCarregar(this,'${tipo}')"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rh-fich-${tipo}').click()">📎 ${texto}</button><div id="rh-estado-${tipo}" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
 
+// ===== Indicadores RH para Gerentes (horários e descanso) — cartão Recursos Humanos =====
+const IND_MIN_FDS = 5, IND_MIN_DOM = 15, IND_MAX_TROCAS = 7;
+function indLerExcel(wb){
+  const nm = wb.SheetNames.find(n => /hor[áa]rios e descanso/i.test(n)); if(!nm) return null;
+  const R = XLSX.utils.sheet_to_json(wb.Sheets[nm], {header:1, defval:'', raw:true});
+  const N = t => String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+  let extracao = null;
+  R.slice(0, 6).forEach(r => { const i = r.findIndex(c => /extra[çc][ãa]o/i.test(String(c))); if(i >= 0){ const v = r.slice(i+1).find(c => c !== ''); if(typeof v === 'number') extracao = new Date(Date.UTC(1899,11,30) + Math.round(v)*864e5).toISOString().slice(0,10); } });
+  // totais da loja (linha a seguir aos títulos "# Erros HC por tratar …")
+  let loja = {};
+  const hT = R.findIndex(r => r.some(c => /# total de trocas/i.test(String(c))) && !r.some(c => /conhecido como/i.test(String(c))));
+  if(hT >= 0){ const H = R[hT].map(N), V = R[hT+1] || []; const g = re => { const i = H.findIndex(h => re.test(h)); return i >= 0 ? Number(V[i]) || 0 : null; };
+    loja = {oc11: g(/11 horas/), oc5h: g(/5 horas/), oc5d: g(/5 dias/), trocas: g(/total de trocas/), trocas_folga: g(/trocas de folga/)}; }
+  const hi = R.findIndex(r => r.some(c => /conhecido como/i.test(String(c))) && r.some(c => /fds/i.test(String(c))));
+  if(hi < 0) return null;
+  const H = R[hi].map(N); const ci = re => H.findIndex(h => re.test(h));
+  const c = {nome: ci(/conhecido como|^nome/), cargo: ci(/cargo|funcao/), fds: ci(/fds/), dom: ci(/dom /), oc11: ci(/11 horas/), trocas: ci(/total de trocas/), folga: ci(/trocas de folga/), fo: ci(/fo consecutivas/)};
+  const pessoas = [];
+  for(let i = hi+1; i < R.length; i++){ const r = R[i]; const nome = String(r[c.nome]||'').trim(); if(!nome) continue;
+    const n = k => c[k] >= 0 && r[c[k]] !== '' ? Number(r[c[k]]) : null;
+    pessoas.push({nome, cargo: c.cargo >= 0 ? String(r[c.cargo]||'').trim() : '', fds: n('fds'), dom: n('dom'), oc11: n('oc11') || 0, trocas: n('trocas') || 0, trocas_folga: n('folga') || 0}); }
+  if(!pessoas.length) return null;
+  if(loja.oc11 == null) loja.oc11 = pessoas.reduce((s,p) => s + p.oc11, 0);
+  if(loja.trocas == null) loja.trocas = pessoas.reduce((s,p) => s + p.trocas, 0);
+  return {data_extracao: extracao || dataLocalISO(new Date()), dados: {loja, pessoas}};
+}
+async function indCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar os indicadores de RH')) return;
+  const est = document.getElementById('ind-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    msg('A ler o ficheiro…');
+    const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+    const r = indLerExcel(wb);
+    if(!r) throw new Error('não encontrei a folha "Horários e Descanso" com os fins de semana e domingos');
+    await sb('loja_rh_indicadores?on_conflict=data_extracao', {method:'POST', body: JSON.stringify(r), prefer:'resolution=merge-duplicates,return=minimal'});
+    msg(`<span style="color:var(--green);">✓ Lido: ${r.dados.pessoas.length} colaboradores · dados de ${r.data_extracao.split('-').reverse().join('/')}</span>`);
+    setTimeout(renderFormacoesScreen, 1200);
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+async function blocoIndicadoresRH(){
+  const [rows, porAssinar] = await Promise.all([
+    sb('loja_rh_indicadores?select=data_extracao,dados&order=data_extracao.desc&limit=1').catch(()=>[]),
+    sb('loja_alteracoes_horario?assinado=eq.false&select=id').catch(()=>[])
+  ]);
+  const dona = souDona();
+  let h = `<div class="section-title">📊 Horários e descanso</div>`;
+  if(dona) h += `<div class="card" style="margin-bottom:10px;"><input type="file" id="ind-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="indCarregar(this)">
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('ind-fich').click()">📎 Carregar Indicadores RH para Gerentes (Excel)</button>
+    <div id="ind-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+  const r = rows && rows[0];
+  const nAss = (porAssinar || []).length;
+  if(!r){ return h + `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem ficheiro de indicadores carregado.</div><div style="margin-top:8px;font-size:13px;">✍️ Alterações de horário por assinar: <b style="color:${nAss?'var(--red)':'var(--green)'};">${nAss}</b></div></div>`; }
+  const d = r.dados || {}, P = (d.pessoas || []).filter(p => p.fds != null || p.dom != null);
+  const dt = new Date(r.data_extracao+'T12:00:00');
+  const mesesPassados = Math.max(1, dt.getMonth() + 1);
+  const espFds = IND_MIN_FDS * mesesPassados / 12, espDom = IND_MIN_DOM * mesesPassados / 12;
+  const nome = n => rpEsc(String(n||''));
+  const fdsBaixo = P.filter(p => p.fds != null && p.fds < espFds).sort((a,b) => a.fds - b.fds);
+  const domBaixo = P.filter(p => p.dom != null && p.dom < espDom).sort((a,b) => a.dom - b.dom);
+  const oc11 = (d.pessoas||[]).filter(p => p.oc11 > 0).sort((a,b) => b.oc11 - a.oc11);
+  const trocasAcima = (d.pessoas||[]).filter(p => p.trocas > IND_MAX_TROCAS).sort((a,b) => b.trocas - a.trocas);
+  const topTrocas = (d.pessoas||[]).filter(p => p.trocas > 0).sort((a,b) => b.trocas - a.trocas).slice(0,5);
+  const tile = (ic, tit, val, ok, sub) => `<div class="vs-box"><div class="vs-label">${ic} ${tit}</div><div class="vs-value" style="font-size:22px;color:${ok ? 'var(--green)' : 'var(--red)'};">${val}</div><div style="font-size:10.5px;color:var(--ink-soft);">${sub}</div></div>`;
+  h += `<div class="card"><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Dados do SAP de ${dt.toLocaleDateString('pt-PT')} · ano até ${dt.toLocaleDateString('pt-PT',{month:'long'})}</div>
+    <div class="vs-detail-grid" style="margin-bottom:6px;">
+      ${tile('🏖️', 'Fins de semana', fdsBaixo.length, !fdsBaixo.length, `pessoas abaixo do ritmo (mín. ${IND_MIN_FDS}/ano)`)}
+      ${tile('☀️', 'Domingos', domBaixo.length, !domBaixo.length, `pessoas abaixo do ritmo (mín. ${IND_MIN_DOM}/ano)`)}
+      ${tile('🌙', 'Descanso < 11h', d.loja && d.loja.oc11 != null ? d.loja.oc11 : oc11.reduce((s,p)=>s+p.oc11,0), !(d.loja && d.loja.oc11) && !oc11.length, 'ocorrências no mês')}
+      ${tile('🔁', 'Trocas de horário', trocasAcima.length, !trocasAcima.length, `pessoas com mais de ${IND_MAX_TROCAS} no mês · loja ${d.loja && d.loja.trocas != null ? d.loja.trocas : '—'}`)}
+      ${tile('✍️', 'Por assinar', nAss, !nAss, 'alterações de horário no Hello')}
+    </div>`;
+  const lista = (tit, arr, fmt, vazio) => `<details style="margin-top:6px;" ${arr.length ? '' : ''}><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);padding:4px 0;">${tit} (${arr.length})</summary>${arr.length ? arr.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid var(--line);font-size:12px;"><span>${nome(p.nome)} <span style="color:var(--ink-soft);font-size:10.5px;">${nome(p.cargo)}</span></span><b>${fmt(p)}</b></div>`).join('') : `<div style="font-size:12px;color:var(--green);padding:4px 0;">${vazio}</div>`}</details>`;
+  h += lista(`🏖️ Fins de semana gozados abaixo do ritmo (esperado ${espFds.toLocaleString('pt-PT',{maximumFractionDigits:1})} até agora)`, fdsBaixo, p => `${p.fds} de ${IND_MIN_FDS}`, '✓ Todos dentro do ritmo.');
+  h += lista(`☀️ Domingos gozados abaixo do ritmo (esperado ${espDom.toLocaleString('pt-PT',{maximumFractionDigits:1})} até agora)`, domBaixo, p => `${p.dom} de ${IND_MIN_DOM}`, '✓ Todos dentro do ritmo.');
+  h += lista('🌙 Menos de 11 horas de descanso entre jornadas', oc11, p => `${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}`, '✓ Sem ocorrências.');
+  h += lista(`🔁 Mais de ${IND_MAX_TROCAS} trocas de horário no mês`, trocasAcima, p => `${p.trocas} trocas`, `✓ Ninguém acima de ${IND_MAX_TROCAS}. Mais trocas: ${topTrocas.map(p => nome(String(p.nome).split(' ')[0]) + ' ' + p.trocas).join(', ') || '—'}`);
+  h += `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">"Abaixo do ritmo" = menos do que o mínimo anual proporcional aos meses já passados. A lista completa de alterações por assinar está mais abaixo.</div></div>`;
+  return h;
+}
+
 async function renderFormacoesScreen(){
   const content = document.getElementById('formacoes-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
+  let indHtml = ''; try{ indHtml = await blocoIndicadoresRH(); }catch(e){ console.error('indicadores RH', e); }
   const bhHtml = await blocoBancoHorasGozar();
   const alteracoesHtml = await blocoAlteracoesHorarioPendentes();
   const formacaoHtml = await blocoFormacaoCompliance();
   const sec = (t, i) => `<div class="section-title" style="margin-top:6px;">${t}</div>`;
-  content.innerHTML = rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
+  content.innerHTML = indHtml + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
 }
 
 // ===== Horários por assinar (lista do Hello) — RH =====
