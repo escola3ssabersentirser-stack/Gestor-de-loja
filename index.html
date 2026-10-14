@@ -2780,7 +2780,7 @@ async function valCarregarRelatorio(input){
 }
 async function blocoRelatorioValidades(){
   let rel = null; try{ const r = await sb('loja_validades_relatorio?select=*&order=data.desc&limit=1'); rel = r && r[0]; }catch(e){}
-  const btn = souDona() ? `<div class="card" style="margin-bottom:10px;"><input type="file" id="val-rel-fich" class="hidden" accept=".xlsx,.xls" onchange="valCarregarRelatorio(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('val-rel-fich').click()">📎 Carregar Relatório de Gestão de Validades</button><div id="val-rel-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;">Também pode carregá-lo junto com os ficheiros do dia.</div></div>` : '';
+  const btn = souDona() ? `<div class="card" style="margin-bottom:10px;"><input type="file" id="val-rel-fich" class="hidden" accept=".xlsx,.xls" onchange="valCarregarRelatorio(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#val-rel-fich')||document.getElementById('val-rel-fich')).click()">📎 Carregar Relatório de Gestão de Validades</button><div id="val-rel-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;">Também pode carregá-lo junto com os ficheiros do dia.</div></div>` : '';
   if(!rel) return btn;
   const d = rel.dados || {}; const pct = v => v == null ? '—' : Math.round(v*100) + '%';
   const cor = v => v == null ? 'var(--ink-soft)' : v >= 0.97 ? '#1F7A33' : v >= 0.8 ? '#C77F12' : '#B4231A';
@@ -3275,7 +3275,7 @@ async function renderArea(qual){
   box.innerHTML = `<div class="card" style="color:var(--ink-soft);font-size:13px;">A carregar…</div>`;
   try{
     if(qual === 'validades') box.innerHTML = await areaValidadesHtml();
-    else if(qual === 'notas') box.innerHTML = (souDona() ? `<div class="card" style="margin-bottom:10px;"><input type="file" id="nc-fich" class="hidden" accept=".xlsx,.xls" onchange="ncCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('nc-fich').click()">📎 Carregar ficheiro Notas de Crédito (Excel)</button><div id="nc-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '') + `<p class="com-ajuda" style="margin:0 4px 10px;">A app fica só com as notas da loja 747. Valide cada uma aqui.</p><div class="card">${await blocoNotasCredito('area', true)}</div>`;
+    else if(qual === 'notas') box.innerHTML = (souDona() ? `<div class="card" style="margin-bottom:10px;"><input type="file" id="nc-fich" class="hidden" accept=".xlsx,.xls" onchange="ncCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#nc-fich')||document.getElementById('nc-fich')).click()">📎 Carregar ficheiro Notas de Crédito (Excel)</button><div id="nc-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '') + `<p class="com-ajuda" style="margin:0 4px 10px;">A app fica só com as notas da loja 747. Valide cada uma aqui.</p><div class="card">${await blocoNotasCredito('area', true)}</div>`;
     else if(qual === 'relatorios') box.innerHTML = await areaRelatoriosHtml();
     else if(qual === 'vendasugestiva') box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 10px;">Atualiza ao carregar o relatório "Venda Sugestiva" nos ficheiros do dia.</p>` + await blocoVendaSugestiva();
   }catch(e){ box.innerHTML = `<div class="card" style="color:var(--red);font-size:13px;">Não consegui carregar os dados.</div>`; }
@@ -3364,7 +3364,7 @@ async function blocoScoreValidades(){
       <p class="com-ajuda" style="margin:6px 0;">Abra o email "Score Mensal - Rotina Diária Validades", copie tudo e cole aqui. Também pode carregar o email guardado (PDF, Word ou .txt).</p>
       <textarea id="val-score-texto" rows="6" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12px;" placeholder="Colar aqui o texto do email…"></textarea>
       <div style="display:flex;gap:8px;margin-top:6px;"><button class="btn-primary" style="flex:1;margin:0;" onclick="valGuardarScore(document.getElementById('val-score-texto').value)">Guardar</button>
-      <input type="file" id="val-score-fich" class="hidden" accept=".txt,.eml,.pdf,.docx" onchange="valCarregarFicheiro(this)"><button class="btn-primary" style="flex:1;margin:0;background:#1F7A33;" onclick="document.getElementById('val-score-fich').click()">📎 Ficheiro</button></div>
+      <input type="file" id="val-score-fich" class="hidden" accept=".txt,.eml,.pdf,.docx" onchange="valCarregarFicheiro(this)"><button class="btn-primary" style="flex:1;margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#val-score-fich')||document.getElementById('val-score-fich')).click()">📎 Ficheiro</button></div>
       <div id="val-score-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></details>` : '';
   if(!rows.length) return `<div class="rp-bloco-tit" style="margin-top:4px;">🏅 Score mensal da rotina de validades</div><div class="card" style="font-size:13px;color:var(--ink-soft);">Ainda sem score guardado.</div>${carregar}`;
   const d = rows[0].dados || {}; const ant = rows[1] && rows[1].dados;
@@ -3610,7 +3610,7 @@ async function renderRelatoriosAuditoria(nome){
     + (podeCarregar ? `<div class="rel-novo">
       <div class="com-duo"><input type="text" id="rel-titulo" placeholder="Título (ex.: Relatório ${rpEsc(nome)} julho)"><input type="date" id="rel-data"></div>
       <input type="file" id="rel-ficheiro" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" class="hidden" onchange="carregarRelatorioAuditoria(this, '${nomeJs}')">
-      <button class="btn-primary" onclick="document.getElementById('rel-ficheiro').click()">📎 Carregar relatório (PDF ou foto)</button>
+      <button class="btn-primary" onclick="((this.closest('.card')||this.parentElement).querySelector('#rel-ficheiro')||document.getElementById('rel-ficheiro')).click()">📎 Carregar relatório (PDF ou foto)</button>
       <div id="rel-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></div>` : '');
 }
 async function carregarRelatorioAuditoria(input, nome){
@@ -3806,7 +3806,7 @@ async function renderLembretes(){
     + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0).length, anosHtml, formAnos)
     + sec('📲','Envios da semana', ['resumo-semanal|','ata-semanal|','comunicacao-semanal|'].filter(k => !d.enviados.has(k)).length, semanal)
     + sec('💙','Baixas e ausências', d.ausSemContacto.length, aus, formAus)
-    + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt, souDona() ? `<div class="card" style="margin-bottom:8px;"><input type="file" id="hor-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv,image/*" onchange="horCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('hor-fich').click()">📎 Atualizar com o ficheiro do Hello (Excel ou foto)</button><div id="hor-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '')
+    + sec('✍️','Alterações de horário por assinar', d.alteracoes.length, alt, souDona() ? `<div class="card" style="margin-bottom:8px;"><input type="file" id="hor-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv,image/*" onchange="horCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#hor-fich')||document.getElementById('hor-fich')).click()">📎 Atualizar com o ficheiro do Hello (Excel ou foto)</button><div id="hor-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '')
     + sec('🕐','Banco de horas', d.bh.length, bh, `<p class="com-ajuda" style="margin:0 4px 8px;">Cada pessoa só aparece a partir do dia marcado para gozar. Depois de gozar, carregue em ✓ OK e sai da lista.</p>`)
     + sec('🎓','Formação pendente', d.formacao.length, form);
 }
@@ -8193,7 +8193,7 @@ async function blocoControloAnalitico(){
     <label class="com-lbl" for="ca-obs">Observações do técnico</label><input id="ca-obs">
     <label class="com-lbl" for="ca-acao">Ação corretiva</label><input id="ca-acao" placeholder="o que vamos fazer">
     <input type="file" id="ca-fich" accept="image/*,.pdf" class="hidden" onchange="document.getElementById('ca-fich-nome').textContent = this.files[0] ? '📎 ' + this.files[0].name : ''">
-    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><button class="econ-btn" onclick="document.getElementById('ca-fich').click()">📎 Juntar foto ou PDF</button><span id="ca-fich-nome" style="font-size:12px;color:var(--ink-soft);"></span></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><button class="econ-btn" onclick="((this.closest('.card')||this.parentElement).querySelector('#ca-fich')||document.getElementById('ca-fich')).click()">📎 Juntar foto ou PDF</button><span id="ca-fich-nome" style="font-size:12px;color:var(--ink-soft);"></span></div>
     <button class="btn-primary" onclick="caGuardar()">Guardar</button><div id="ca-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></details>`;
   return h;
 }
@@ -8317,7 +8317,7 @@ function audDetetarTipo(texto, nomeFicheiro){
 async function audCarregarAuto(input){
   const f = input.files && input.files[0]; input.value = '';
   if(!f || !soDona('carregar relatórios de auditoria')) return;
-  const est = document.getElementById('aud-auto-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  const est = estadoDe(input,'aud-auto-estado'); const msg = t => { if(est) est.innerHTML = t; };
   if(f.size > 20*1024*1024){ alert('O ficheiro é demasiado grande (máximo 20 MB).'); return; }
   try{
     let texto = '';
@@ -8356,7 +8356,7 @@ async function audCarregarAuto(input){
 function audBotaoAuto(){
   if(!souDona()) return '';
   return `<div class="card" style="margin-bottom:10px;"><input type="file" id="aud-auto-fich" class="hidden" accept=".pdf,.docx,image/*" onchange="audCarregarAuto(this)">
-    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('aud-auto-fich').click()">📎 Adicionar relatório de auditoria</button>
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#aud-auto-fich')||document.getElementById('aud-auto-fich')).click()">📎 Adicionar relatório de auditoria</button>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Escolha o PDF do relatório: a app descobre de que auditoria é, lê a data e a nota e atualiza a nota e a média do ano.</div>
     <div id="aud-auto-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
@@ -8652,7 +8652,7 @@ async function renderInfoNegocioHistorico(){
     html += `</details>`;
   }
   if(gestora) html = `<input type="file" id="info-neg-ficheiro" accept=".pdf,.docx,.txt" class="hidden" onchange="infoNegCarregar(this)">
-    <button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('info-neg-ficheiro').click()">📎 Carregar Informação de Negócio (PDF ou Word)</button>
+    <button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#info-neg-ficheiro')||document.getElementById('info-neg-ficheiro')).click()">📎 Carregar Informação de Negócio (PDF ou Word)</button>
     <div id="info-neg-estado" style="font-size:12.5px;color:var(--ink-soft);margin:0 0 10px;"></div>` + html;
   if(gestora) html += `<div id="info-neg-form"></div><button class="btn-primary" style="margin:0 0 16px;background:#8A938D;" onclick="infoNegForm()">✏️ Escrever à mão</button>`;
   wrap.innerHTML = html;
@@ -11018,7 +11018,7 @@ function aquiLerExcel(wb, nomeFicheiro){
 }
 async function aquiCarregar(input){
   const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o ficheiro AQUI para o Cliente')) return;
-  const est = document.getElementById('aqui-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  const est = estadoDe(input,'aqui-estado'); const msg = t => { if(est) est.innerHTML = t; };
   try{
     if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
     const r = aquiLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}), f.name);
@@ -11032,7 +11032,7 @@ async function blocoAquiObservacoes(){
   const rows = await sb('loja_aqui_observacoes?select=data,dados&order=data.desc&limit=6').catch(()=>[]) || [];
   const dona = souDona();
   let html = `<div class="section-title">👀 Observações "AQUI para o Cliente" — Portuzelo</div><div class="card">`;
-  if(dona) html += `<input type="file" id="aqui-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="aquiCarregar(this)"><button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="document.getElementById('aqui-fich').click()">📎 Carregar ficheiro Nº Observações (Excel)</button><div id="aqui-estado" style="font-size:12px;margin-bottom:8px;"></div>`;
+  if(dona) html += `<input type="file" id="aqui-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="aquiCarregar(this)"><button class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#aqui-fich')||document.getElementById('aqui-fich')).click()">📎 Carregar ficheiro Nº Observações (Excel)</button><div id="aqui-estado" style="font-size:12px;margin-bottom:8px;"></div>`;
   if(!rows.length) return html + `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem ficheiro carregado.</div></div>`;
   const r = rows[0], d = r.dados || {}, ant = rows[1] && rows[1].dados;
   const dt = iso => new Date(iso+'T12:00:00').toLocaleDateString('pt-PT');
@@ -12144,7 +12144,7 @@ async function rhGuardar(){
 }
 function rhBotaoUpload(tipo, texto){
   if(!souDona()) return '';
-  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="rh-fich-${tipo}" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="rhCarregar(this,'${tipo}')"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rh-fich-${tipo}').click()">📎 ${texto}</button><div id="rh-estado-${tipo}" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="rh-fich-${tipo}" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="rhCarregar(this,'${tipo}')"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#rh-fich-${tipo}')).click()">📎 ${texto}</button><div id="rh-estado-${tipo}" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
 
 // ===== Indicadores RH para Gerentes (horários e descanso) — cartão Recursos Humanos =====
@@ -12195,7 +12195,7 @@ async function blocoIndicadoresRH(){
   const dona = souDona();
   let h = `<div class="section-title">📊 Horários e descanso</div>`;
   if(dona) h += `<div class="card" style="margin-bottom:10px;"><input type="file" id="ind-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="indCarregar(this)">
-    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('ind-fich').click()">📎 Carregar Indicadores RH para Gerentes (Excel)</button>
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#ind-fich')||document.getElementById('ind-fich')).click()">📎 Carregar Indicadores RH para Gerentes (Excel)</button>
     <div id="ind-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
   const r = rows && rows[0];
   const nAss = (porAssinar || []).length;
@@ -12228,6 +12228,65 @@ async function blocoIndicadoresRH(){
   return h;
 }
 
+// ===== Contactos (telefones) da equipa — ficheiro Excel =====
+function ctNorm(t){ return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim(); }
+function ctTelefone(v){ let d = String(v||'').replace(/\D/g,''); if(!d) return null; if(d.length === 9) d = '351' + d; if(d.startsWith('00')) d = d.slice(2); return d.length >= 11 ? d : null; }
+function ctLerExcel(wb){
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:false});
+    const hi = R.findIndex((r,i) => i < 30 && r.some(c => /telefone|telem[oó]vel|contacto|phone/i.test(String(c))) && r.some(c => /nome|conhecido/i.test(String(c))));
+    if(hi < 0) continue;
+    const H = R[hi].map(c => String(c).trim().toLowerCase());
+    const cNome = H.findIndex(h => /conhecido|nome/.test(h)), cTel = H.findIndex(h => /telefone|telem|contacto|phone/.test(h)), cNum = H.findIndex(h => /n\.?º|numero|sap|pessoal/.test(h));
+    const out = [];
+    for(let i = hi+1; i < R.length; i++){ const r = R[i]; const nome = String(r[cNome]||'').trim(); const tel = ctTelefone(r[cTel]); if(!nome || !tel) continue;
+      out.push({nome, tel, numero: cNum >= 0 ? String(r[cNum]||'').replace(/\D/g,'') : ''}); }
+    if(out.length) return out;
+  }
+  return [];
+}
+// "Ana Rosário" → "Ana Maria Mendes do Rosário": todas as palavras do nome curto aparecem no nome completo, pela mesma ordem
+function ctEncontrar(x, colabs){
+  if(x.numero){ const c = colabs.find(k => String(k.numero_pessoal||'').replace(/^0+/,'') === x.numero.replace(/^0+/,'')); if(c) return [c]; }
+  const p = ctNorm(x.nome).split(' ').filter(w => w.length > 1);
+  const exato = colabs.filter(k => ctNorm(k.nome) === ctNorm(x.nome)); if(exato.length) return exato;
+  return colabs.filter(k => { const t = ctNorm(k.nome).split(' '); let j = 0; for(const w of p){ j = t.indexOf(w, j); if(j < 0) return false; j++; } return p.length > 0 && t[0] === p[0] || (p.length > 1 && t[t.length-1] === p[p.length-1] && t.includes(p[0])); });
+}
+let ctLidos = [];
+async function ctCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('atualizar os contactos')) return;
+  const est = document.getElementById('ct-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    const linhas = ctLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}));
+    if(!linhas.length) throw new Error('não encontrei as colunas "Nome" (ou "Conhecido como") e "Telefone"');
+    const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome,telefone') || [];
+    ctLidos = linhas.map(x => { const m = ctEncontrar(x, colabs); return {...x, colab: m.length === 1 ? m[0] : null, ambiguo: m.length > 1}; });
+    const muda = ctLidos.filter(x => x.colab && String(x.colab.telefone||'') !== x.tel);
+    const igual = ctLidos.filter(x => x.colab && String(x.colab.telefone||'') === x.tel);
+    const fora = ctLidos.filter(x => !x.colab);
+    msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">${linhas.length} contactos lidos</b>
+      <div style="font-size:12.5px;margin:6px 0;">✏️ <b>${muda.length}</b> telefones novos ou diferentes · ✓ ${igual.length} já estavam certos${fora.length ? ` · ⚠️ ${fora.length} não encontrados na app` : ''}</div>
+      ${muda.length ? `<div style="max-height:220px;overflow:auto;font-size:12px;">${muda.map(x => `<div style="padding:4px 0;border-top:1px solid var(--line);"><b>${rpEsc(x.colab.nome)}</b><br><span style="color:var(--ink-soft);">${x.colab.telefone ? '+' + rpEsc(x.colab.telefone) + ' → ' : ''}</span><b>+${rpEsc(x.tel)}</b></div>`).join('')}</div>` : ''}
+      ${fora.length ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Não encontrados (adicione primeiro como colaboradores): ${fora.map(x => rpEsc(x.nome) + (x.ambiguo ? ' (mais do que uma pessoa com este nome)' : '')).join(', ')}</div>` : ''}
+      ${muda.length ? `<button class="btn-primary" style="margin-top:8px;" onclick="ctGuardar()">Guardar ${muda.length} contactos</button>` : '<div style="font-size:12.5px;color:var(--green);margin-top:6px;">✓ Os contactos já estão todos atualizados.</div>'}</div>`);
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+async function ctGuardar(){
+  if(!soDona('atualizar os contactos')) return;
+  const muda = ctLidos.filter(x => x.colab && String(x.colab.telefone||'') !== x.tel);
+  try{
+    for(const x of muda) await sb(`loja_colaboradores?id=eq.${x.colab.id}`, {method:'PATCH', body: JSON.stringify({telefone: x.tel})});
+    lemDados = null;
+    const est = document.getElementById('ct-estado'); if(est) est.innerHTML = `<span style="color:var(--green);">✓ ${muda.length} contactos atualizados. As mensagens de WhatsApp já usam os números novos.</span>`;
+    showToast();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
+function ctBotao(){
+  if(!souDona()) return '';
+  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="ct-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="ctCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#ct-fich')||document.getElementById('ct-fich')).click()">📎 Atualizar contactos da equipa (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Ficheiro com o nome e o telefone de cada pessoa. A app junta pelo nome e mostra o que muda antes de guardar.</div><div id="ct-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+}
+
 async function renderFormacoesScreen(){
   const content = document.getElementById('formacoes-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -12236,9 +12295,11 @@ async function renderFormacoesScreen(){
   const alteracoesHtml = await blocoAlteracoesHorarioPendentes();
   const formacaoHtml = await blocoFormacaoCompliance();
   const sec = (t, i) => `<div class="section-title" style="margin-top:6px;">${t}</div>`;
-  content.innerHTML = indHtml + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
+  content.innerHTML = indHtml + ctBotao() + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
 }
 
+// encontra o elemento do mesmo cartão do ficheiro (há ecrãs escondidos com os mesmos ids)
+function estadoDe(input, id){ const c = input && input.closest && (input.closest('.card') || input.parentElement); return (c && c.querySelector('#' + id)) || document.getElementById(id); }
 // ===== Horários por assinar (lista do Hello) — RH =====
 let horPendentes = [], horLidos = [];
 function horNum(n){ const d = String(n||'').replace(/\D/g,''); return d.length && d.length < 8 ? d.padStart(8,'0') : d; }
@@ -12281,7 +12342,7 @@ function horLerTextoOCR(t){
 }
 async function horCarregar(input){
   const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('atualizar os horários')) return;
-  const est = document.getElementById('hor-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  const est = estadoDe(input,'hor-estado'); const msg = t => { if(est) est.innerHTML = t; };
   try{
     if(/\.(xlsx|xls|xlsm|csv)$/i.test(f.name)){
       horLidos = horLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}));
@@ -12292,11 +12353,12 @@ async function horCarregar(input){
       horLidos = horLerTextoOCR(r && r.data && r.data.text);
     } else throw new Error('use o Excel do Hello ou uma fotografia');
     if(!horLidos.length) throw new Error('não encontrei linhas de trocas de horário' + (/^image\//.test(f.type) ? ' na fotografia — tente o ficheiro Excel ou uma foto mais nítida' : ''));
-    horMostrarLidos(/^image\//.test(f.type));
+    horCaixa = est; horMostrarLidos(/^image\//.test(f.type));
   }catch(e){ msg('✕ ' + (e && e.message || e)); }
 }
+let horCaixa = null;
 function horMostrarLidos(foto){
-  const box = document.getElementById('hor-estado'); if(!box) return;
+  const box = horCaixa || document.getElementById('hor-estado'); if(!box) return;
   box.innerHTML = `<div class="card" style="margin-top:8px;"><b style="font-size:13px;">${horLidos.length} trocas encontradas${foto ? ' na fotografia — confirme antes de guardar' : ''}</b>
     <div style="max-height:260px;overflow:auto;margin:6px 0;">${horLidos.map((x,i) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px solid var(--line);font-size:12px;"><input type="checkbox" checked data-hor="${i}"><span><b>${rpEsc(x.nome)}</b><br>${rpEsc(horDesc(x))}</span></label>`).join('')}</div>
     <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:6px 0;"><input type="checkbox" id="hor-completa" ${foto ? '' : 'checked'}> Esta é a lista completa (o que não estiver aqui já foi assinado)</label>
@@ -12304,8 +12366,9 @@ function horMostrarLidos(foto){
 }
 async function horGuardarLidos(){
   if(!soDona('atualizar os horários')) return;
-  const marcados = [...document.querySelectorAll('[data-hor]')].filter(c => c.checked).map(c => horLidos[Number(c.dataset.hor)]);
-  const completa = document.getElementById('hor-completa').checked;
+  const raiz = horCaixa || document;
+  const marcados = [...raiz.querySelectorAll('[data-hor]')].filter(c => c.checked).map(c => horLidos[Number(c.dataset.hor)]);
+  const completa = (raiz.querySelector('#hor-completa') || {}).checked;
   try{
     const atuais = await sb('loja_alteracoes_horario?assinado=eq.false&select=id,colaborador_numero,descricao') || [];
     const chavesAtuais = new Map(atuais.map(a => [horChave(a.colaborador_numero, a.descricao), a]));
@@ -12332,7 +12395,7 @@ async function blocoAlteracoesHorarioPendentes(){
   const grupos = {}; horPendentes.forEach(a => { const k = horNum(a.colaborador_numero) || a.colaborador_nome; (grupos[k] = grupos[k] || []).push(a); });
   let html = `<div class="section-title">✍️ Horários por assinar no Hello <span class="count">· ${horPendentes.length}</span></div>`;
   if(dona) html += `<div class="card" style="margin-bottom:10px;"><input type="file" id="hor-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv,image/*" onchange="horCarregar(this)">
-    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('hor-fich').click()">📎 Atualizar com o ficheiro do Hello (Excel ou foto)</button>
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#hor-fich')||document.getElementById('hor-fich')).click()">📎 Atualizar com o ficheiro do Hello (Excel ou foto)</button>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Com o Excel fica tudo certo. Com a fotografia, a app tenta ler e mostra a lista para confirmar.</div><div id="hor-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
   html += `<div class="card">`;
   if(!horPendentes.length) html += `<div style="font-size:12.5px;color:var(--green);">✓ Tudo assinado.</div>`;
@@ -13519,7 +13582,7 @@ async function blocoReposicaoColaboradores(){
   const dona = souDona();
   let html = `<div class="section-title">📦 Reposição por colaborador — paletes e artigos</div>`;
   if(dona) html += `<div class="card" style="margin-bottom:10px;"><input type="file" id="rep-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="repCarregar(this)">
-    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rep-fich').click()">📎 Carregar ficheiro de reposições (Excel)</button>
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#rep-fich')||document.getElementById('rep-fich')).click()">📎 Carregar ficheiro de reposições (Excel)</button>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">É só escolher o ficheiro: a app conta as paletes e os artigos de cada colaborador e faz o gráfico da semana.</div><div id="rep-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
   if(!semanas.length) return html + `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem ficheiro de reposições carregado.</div></div>`;
   const sel = semanas.find(s => s.semana_inicio === repSemanaSel) || semanas[0];
@@ -13805,7 +13868,7 @@ async function renderMarkdownScreen(){
   ]);
   const editavel = currentUser && souDona();
 
-  let html = editavel ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="md-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="mdCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('md-fich').click()">📎 Carregar ficheiro de Markdown (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">A app lê o markdown não realizado por secção e artigo e as etiquetas impressas, vendidas e sem venda.</div><div id="md-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '';
+  let html = editavel ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="md-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="mdCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#md-fich')||document.getElementById('md-fich')).click()">📎 Carregar ficheiro de Markdown (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">A app lê o markdown não realizado por secção e artigo e as etiquetas impressas, vendidas e sem venda.</div><div id="md-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '';
   html += `<div class="section-title">🏷️ % Markdown Não Realizado — Por Secção (real, ${pctDivisoes[0]?.mes_referencia || ''})</div>`;
   html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   DEPARTAMENTOS_LOJA.forEach(secao=>{
