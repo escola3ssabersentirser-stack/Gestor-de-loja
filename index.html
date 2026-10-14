@@ -8283,7 +8283,9 @@ async function audLigarRelatorio(nome, relId, texto){
   // auditoria desta data: cria ou atualiza
   let det = (await sb(`loja_auditoria_detalhe?tipo=eq.${encodeURIComponent(nome)}&data_auditoria=eq.${d.data}&select=id,resultado_final`)) || [];
   let detId;
-  if(det.length){ detId = det[0].id; await sb(`loja_auditoria_detalhe?id=eq.${detId}`, {method:'PATCH', body: JSON.stringify({resultado_final: d.resultado, tecnico: d.tecnico || undefined, resumo: d.resumo || undefined})}); }
+  if(det.length){ detId = det[0].id; await sb(`loja_auditoria_detalhe?id=eq.${detId}`, {method:'PATCH', body: JSON.stringify({resultado_final: d.resultado, tecnico: d.tecnico || undefined, resumo: d.resumo || undefined})});
+    if(d.ncs.length){ try{ await sb(`loja_nao_conformidades?auditoria_id=eq.${detId}&resolvida=eq.false`, {method:'DELETE'}); }catch(e){}
+      await sb('loja_nao_conformidades', {method:'POST', body: JSON.stringify(d.ncs.map(n => ({auditoria_id: detId, secao: n.secao, descricao: n.descricao.slice(0, 1000), resolvida: false})))}); } }
   else {
     const novo = await sb('loja_auditoria_detalhe', {method:'POST', body: JSON.stringify({tipo: nome, data_auditoria: d.data, resultado_final: d.resultado, tecnico: d.tecnico, resumo: d.resumo})});
     detId = novo && novo[0] && novo[0].id;
@@ -8347,7 +8349,10 @@ async function audCarregarAuto(input){
         msg(`<span style="color:var(--green);">✓ ${AUD_NOMES[nome]}: nota atualizada para ${String(n).replace('.',',')}%.</span>`);
       } else msg(`<span style="color:var(--ink-soft);">Relatório de ${AUD_NOMES[nome]} guardado (nota não alterada).</span>`);
     } else {
-      msg(`<span style="color:var(--green);">✓ ${AUD_NOMES[nome]} · ${d.data.split('-').reverse().join('/')} · <b>${String(d.resultado).replace('.',',')}%</b>${d.ncs.length ? ' · ' + d.ncs.length + ' pontos a melhorar' : ''} — nota e média do ano atualizadas.</span>`);
+      const nj = String(nome).replace(/'/g,"\\'");
+      msg(`<span style="color:var(--green);">✓ ${AUD_NOMES[nome]} · ${d.data.split('-').reverse().join('/')} · <b>${String(d.resultado).replace('.',',')}%</b> — nota e média do ano atualizadas.</span>`
+        + (d.ncs.length ? `<div style="margin-top:8px;font-size:12.5px;"><b>📌 ${d.ncs.length} pontos a melhorar:</b>${d.ncs.map(n => `<div style="padding:4px 0;border-top:1px solid var(--line);">${n.secao ? '<b>' + rpEsc(n.secao) + ':</b> ' : ''}${rpEsc(n.descricao)}</div>`).join('')}</div>` : '<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">Não encontrei pontos a melhorar destacados no relatório.</div>')
+        + `<button class="econ-btn" style="margin-top:8px;" onclick="selectMenu('melhoria','Melhoria Contínua'); setTimeout(() => abrirDetalheAuditoria('${nj}'), 400)">Abrir a auditoria ${rpEsc(AUD_NOMES[nome])} ›</button>`);
     }
     if(!caminho) msg((est ? est.innerHTML : '') + '<div style="font-size:11px;color:var(--ink-soft);">O ficheiro original não ficou guardado (sem ligação ao arquivo), mas a nota foi lida.</div>');
     try{ if(typeof atualizarTudo === 'function') atualizarTudo(false); }catch(e){}
@@ -8361,6 +8366,23 @@ function audBotaoAuto(){
     <div id="aud-auto-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
 
+// pontos a melhorar das auditorias: marcar resolvido e passar para os planos de ação
+async function audPontoResolvido(id, valor, nome){
+  if(!soDona('marcar pontos como resolvidos')) return;
+  try{ await sb(`loja_nao_conformidades?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({resolvida: valor})}); showToast(); abrirDetalheAuditoria(nome); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function audPontosParaPlano(audId, nome){
+  if(!soDona('criar planos de ação')) return;
+  try{
+    const pts = (await sb(`loja_nao_conformidades?auditoria_id=eq.${audId}&resolvida=eq.false&select=secao,descricao`)) || [];
+    const area = 'Auditoria ' + (AUD_NOMES[nome] || nome);
+    const ja = (await sb(`loja_plano_acao?area=eq.${encodeURIComponent(area)}&select=ponto`)) || [];
+    const existe = new Set(ja.map(x => x.ponto));
+    const novos = pts.map(n => ({area, ponto: ((n.secao ? n.secao + ': ' : '') + (n.descricao || '')).slice(0, 500), acao: 'Corrigir até à próxima auditoria e confirmar com fotografia.', estado: 'Pendente'})).filter(x => !existe.has(x.ponto));
+    if(novos.length) await sb('loja_plano_acao', {method:'POST', body: JSON.stringify(novos)});
+    alert(novos.length ? `✓ ${novos.length} pontos passados para os Planos de Ação (área "${area}").` : 'Estes pontos já estavam nos Planos de Ação.');
+  }catch(e){ alert('Não consegui criar os planos de ação.'); }
+}
 // Média do ano de uma auditoria (todas as visitas do ano com resultado)
 async function audMediaAno(nome){
   const ano = new Date().getFullYear();
@@ -8427,23 +8449,26 @@ async function abrirDetalheAuditoria(nome){
       ${aud.resumo ? `<div style="font-size:13px;color:var(--ink);margin-top:8px;line-height:1.5;">${aud.resumo}</div>` : ''}
     </div>`;
 
-    html += `<div class="section-title">Não Conformidades <span class="count">· ${naoConformidades.length}</span></div>`;
+    const abertos = naoConformidades.filter(n => !n.resolvida);
+    const nomeJs2 = String(nome).replace(/'/g,"\\'");
+    html += `<div class="section-title">📌 Pontos a melhorar do relatório <span class="count">· ${abertos.length} por resolver de ${naoConformidades.length}</span></div>`;
     if(!naoConformidades.length){
-      html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem não conformidades registadas.</div></div>`;
+      html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem pontos a melhorar registados neste relatório.</div></div>`;
     } else {
       html += `<div class="card" style="padding:4px 12px;">`;
       naoConformidades.forEach(nc=>{
-        html += `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
-          <div style="display:flex;justify-content:space-between;gap:8px;">
-            <div style="font-size:13px;font-weight:600;color:var(--ink);">${nc.requisito || ''}</div>
-            <span style="font-size:10px;font-weight:700;color:var(--navy);background:var(--teal-light);padding:2px 7px;border-radius:20px;flex-shrink:0;">${nc.secao || ''}</span>
+        const extra = [nc.correcao ? '➜ ' + rpEsc(nc.correcao) : '', nc.tempo_correcao ? 'Prazo: ' + rpEsc(nc.tempo_correcao) : '', nc.responsavel ? 'Responsável: ' + rpEsc(nc.responsavel) : ''].filter(Boolean).join(' · ');
+        html += `<div style="padding:10px 0;border-bottom:1px solid var(--line);${nc.resolvida ? 'opacity:.55;' : ''}">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+            <div style="font-size:13px;color:var(--ink);line-height:1.45;${nc.resolvida ? 'text-decoration:line-through;' : ''}">${nc.requisito ? '<b>' + rpEsc(nc.requisito) + '</b><br>' : ''}${rpEsc(nc.descricao || '')}</div>
+            ${nc.secao ? `<span style="font-size:10px;font-weight:700;color:var(--navy);background:var(--teal-light);padding:2px 7px;border-radius:20px;flex-shrink:0;">${rpEsc(nc.secao)}</span>` : ''}
           </div>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.4;">${nc.descricao}</div>
-          <div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">➜ ${nc.correcao}</div>
-          <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">Prazo: ${nc.tempo_correcao || '—'} · Responsável: ${nc.responsavel || '—'}</div>
+          ${extra ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">${extra}</div>` : ''}
+          ${souDona() ? `<button class="econ-btn" style="margin-top:6px;padding:4px 10px;font-size:11.5px;" onclick="audPontoResolvido(${nc.id}, ${nc.resolvida ? 'false' : 'true'}, '${nomeJs2}')">${nc.resolvida ? '↺ Voltar a abrir' : '✓ Resolvido'}</button>` : ''}
         </div>`;
       });
       html += `</div>`;
+      if(souDona() && abertos.length) html += `<button class="btn-primary" style="margin:8px 0 16px;" onclick="audPontosParaPlano(${aud.id}, '${nomeJs2}')">🎯 Passar ${abertos.length === 1 ? "o ponto" : "os " + abertos.length + " pontos"} para os Planos de Ação</button>`;
     }
     if(content) { content.innerHTML = html; renderRelatoriosAuditoria(nome); }
   }catch(e){
