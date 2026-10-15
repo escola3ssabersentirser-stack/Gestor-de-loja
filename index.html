@@ -2060,7 +2060,7 @@ async function carregarResumoPainel(){
   if(!resumoPainel) resumoPainel = RESUMO_PADRAO;
 }
 
-function escolherFicheiroResumo(){ document.getElementById('rp-input-ficheiro').click(); }
+function escolherFicheiroResumo(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
 
 async function importarResumoExcel(input){
   const f = input.files && input.files[0];
@@ -2208,9 +2208,9 @@ function renderPainelResumo(){
       <div id="rp-datas" class="rp-datas"></div>
     </div>
     <div class="rp-acoes">
-      <button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar ficheiros do dia</button>
+      ${souDona() ? `<button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar ficheiros do dia</button>
       <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls" multiple class="hidden" onchange="importarFicheirosDia(this)">
-      <div id="rp-estado" class="rp-estado">Pode escolher vários ficheiros de uma vez</div>
+      <div id="rp-estado" class="rp-estado">Pode escolher vários ficheiros de uma vez</div>` : ''}
     </div>
   </div>
   <div id="rp-lembretes"></div>
@@ -2891,7 +2891,7 @@ async function impResumo(wb, nomeFicheiro){
 const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades'};
 
 let impResHTML = '';
-function escolherFicheirosDia(){ document.getElementById('rp-input-ficheiro').click(); }
+function escolherFicheirosDia(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
 
 async function importarFicheirosDia(input){
   if(!soDona('carregar ficheiros')){ input.value = ''; return; }
@@ -3352,6 +3352,7 @@ async function valGuardarScore(texto){
   }catch(e){ msg('✕ ' + (e && e.message || e)); }
 }
 async function valCarregarFicheiro(input){
+  if(!soDona('carregar ficheiros')){ if(input) input.value = ''; return; }
   const f = input.files && input.files[0]; input.value = ''; if(!f) return;
   const est = document.getElementById('val-score-estado'); if(est) est.textContent = 'A ler…';
   try{ const t = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); await valGuardarScore(t); }catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
@@ -3614,6 +3615,7 @@ async function renderRelatoriosAuditoria(nome){
       <div id="rel-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></div>` : '');
 }
 async function carregarRelatorioAuditoria(input, nome){
+  if(!soDona('carregar ficheiros')){ if(input) input.value = ''; return; }
   const f = input.files && input.files[0]; input.value = '';
   if(!f) return;
   const est = document.getElementById('rel-estado');
@@ -8714,6 +8716,7 @@ async function infoLerTexto(f){
   throw new Error('use um ficheiro PDF ou Word (.docx)');
 }
 async function infoNegCarregar(input){
+  if(!soDona('carregar ficheiros')){ if(input) input.value = ''; return; }
   const f = input.files && input.files[0]; input.value = ''; if(!f) return;
   const est = document.getElementById('info-neg-estado');
   const msg = t => { if(est) est.textContent = t; };
@@ -12119,12 +12122,61 @@ function rhLerFormacoes(wb){
   });
   return out;
 }
+// ===== Mapa de Absentismo (dias marcados para gozar Banco de Horas) =====
+function rhLerGozoBH(wb){
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
+    const hi = R.findIndex((r,i) => i < 30 && r.some(c => /descri[çc][ãa]o de absentismo/i.test(String(c))) && r.some(c => /data in[íi]cio/i.test(String(c))));
+    if(hi < 0) continue;
+    const H = R[hi].map(c => rhN(c)); const ci = re => H.findIndex(h => re.test(h));
+    const c = {num: ci(/n\.?\s*º?\s*de colaborador|^n\.?º/), nome: ci(/nome de colaborador/), desc: ci(/descricao de absentismo/), ini: ci(/data inicio/), fim: ci(/data fim/), horas: ci(/^nr de horas|n\.?º de horas|^horas$/), loja: ci(/nome de subarea|^loja$/), sec: ci(/descricao do centro de custo/)};
+    const pess = {};
+    for(let i = hi+1; i < R.length; i++){ const r = R[i];
+      if(c.desc >= 0 && !/banco de horas/i.test(String(r[c.desc]||''))) continue;
+      if(c.loja >= 0 && String(r[c.loja]||'').trim() && !/portuz|747/i.test(String(r[c.loja]))) continue;
+      const nome = String(r[c.nome]||'').trim(); const data = horIso(r[c.ini]); if(!nome || !data) continue;
+      const num = String(r[c.num]||'').replace(/\D/g,'');
+      const k = num || nome; const o = pess[k] = pess[k] || {numero: num, nome, secao: c.sec >= 0 ? String(r[c.sec]||'').trim() : '', datas: []};
+      o.datas.push({data, horas: c.horas >= 0 ? (Number(r[c.horas]) || 0) : null});
+    }
+    const lista = Object.values(pess); if(!lista.length) continue;
+    const hoje = dataLocalISO(new Date());
+    lista.forEach(p => { p.datas.sort((a,b) => a.data.localeCompare(b.data)); const fut = p.datas.filter(d => d.data >= hoje);
+      p.proxima = (fut[0] || p.datas[p.datas.length-1]).data; p.horas_marcadas = Math.round(p.datas.reduce((s,d)=>s+(d.horas||0),0)*100)/100; p.dias_futuros = fut.length; });
+    lista.sort((a,b) => a.proxima.localeCompare(b.proxima));
+    return lista;
+  }
+  return [];
+}
+let rhGozo = [];
+async function rhGuardarGozo(){
+  if(!soDona('atualizar o banco de horas')) return;
+  try{
+    const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome') || [];
+    let ok = 0; const falta = [];
+    for(const p of rhGozo){
+      const c = (p.numero && colabs.find(k => String(k.numero_pessoal||'').replace(/^0+/,'') === p.numero.replace(/^0+/,''))) || colabs.find(k => rhN(k.nome) === rhN(p.nome));
+      if(!c){ falta.push(p.nome); continue; }
+      await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({data_prevista_gozar_horas: p.proxima, bh_gozo: p.datas})}); ok++;
+    }
+    alert(`Guardado ✓\n\n${ok} pessoas com dias de gozo de banco de horas marcados${falta.length ? '\n\nNão encontrei na app: ' + falta.join(', ') : ''}`);
+    lemDados = null; renderFormacoesScreen();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
+
 async function rhCarregar(input, tipo){
   const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('atualizar os dados de RH')) return;
   const est = document.getElementById('rh-estado-' + tipo); const msg = t => { if(est) est.innerHTML = t; };
   try{
     if(!/\.(xlsx|xls|xlsm|csv)$/i.test(f.name)) throw new Error('use o ficheiro Excel (.xlsx). As fotografias de ecrã não ficam bem lidas — envie-as no chat ao Claude.');
     const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+    // mapa de absentismo com os dias marcados para gozar o banco de horas
+    if(tipo === 'bh'){ const gozo = rhLerGozoBH(wb);
+      if(gozo.length){ rhGozo = gozo; const dd = iso => iso.slice(8,10) + '/' + iso.slice(5,7);
+        msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">📅 Dias marcados para gozar banco de horas · ${gozo.length} pessoas</b><div style="max-height:260px;overflow:auto;margin:6px 0;font-size:12px;">${gozo.map(p => `<div style="padding:5px 0;border-top:1px solid var(--line);"><b>${rpEsc(p.nome)}</b> · próximo: <b>${dd(p.proxima)}</b> · ${p.datas.length} ${p.datas.length === 1 ? 'dia' : 'dias'} · ${String(p.horas_marcadas).replace('.',',')}h<br><span style="color:var(--ink-soft);">${p.datas.map(d => dd(d.data) + (d.horas ? ' (' + String(d.horas).replace('.',',') + 'h)' : '')).join(', ')}</span></div>`).join('')}</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">As horas do banco não mudam; fica guardada a próxima data de gozo e o calendário de cada pessoa.</div>
+          <button class="btn-primary" onclick="rhGuardarGozo()">Guardar</button></div>`);
+        return; } }
     const linhas = tipo === 'bh' ? rhLerBancoHoras(wb) : rhLerFormacoes(wb);
     if(!linhas.length) throw new Error('não reconheci as colunas do ficheiro. Envie-o no chat ao Claude para ele ensinar a app a ler este formato.');
     rhLidos = {tipo, linhas};
@@ -12431,7 +12483,7 @@ async function blocoAlteracoesHorarioPendentes(){
 }
 
 async function blocoBancoHorasGozar(){
-  const colaboradores = await sb('loja_colaboradores?bh_positivo=gt.0&select=numero_pessoal,nome,secao,bh_positivo,data_prevista_gozar_horas&order=bh_positivo.desc');
+  const colaboradores = await sb('loja_colaboradores?or=(bh_positivo.gt.0,bh_gozo.not.is.null)&select=numero_pessoal,nome,secao,bh_positivo,data_prevista_gozar_horas,bh_gozo&order=bh_positivo.desc.nullslast');
   let html = `<div class="section-title">⏰ Banco de Horas — Colaboradores com Horas a Gozar <span class="count">· ${colaboradores.length}</span></div>`;
   html += `<div class="card">`;
   if(!colaboradores.length){
@@ -12450,12 +12502,13 @@ async function blocoBancoHorasGozar(){
       html += `<div style="padding:8px 0;border-top:${i===0?'none':'1px solid var(--line)'};">
         <div style="display:flex;justify-content:space-between;">
           <span style="font-size:12.5px;font-weight:600;color:var(--ink);">${c.nome}</span>
-          <span style="font-size:13px;font-weight:700;color:var(--green);">${c.bh_positivo}h</span>
+          <span style="font-size:13px;font-weight:700;color:var(--green);">${c.bh_positivo != null ? c.bh_positivo + 'h' : ''}</span>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:2px;">
           <span style="font-size:11px;color:var(--ink-soft);">${labelSecaoPainel(c.secao)}</span>
           <span style="font-size:11px;color:${cor};font-weight:600;">${dataTxt}</span>
         </div>
+        ${(() => { const hojeIso = dataLocalISO(new Date()); const prox = (Array.isArray(c.bh_gozo) ? c.bh_gozo : []).filter(d => d.data >= hojeIso); return prox.length ? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:3px;">🗓️ Marcado: ${prox.map(d => d.data.slice(8,10) + '/' + d.data.slice(5,7) + (d.horas ? ' ' + String(d.horas).replace('.',',') + 'h' : '')).join(' · ')}</div>` : ''; })()}
       </div>`;
     });
   }
