@@ -752,6 +752,7 @@
         <div class="rp-bloco-tit">Áreas da loja</div>
         <div class="rp-nav">
           <button class="rp-nav-btn" onclick="selectMenu('painel-vendas','Vendas')"><span class="rp-nav-ic">💶</span><span><b>Vendas</b><small>por dia, por secção e objetivo</small></span></button>
+          <button class="rp-nav-btn" onclick="selectMenu('painel-custos','Custos da Loja')"><span class="rp-nav-ic">💡</span><span><b>Custos da loja</b><small>luz, água, pessoal, economato</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('controlo-quebra','Controlo de Quebra')"><span class="rp-nav-ic">📉</span><span><b>Quebras</b><small>artigos, secções e motivos</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('markdown','Markdown')"><span class="rp-nav-ic">🏷️</span><span><b>Markdown</b><small>para baixar a quebra</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:validades','Gestão de Validades')"><span class="rp-nav-ic">📅</span><span><b>Gestão de Validades</b><small>execução por secção e artigos a tratar</small></span></button>
@@ -8164,8 +8165,84 @@ function caLerTexto(t){
   d.classificacao = /N[ãa]o satisfat[óo]rio/i.test(j) ? 'Não satisfatório' : /Aceit[áa]vel/i.test(j) ? 'Aceitável' : /Satisfat[óo]rio/i.test(j) ? 'Satisfatório' : '';
   return d;
 }
+// ===== Quadro Qualidade e Segurança Alimentar + Zaragatoas não conformes (HACCP) =====
+let haccpQuadro = null, zarLista = [];
+async function blocoHaccpQuadro(){
+  try{ const r = await sb('loja_haccp_quadro?id=eq.1&select=dados'); haccpQuadro = (r && r[0] && r[0].dados) || {}; }catch(e){ haccpQuadro = {}; }
+  const q = haccpQuadro, cats = q.categorias || [];
+  const cor = v => v == null ? 'var(--ink-soft)' : v >= 95 ? 'var(--green)' : v >= 85 ? '#C77F12' : 'var(--red)';
+  const pc = v => v == null || v === '' ? '—' : v + '%';
+  let h = `<div class="section-title">🛡️ Quadro Qualidade e Segurança Alimentar</div><div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <div><div style="font-size:11.5px;color:var(--ink-soft);">Índice Global de Loja</div><div style="font-size:32px;font-weight:800;color:${cor(q.indice)};">${pc(q.indice)}</div></div>
+      <div style="flex:1;min-width:180px;">${cats.map(c => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line);"><span>${rpEsc(c.nome)}</span><b style="color:${cor(c.valor)};">${pc(c.valor)}</b></div>`).join('')}</div>
+    </div>
+    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Taxa de conformidade analítica</div>
+    <div class="vs-detail-grid" style="margin-top:4px;grid-template-columns:repeat(3,1fr);">
+      ${[['Ano anterior', q.taxa_ano_anterior], ['Mês atual', q.taxa_mes], ['YTD', q.taxa_ytd]].map(([l,v]) => `<div class="vs-box"><div class="vs-label">${l}</div><div class="vs-value" style="font-size:20px;color:${cor(v)};">${pc(v)}</div></div>`).join('')}
+    </div>
+    ${q.atualizado ? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Atualizado em ${rpEsc(q.atualizado)}</div>` : ''}
+    ${souDona() ? `<button class="econ-btn" style="margin-top:8px;" onclick="haccpQuadroEditar()">✏️ Atualizar valores do quadro</button>` : ''}
+  </div>`;
+  return h;
+}
+async function haccpQuadroEditar(){
+  if(!soDona('atualizar o quadro HACCP')) return;
+  const q = JSON.parse(JSON.stringify(haccpQuadro || {}));
+  const num = (txt, v) => { const t = prompt(txt + ' (%)', v == null ? '' : v); if(t === null) throw 'cancel'; const n = parseFloat(String(t).replace(',', '.')); return isNaN(n) ? null : n; };
+  try{
+    q.indice = num('Índice Global de Loja', q.indice);
+    (q.categorias = q.categorias || []).forEach(c => { c.valor = num(c.nome, c.valor); });
+    q.taxa_ano_anterior = num('Taxa conformidade analítica — Ano anterior', q.taxa_ano_anterior);
+    q.taxa_mes = num('Taxa conformidade analítica — Mês atual', q.taxa_mes);
+    q.taxa_ytd = num('Taxa conformidade analítica — YTD', q.taxa_ytd);
+  }catch(e){ return; }
+  q.atualizado = new Date().toLocaleDateString('pt-PT');
+  try{ await sb('loja_haccp_quadro?on_conflict=id', {method:'POST', body: JSON.stringify({id:1, dados:q}), prefer:'resolution=merge-duplicates,return=minimal'}); showToast(); abrirDetalheAuditoria('HACCP'); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function blocoZaragatoas(){
+  try{ zarLista = await sb('loja_controlo_analitico?parametro=eq.Zaragatoa&select=*&order=data_recolha.desc.nullslast,id.desc&limit=60') || []; }catch(e){ zarLista = []; }
+  const pode = souDona();
+  const fmt = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4) : '—';
+  const abertas = zarLista.filter(x => !x.resolvido).length;
+  let h = `<div class="section-title">🧫 Zaragatoas não conformes ${abertas ? `<span class="lem-n tem">${abertas} por resolver</span>` : ''}</div><div class="card" style="padding:4px 12px;">`;
+  h += zarLista.length ? zarLista.map((x,i) => `<div style="padding:10px 0;border-top:${i ? '1px solid var(--line)' : 'none'};">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;"><b style="font-size:13px;">${rpEsc(x.referencia || '—')}</b>${x.resolvido ? '<span class="lem-ok">✓ resolvido</span>' : '<span style="font-size:12px;font-weight:800;color:#B4231A;white-space:nowrap;">✖ Não conforme</span>'}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">Recolha ${fmt(x.data_recolha)} · ${rpEsc(x.objeto || 'Objeto não indicado')}${x.secao ? ' · ' + rpEsc(x.secao) : ''}</div>
+      ${x.observacoes ? `<div style="font-size:12px;margin-top:4px;"><b>Não conformidade:</b> ${rpEsc(x.observacoes)}</div>` : ''}
+      <div style="font-size:12px;margin-top:4px;"><b style="color:${x.acao_corretiva ? 'var(--ink)' : '#B4231A'};">Ação corretiva:</b> ${rpEsc(x.acao_corretiva || 'por definir')}</div>
+      ${pode && !x.resolvido ? `<div style="display:flex;gap:6px;margin-top:6px;"><button class="econ-btn" onclick="zarAcao(${x.id})">✏️ Ação corretiva</button><button class="econ-btn filled" onclick="zarResolver(${x.id})">✓ Resolvido</button></div>` : ''}
+    </div>`).join('') : `<div style="font-size:13px;color:var(--green);padding:8px 0;">✓ Sem zaragatoas não conformes registadas.</div>`;
+  h += `</div>`;
+  if(pode) h += `<details class="card lem-novo" style="margin-top:8px;"><summary>➕ Registar zaragatoa não conforme</summary>
+    <div class="com-duo"><div><label class="com-lbl" for="zar-data">Data recolha</label><input id="zar-data" type="date" value="${dataLocalISO(new Date())}"></div><div><label class="com-lbl" for="zar-secao">Secção</label><input id="zar-secao" placeholder="ex.: Talho"></div></div>
+    <label class="com-lbl" for="zar-obj">Objeto recolha</label><input id="zar-obj" placeholder="ex.: Superfície / Mãos / Equipamento">
+    <label class="com-lbl" for="zar-prod">Produto / Equipamento</label><input id="zar-prod" placeholder="ex.: Máquina de picar">
+    <label class="com-lbl" for="zar-nc">Não conformidade</label><input id="zar-nc" placeholder="ex.: Enterobacteriáceas acima do limite">
+    <label class="com-lbl" for="zar-acao">Ação corretiva</label><input id="zar-acao" placeholder="o que vamos fazer">
+    <button class="btn-primary" onclick="zarGuardar()">Guardar</button></details>`;
+  return h;
+}
+async function zarGuardar(){
+  if(!soDona('registar zaragatoas')) return;
+  const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  if(!v('zar-prod') && !v('zar-obj')){ alert('Preencha o objeto ou o produto/equipamento.'); return; }
+  const dados = {parametro:'Zaragatoa', classificacao:'Não satisfatório', data_recolha: v('zar-data') || null, secao: v('zar-secao') || null, objeto: v('zar-obj') || null, referencia: v('zar-prod') || v('zar-obj'), observacoes: v('zar-nc') || null, acao_corretiva: v('zar-acao') || null, resolvido: false, registado_por: currentUser ? currentUser.name : null};
+  try{ await sb('loja_controlo_analitico', {method:'POST', body: JSON.stringify(dados)}); showToast(); abrirDetalheAuditoria('HACCP'); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function zarAcao(id){
+  if(!soDona('registar zaragatoas')) return;
+  const x = zarLista.find(r => r.id === id); const t = prompt('Ação corretiva:', (x && x.acao_corretiva) || ''); if(t === null) return;
+  try{ await sb(`loja_controlo_analitico?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({acao_corretiva: t.trim()})}); showToast(); abrirDetalheAuditoria('HACCP'); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function zarResolver(id){
+  if(!soDona('registar zaragatoas') || !confirm('Marcar a zaragatoa como resolvida?')) return;
+  try{ await sb(`loja_controlo_analitico?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({resolvido: true})}); showToast(); abrirDetalheAuditoria('HACCP'); }catch(e){ alert('Não consegui guardar.'); }
+}
 async function blocoControloAnalitico(){
-  try{ caLista = await sb('loja_controlo_analitico?select=*&order=data_recolha.desc.nullslast,id.desc&limit=50') || []; }catch(e){ caLista = []; }
+  try{ caLista = await sb('loja_controlo_analitico?select=*&or=(parametro.is.null,parametro.neq.Zaragatoa)&order=data_recolha.desc.nullslast,id.desc&limit=50') || []; }catch(e){ caLista = []; }
   const pode = souDona();
   const cor = c => /n[ãa]o satisf/i.test(c||'') ? '#B4231A' : /aceit/i.test(c||'') ? '#C77F12' : /satisf/i.test(c||'') ? '#1F7A33' : 'var(--ink-soft)';
   const fmt = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4) : '—';
@@ -8430,7 +8507,7 @@ async function abrirDetalheAuditoria(nome){
     if(nome === 'Controlo'){
       html += `<div class="section-title">🧾 Notas de Crédito</div><div class="card">${await blocoNotasCredito('auditoria', true)}</div>`;
     }
-    if(nome === 'HACCP') html += await blocoControloAnalitico();
+    if(nome === 'HACCP'){ html += await blocoHaccpQuadro(); html += await blocoZaragatoas(); html += await blocoControloAnalitico(); }
 
     if(!auditorias || !auditorias.length){
       html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda não há relatório detalhado guardado para esta auditoria.</div></div>`;
@@ -11707,111 +11784,146 @@ async function renderPainelVendas(){
   content.innerHTML = html;
 }
 
+// ===================== CUSTOS DA LOJA (luz, água, pessoal, economato) =====================
+const CUSTO_ITENS = [
+  {k:'agua', nome:'Água', ic:'💧', cor:'#2B7BB9', meta:-0.05},
+  {k:'luz', nome:'Luz', ic:'💡', cor:'#C77F12', meta:-0.05},
+  {k:'eco', nome:'Economato', ic:'🧴', cor:'#7A4E2D', meta:-0.05},
+  {k:'enc', nome:'Pessoal', ic:'👥', cor:'#1E4E8C', meta:-0.02},
+  {k:'man', nome:'Manutenções', ic:'🔧', cor:'#5B6B60'},
+  {k:'limp', nome:'Limpeza', ic:'🧹', cor:'#3E8E7E'},
+  {k:'seg', nome:'Segurança', ic:'🛡️', cor:'#8A5A9E'}
+];
+let custoSel = 'agua';
+const cEur = v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString('pt-PT') + ' €';
+const cPct = v => v == null || !isFinite(v) ? '—' : (v >= 0 ? '+' : '−') + Math.abs(v*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%';
+function custoSegunda(d){ const x = new Date(d); x.setHours(12,0,0,0); x.setDate(x.getDate() - ((x.getDay()+6)%7)); return x; }
+// consumo de água por dia a partir das leituras do contador (o consumo entre duas leituras é repartido pelos dias)
+function aguaConsumoDiario(leit){
+  const L = (leit||[]).slice().sort((a,b) => a.data.localeCompare(b.data)); const dia = {};
+  for(let i = 1; i < L.length; i++){
+    const d0 = new Date(L[i-1].data+'T12:00:00'), d1 = new Date(L[i].data+'T12:00:00');
+    const n = Math.max(1, Math.round((d1-d0)/864e5)); const c = (Number(L[i].leitura) - Number(L[i-1].leitura)) / n;
+    for(let j = 1; j <= n; j++){ const x = new Date(d0); x.setDate(d0.getDate()+j); dia[dataLocalISO(x)] = (dia[dataLocalISO(x)]||0) + c; }
+  }
+  return dia;
+}
+function somaPeriodo(porDia, de, ate){ let s = 0, tem = false; Object.entries(porDia).forEach(([d,v]) => { if(d >= de && d <= ate){ s += v; tem = true; } }); return tem ? s : null; }
+function periodosAtuais(){
+  const hoje = new Date(); const seg = custoSegunda(hoje); const dom = new Date(seg); dom.setDate(seg.getDate()+6);
+  const segA = new Date(seg); segA.setDate(seg.getDate()-7); const domA = new Date(seg); domA.setDate(seg.getDate()-1);
+  const m0 = new Date(hoje.getFullYear(), hoje.getMonth(), 1), m1 = new Date(hoje.getFullYear(), hoje.getMonth()+1, 0);
+  const a0 = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1), a1 = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+  const f = dataLocalISO;
+  return {sem:[f(seg),f(dom)], semAnt:[f(segA),f(domA)], mes:[f(m0),f(m1)], mesAnt:[f(a0),f(a1)], mesNome: hoje.toLocaleDateString('pt-PT',{month:'long'}), mesAntNome: a0.toLocaleDateString('pt-PT',{month:'long'})};
+}
+
 async function renderPainelCustos(){
-  const content = document.getElementById('painel-custos-content');
-  const rows = await sb('loja_resumo?id=eq.1&select=*');
-  const r = rows[0] || {};
-
-  const custos = {
-    'Economato': r.economato_mes, 'Pessoal': r.pessoal_mes, 'Água': r.agua_mes,
-    'Luz': r.luz_mes, 'Manutenções/Reparações': r.manutencoes_mes,
-    'Lixo': r.lixo_mes, 'Seguros/Acidentes': r.seguros_acidentes_mes
-  };
-  const totalCustos = Object.values(custos).reduce((s,v)=> s + (v!==null && v!==undefined ? Number(v) : 0), 0);
-  const faltamCustos = Object.entries(custos).filter(([k,v])=>v===null||v===undefined).map(([k])=>k);
-  const resultado = (Number(r.vendas_mes)||0) - (Number(r.quebras_mes)||0) - totalCustos;
-  const maiorValor = Math.max(...Object.values(custos).filter(v=>v!==null&&v!==undefined).map(Number), 1);
-
-  const custosMesAnterior = {
-    'Economato': r.economato_mes_anterior, 'Pessoal': r.pessoal_mes_anterior, 'Água': r.agua_mes_anterior,
-    'Luz': r.luz_mes_anterior, 'Manutenções/Reparações': r.manutencoes_mes_anterior,
-    'Lixo': r.lixo_mes_anterior, 'Seguros/Acidentes': r.seguros_acidentes_mes_anterior
-  };
-  const custosMesmoMesAnoAnterior = {
-    'Economato': r.economato_mesmo_mes_ano_anterior, 'Pessoal': r.pessoal_mesmo_mes_ano_anterior, 'Água': r.agua_mesmo_mes_ano_anterior,
-    'Luz': r.luz_mesmo_mes_ano_anterior, 'Manutenções/Reparações': r.manutencoes_mesmo_mes_ano_anterior,
-    'Lixo': r.lixo_mesmo_mes_ano_anterior, 'Seguros/Acidentes': r.seguros_acidentes_mesmo_mes_ano_anterior
-  };
-
-  // Barra vertical mini — usada nos 3 grupos de comparação
-  const barraVertical = (valor, maior, cor, label) => {
-    const semDados = valor===null || valor===undefined;
-    const alturaPx = semDados ? 2 : Math.max((Number(valor)/maior*70), 3);
-    return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0;">
-      <div style="font-size:9px;color:var(--ink-soft);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">${semDados?'—':fmtEuro(valor)}</div>
-      <div style="width:100%;max-width:34px;height:70px;display:flex;align-items:flex-end;">
-        <div style="width:100%;height:${alturaPx}px;background:${semDados?'var(--line)':cor};border-radius:4px 4px 0 0;"></div>
-      </div>
-      <div style="font-size:8.5px;color:var(--ink-soft);margin-top:4px;text-align:center;">${label}</div>
-    </div>`;
-  };
-
-  let html = `<div class="section-title">💰 Custos de Loja — Mês com Mês</div>`;
-  html += `<div class="card">
-    <div style="font-size:10px;color:var(--amber);font-weight:700;margin-bottom:10px;">⚠️ Referência: ${r.mes_referencia_custos || 'sem data'} — pode estar desatualizado.</div>`;
-  Object.entries(custos).forEach(([label,vAtual])=>{
-    const vAnterior = custosMesAnterior[label];
-    const vMesmoMesAno = custosMesmoMesAnoAnterior[label];
-    const variacaoPct = (vAtual!=null && vMesmoMesAno!=null && vMesmoMesAno>0) ? ((Number(vAtual)-Number(vMesmoMesAno))/Number(vMesmoMesAno)*100) : null;
-    const maior = Math.max(Number(vAtual)||0, Number(vAnterior)||0, Number(vMesmoMesAno)||0, 1);
-
-    html += `<div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line);">
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-        <span style="font-size:12.5px;font-weight:700;color:var(--ink);">${label}</span>
-        ${variacaoPct!==null ? `<span style="font-size:11px;font-weight:700;color:${variacaoPct<=0?'var(--green)':'var(--red)'};">${variacaoPct>=0?'+':''}${variacaoPct.toFixed(1)}% vs ${mesAtualNome()} ${new Date().getFullYear()-1}</span>` : ''}
-      </div>
-      <div style="display:flex;gap:6px;">
-        ${barraVertical(vAnterior, maior, 'var(--ink-soft)', 'Mês Ant.')}
-        ${barraVertical(vAtual, maior, 'var(--red)', 'Este Mês')}
-        ${barraVertical(vMesmoMesAno, maior, 'var(--navy)', mesAtualNome().slice(0,3)+' '+(new Date().getFullYear()-1))}
-      </div>
-    </div>`;
-  });
-  html += `<div style="display:flex;justify-content:space-between;padding-top:4px;">
-    <span style="font-size:12.5px;font-weight:700;color:var(--ink);">Total de Custos (mês)</span>
-    <span style="font-size:14px;font-weight:800;color:var(--red);">${fmtEuro(totalCustos)}</span>
+  const content = document.getElementById('painel-custos-content'); if(!content) return;
+  content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
+  try{ await carregarResumoPainel(); }catch(e){}
+  const [leit, eco, planos] = await Promise.all([
+    sb('loja_agua_leituras?select=*&order=data.desc&limit=120').catch(()=>[]),
+    sb('loja_economato_registos?select=*&order=data.desc&limit=300').catch(()=>[]),
+    sb('loja_plano_acao?area=eq.Custos&select=*&order=id.asc').catch(()=>[])
+  ]);
+  const r = resumoPainel || RESUMO_PADRAO; const C = r.custos || []; const M = r.meses || [];
+  const ano = r.ano || new Date().getFullYear(), anoA = r.ano_ant || ano - 1;
+  const comDados = C.map((c,i) => CUSTO_ITENS.slice(0,4).some(it => Number(c[it.k]) > 0) ? i : -1).filter(i => i >= 0);
+  const nM = comDados.length ? comDados[comDados.length-1] + 1 : 0;
+  const dona = souDona();
+  const soma = (k, ant, ate) => C.slice(0, ate).reduce((s,c) => s + (Number(c[k + (ant ? '_ant' : '')]) || 0), 0);
+  const vendasAno = M.slice(0, nM).reduce((s,m) => s + (Number(m.v)||0), 0);
+  let h = `<div class="card" style="border-top:5px solid #B4231A;"><div style="font-size:12px;color:var(--ink-soft);">Custos de ${ano} — janeiro a ${nM ? (C[nM-1].mes||'').toLowerCase() : '—'} · comparação com os mesmos meses de ${anoA}</div></div>`;
+  // 1) resumo do ano por custo
+  h += `<div class="vs-detail-grid" style="margin-bottom:12px;">` + CUSTO_ITENS.slice(0,4).map(it => {
+    const a = soma(it.k, false, nM), b = it.k === 'enc' ? null : soma(it.k, true, nM); const v = b ? a/b - 1 : null;
+    return `<div class="vs-box" style="cursor:pointer;" onclick="custoSel='${it.k}';renderPainelCustos()"><div class="vs-label">${it.ic} ${it.nome}</div><div class="vs-value" style="font-size:19px;color:var(--navy);">${cEur(a)}</div><div style="font-size:11px;font-weight:700;color:${v==null?'var(--ink-soft)':v<=0?'var(--green)':'var(--red)'};">${v==null ? (vendasAno ? (a/vendasAno*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '% das vendas' : '') : cPct(v) + ' vs ' + anoA}</div></div>`;
+  }).join('') + `</div>`;
+  // 2) gráfico mês a mês do custo escolhido
+  const it = CUSTO_ITENS.find(x => x.k === custoSel) || CUSTO_ITENS[0];
+  const vals = C.map(c => ({m: (c.mes||'').slice(0,3), a: Number(c[it.k])||0, b: Number(c[it.k+'_ant'])||0}));
+  const max = Math.max(1, ...vals.map(v => Math.max(v.a, v.b)));
+  h += `<div class="section-title">${it.ic} ${it.nome} — mês a mês</div><div class="card">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${CUSTO_ITENS.map(x => `<button class="econ-btn${x.k === it.k ? ' filled' : ''}" style="padding:5px 10px;font-size:12px;${x.k === it.k ? 'background:#14301E;color:#fff;' : ''}" onclick="custoSel='${x.k}';renderPainelCustos()">${x.ic} ${x.nome}</button>`).join('')}</div>
+    <div style="display:flex;align-items:flex-end;gap:4px;height:150px;border-bottom:1px solid var(--line);padding-top:16px;">${vals.map(v => `<div style="flex:1;display:flex;gap:1px;align-items:flex-end;height:100%;" title="${v.m}: ${ano} ${cEur(v.a)} · ${anoA} ${cEur(v.b)}">
+        <div style="flex:1;background:#C9CFC8;height:${(v.b/max*100).toFixed(1)}%;border-radius:3px 3px 0 0;"></div>
+        <div style="flex:1;background:${it.cor};height:${(v.a/max*100).toFixed(1)}%;border-radius:3px 3px 0 0;"></div></div>`).join('')}</div>
+    <div style="display:flex;gap:4px;">${vals.map(v => `<div style="flex:1;text-align:center;font-size:9.5px;color:var(--ink-soft);">${v.m}</div>`).join('')}</div>
+    <div style="display:flex;gap:12px;font-size:11px;color:var(--ink-soft);margin-top:6px;"><span><span style="display:inline-block;width:10px;height:10px;background:${it.cor};border-radius:2px;"></span> ${ano}</span><span><span style="display:inline-block;width:10px;height:10px;background:#C9CFC8;border-radius:2px;"></span> ${anoA}</span>${it.meta ? `<span>Meta 2027: ${cPct(it.meta)}</span>` : ''}</div>
   </div>`;
-  html += `</div>`;
-
-  html += `<div class="section-title">Resultado (Lucro/Prejuízo)</div>`;
-  html += `<div class="card">
-    <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">Vendas − Quebra − Custos${faltamCustos.length?' (parcial — faltam: '+faltamCustos.join(', ')+')':''}</div>
-    <div style="font-size:24px;font-weight:800;color:${resultado>=0?'var(--green)':'var(--red)'};">${resultado>=0?'+':''}${fmtEuro(resultado)}</div>
+  // 3) tabela mês a mês (4 custos principais)
+  h += `<div class="section-title">📋 Tabela mensal</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:470px;">
+    <tr style="color:var(--ink-soft);font-size:10.5px;"><th style="text-align:left;padding:4px;">Mês</th>${CUSTO_ITENS.slice(0,4).map(x => `<th style="padding:4px;">${x.ic} ${x.nome}</th>`).join('')}<th style="padding:4px;">Total</th><th style="padding:4px;">% vendas</th></tr>
+    ${C.map((c,i) => { const tot = CUSTO_ITENS.slice(0,4).reduce((s,x) => s + (Number(c[x.k])||0), 0); const vend = Number((M[i]||{}).v) || 0; if(!tot) return '';
+      return `<tr style="border-top:1px solid var(--line);"><td style="padding:4px;">${c.mes}</td>${CUSTO_ITENS.slice(0,4).map(x => { const a = Number(c[x.k])||0, b = Number(c[x.k+'_ant'])||0; const v = b ? a/b-1 : null; return `<td style="text-align:right;padding:4px;">${cEur(a)}${v != null ? `<div style="font-size:9.5px;color:${v<=0?'var(--green)':'var(--red)'};">${cPct(v)}</div>` : ''}</td>`; }).join('')}<td style="text-align:right;font-weight:700;padding:4px;">${cEur(tot)}</td><td style="text-align:right;padding:4px;">${vend ? (tot/vend*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : '—'}</td></tr>`; }).join('')}
+    ${(() => { const tot = CUSTO_ITENS.slice(0,4).reduce((s,x) => s + soma(x.k, false, nM), 0); return `<tr style="border-top:2px solid var(--line);font-weight:800;"><td style="padding:5px 4px;">Ano</td>${CUSTO_ITENS.slice(0,4).map(x => `<td style="text-align:right;padding:4px;">${cEur(soma(x.k, false, nM))}</td>`).join('')}<td style="text-align:right;padding:4px;">${cEur(tot)}</td><td style="text-align:right;padding:4px;">${vendasAno ? (tot/vendasAno*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : '—'}</td></tr>`; })()}
+  </table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Valores do relatório Resumo da loja. A percentagem por baixo de cada valor compara com o mesmo mês de ${anoA}.</div></div>`;
+  // 4) água — leituras do contador
+  const P = periodosAtuais(); const dia = aguaConsumoDiario(leit);
+  const cs = somaPeriodo(dia, ...P.sem), csa = somaPeriodo(dia, ...P.semAnt), cm = somaPeriodo(dia, ...P.mes), cma = somaPeriodo(dia, ...P.mesAnt);
+  const m3 = v => v == null ? '—' : v.toLocaleString('pt-PT',{maximumFractionDigits:1}) + ' m³';
+  const varTxt = (a, b) => a == null || !b ? '' : `<div style="font-size:11px;font-weight:700;color:${a<=b?'var(--green)':'var(--red)'};">${cPct(a/b-1)}</div>`;
+  h += `<div class="section-title">💧 Água — contagem do contador</div><div class="card">
+    <div class="vs-detail-grid" style="margin-bottom:10px;">
+      <div class="vs-box"><div class="vs-label">Esta semana (até hoje)</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${m3(cs)}</div>${varTxt(cs, csa)}<div style="font-size:10.5px;color:var(--ink-soft);">semana passada ${m3(csa)}</div></div>
+      <div class="vs-box"><div class="vs-label">Este mês até hoje (${P.mesNome})</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${m3(cm)}</div>${varTxt(cm, cma)}<div style="font-size:10.5px;color:var(--ink-soft);">${P.mesAntNome} ${m3(cma)}</div></div>
+    </div>
+    ${dona ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;"><input id="agua-data" type="date" value="${dataLocalISO(new Date())}" style="padding:8px;border-radius:8px;border:1px solid var(--line);"><input id="agua-leitura" type="text" inputmode="decimal" placeholder="Leitura (m³)" style="width:120px;padding:8px;border-radius:8px;border:1px solid var(--line);text-align:right;"><button class="btn-primary" style="margin:0;width:auto;padding:8px 14px;" onclick="aguaGuardar()">Guardar leitura</button></div>` : ''}
+    ${leit.length ? `<details><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">Leituras (${leit.length})</summary>${leit.slice(0,30).map((l,i) => { const ant = leit[i+1]; const c = ant ? Number(l.leitura) - Number(ant.leitura) : null; return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--line);font-size:12px;"><span>${l.data.split('-').reverse().join('/')}</span><span>${Number(l.leitura).toLocaleString('pt-PT')} m³${c != null ? ` <span style="color:var(--ink-soft);">(+${c.toLocaleString('pt-PT',{maximumFractionDigits:1})})</span>` : ''}</span>${dona ? `<button class="lem-x" onclick="aguaApagar(${l.id})">Apagar</button>` : ''}</div>`; }).join('')}</details>` : `<div style="font-size:12px;color:var(--ink-soft);">Ainda sem leituras. Registe a leitura do contador — com duas ou mais leituras a app calcula o consumo.</div>`}
   </div>`;
-
-  // Comparação detalhada ao Ano Anterior — valor, variação %, e gráfico de barras lado a lado
-  const custosAno = {
-    'Água': {atual: r.agua_ano, anterior: r.agua_ano_anterior},
-    'Luz': {atual: r.luz_ano, anterior: r.luz_ano_anterior},
-    'Economato': {atual: r.economato_ano, anterior: r.economato_ano_anterior},
-    'Manutenções/Reparações': {atual: r.manutencoes_ano, anterior: r.manutencoes_ano_anterior},
-    'Pessoal': {atual: r.pessoal_ano, anterior: null},
-    'Lixo': {atual: r.lixo_ano, anterior: null},
-    'Seguros/Acidentes': {atual: r.seguros_acidentes_ano, anterior: null},
-  };
-
-  html += `<div class="section-title">📊 Custos — Ano com Ano</div>`;
-  html += `<div class="card">`;
-  Object.entries(custosAno).forEach(([label, d])=>{
-    if(d.atual===null || d.atual===undefined) return;
-    const temAnterior = d.anterior!==null && d.anterior!==undefined;
-    const variacaoPct = temAnterior && d.anterior>0 ? ((Number(d.atual)-Number(d.anterior))/Number(d.anterior)*100) : null;
-    const maiorV = temAnterior ? Math.max(Number(d.atual), Number(d.anterior)) : Number(d.atual);
-
-    html += `<div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line);">
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-        <span style="font-size:12.5px;font-weight:700;color:var(--ink);">${label}</span>
-        ${variacaoPct!==null ? `<span style="font-size:11px;font-weight:700;color:${variacaoPct<=0?'var(--green)':'var(--red)'};">${variacaoPct>=0?'+':''}${variacaoPct.toFixed(1)}%</span>` : ''}
-      </div>
-      <div style="display:flex;gap:10px;">
-        ${barraVertical(d.anterior, maiorV, 'var(--ink-soft)', 'Ano Ant.')}
-        ${barraVertical(d.atual, maiorV, 'var(--navy)', 'Este Ano')}
-      </div>
-    </div>`;
-  });
-  html += `</div>`;
-
-  content.innerHTML = html;
+  // 5) economato — registos
+  const porDiaEco = {}; eco.forEach(e => { porDiaEco[e.data] = (porDiaEco[e.data]||0) + Number(e.valor||0); });
+  const es = somaPeriodo(porDiaEco, ...P.sem), esa = somaPeriodo(porDiaEco, ...P.semAnt), em = somaPeriodo(porDiaEco, ...P.mes), ema = somaPeriodo(porDiaEco, ...P.mesAnt);
+  h += `<div class="section-title">🧴 Economato — valores</div><div class="card">
+    <div class="vs-detail-grid" style="margin-bottom:10px;">
+      <div class="vs-box"><div class="vs-label">Esta semana (até hoje)</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${cEur(es || 0)}</div>${varTxt(es, esa)}<div style="font-size:10.5px;color:var(--ink-soft);">semana passada ${cEur(esa || 0)}</div></div>
+      <div class="vs-box"><div class="vs-label">Este mês até hoje (${P.mesNome})</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${cEur(em || 0)}</div>${varTxt(em, ema)}<div style="font-size:10.5px;color:var(--ink-soft);">${P.mesAntNome} ${cEur(ema || 0)}</div></div>
+    </div>
+    ${dona ? `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;"><input id="eco-data" type="date" value="${dataLocalISO(new Date())}" style="padding:8px;border-radius:8px;border:1px solid var(--line);"><input id="eco-valor" type="text" inputmode="decimal" placeholder="Valor (€)" style="width:100px;padding:8px;border-radius:8px;border:1px solid var(--line);text-align:right;"><input id="eco-desc" type="text" placeholder="O quê (opcional)" style="flex:1;min-width:120px;padding:8px;border-radius:8px;border:1px solid var(--line);"><button class="btn-primary" style="margin:0;width:auto;padding:8px 14px;" onclick="ecoGuardar()">Guardar</button></div>` : ''}
+    ${eco.length ? `<details><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">Registos (${eco.length})</summary>${eco.slice(0,40).map(e => `<div style="display:flex;justify-content:space-between;gap:6px;padding:4px 0;border-top:1px solid var(--line);font-size:12px;"><span>${e.data.split('-').reverse().join('/')}${e.descricao ? ' · ' + rpEsc(e.descricao) : ''}</span><span style="display:flex;gap:6px;align-items:center;"><b>${Number(e.valor).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})} €</b>${dona ? `<button class="lem-x" onclick="ecoApagar(${e.id})">Apagar</button>` : ''}</span></div>`).join('')}</details>` : `<div style="font-size:12px;color:var(--ink-soft);">Ainda sem valores registados.</div>`}
+  </div>`;
+  // 6) plano de ação dos custos
+  h += `<div class="section-title">🎯 Plano de ação — custos <span class="count">· ${planos.filter(p => !/conclu/i.test(p.estado)).length} em curso</span></div><div class="card" style="padding:4px 12px;">
+    ${planos.length ? planos.map(p => `<div style="padding:8px 0;border-top:1px solid var(--line);${/conclu/i.test(p.estado) ? 'opacity:.55;' : ''}"><div style="font-size:13px;font-weight:700;${/conclu/i.test(p.estado) ? 'text-decoration:line-through;' : ''}">${rpEsc(p.ponto)}</div><div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${rpEsc(p.acao)}</div>${dona ? `<button class="econ-btn" style="margin-top:6px;padding:4px 10px;font-size:11.5px;" onclick="custoPlanoEstado(${p.id}, '${/conclu/i.test(p.estado) ? 'Pendente' : 'Concluído'}')">${/conclu/i.test(p.estado) ? '↺ Reabrir' : '✓ Concluído'}</button>` : ''}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0;">Ainda sem ações. ${dona ? 'Use as sugestões abaixo ou escreva a sua.' : ''}</div>`}
+    ${dona ? `<details style="margin:8px 0;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">➕ Nova ação</summary>
+      <input id="cp-ponto" placeholder="Ponto (ex.: Luz +12% vs ${anoA})" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);margin:6px 0;">
+      <textarea id="cp-acao" rows="2" placeholder="Ação (o quê, quem, até quando)" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);"></textarea>
+      <button class="btn-primary" onclick="custoPlanoNovo()">Guardar ação</button></details>
+      ${planos.length ? '' : `<button class="econ-btn" style="margin:4px 0 10px;" onclick="custoPlanoSugestoes()">💡 Criar ações sugeridas</button>`}` : ''}
+  </div>`;
+  content.innerHTML = h;
+}
+async function aguaGuardar(){
+  if(!soDona('registar a leitura da água')) return;
+  const data = (document.getElementById('agua-data')||{}).value; const tt = String((document.getElementById('agua-leitura')||{}).value||'').replace(/[\sm³]/g,'').replace(',','.'); const v = tt && !isNaN(Number(tt)) ? Number(tt) : null;
+  if(!data || v == null){ alert('Escreva a data e a leitura do contador (m³).'); return; }
+  try{ await sb('loja_agua_leituras?on_conflict=data', {method:'POST', body: JSON.stringify({data, leitura: v, criado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function aguaApagar(id){ if(!soDona('apagar leituras') || !confirm('Apagar esta leitura?')) return; try{ await sb(`loja_agua_leituras?id=eq.${id}`, {method:'DELETE'}); renderPainelCustos(); }catch(e){ alert('Não consegui apagar.'); } }
+async function ecoGuardar(){
+  if(!soDona('registar o economato')) return;
+  const data = (document.getElementById('eco-data')||{}).value; const t = String((document.getElementById('eco-valor')||{}).value||'').replace(/[€\s]/g,'').replace(',','.'); const v = Number(t);
+  if(!data || !t || isNaN(v)){ alert('Escreva a data e o valor (€).'); return; }
+  try{ await sb('loja_economato_registos', {method:'POST', body: JSON.stringify({data, valor: v, descricao: (document.getElementById('eco-desc')||{}).value || null, criado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function ecoApagar(id){ if(!soDona('apagar registos') || !confirm('Apagar este registo?')) return; try{ await sb(`loja_economato_registos?id=eq.${id}`, {method:'DELETE'}); renderPainelCustos(); }catch(e){ alert('Não consegui apagar.'); } }
+async function custoPlanoNovo(){
+  if(!soDona('criar ações')) return;
+  const ponto = (document.getElementById('cp-ponto')||{}).value.trim(), acao = (document.getElementById('cp-acao')||{}).value.trim();
+  if(!ponto || !acao){ alert('Escreva o ponto e a ação.'); return; }
+  try{ await sb('loja_plano_acao', {method:'POST', body: JSON.stringify({area:'Custos', ponto, acao, estado:'Pendente'}), prefer:'return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function custoPlanoEstado(id, estado){ if(!soDona('alterar ações')) return; try{ await sb(`loja_plano_acao?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({estado})}); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); } }
+async function custoPlanoSugestoes(){
+  if(!soDona('criar ações')) return;
+  const s = [
+    ['Luz — reduzir 5% em 2027', 'Desligar iluminação e equipamentos fora de horas (checklist de fecho); cortinas noturnas nos murais de frio; verificar portas de câmaras fechadas; registar a leitura semanal.'],
+    ['Água — reduzir 5% em 2027', 'Registar a leitura do contador todas as segundas; verificar fugas (torneiras, autoclismos, máquina de gelo); higienizações com doseador; comparar semana a semana.'],
+    ['Economato — reduzir 5% em 2027', 'Encomendar só com o mapa da semana; controlar stock de sacos, papel e luvas; cada secção com quantidade máxima; registar os valores na app todas as semanas.'],
+    ['Pessoal — reduzir 2% em 2027', 'Ajustar horários às horas de mais venda; banco de horas no máximo 20h por pessoa; menos horas extra; planear férias e folgas com antecedência.']
+  ];
+  try{ await sb('loja_plano_acao', {method:'POST', body: JSON.stringify(s.map(([ponto, acao]) => ({area:'Custos', ponto, acao, estado:'Pendente'}))), prefer:'return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui criar as ações.'); }
 }
 
 async function renderFardamentoScreen(){
