@@ -4412,7 +4412,7 @@ async function renderDashboard(){
     renderAniversariosHoje();
     renderPlanoAcaoGestores();
     renderFeedbackGestores();
-    Promise.all([blocoAvaliacaoClienteSecao(null, null, true), blocoAquiObservacoes().catch(()=>'')]).then(([h1, h2]) => document.getElementById('avaliacao-gestores-wrap').innerHTML = h1 + `<div class="aqui-obs-wrap">${h2}</div>`);
+    Promise.all([blocoAvaliacaoClienteSecao(null, null, true), blocoAquiObservacoes().catch(()=>''), blocoVozCliente().catch(e=>{ console.error('voz do cliente', e); return ''; })]).then(([h1, h2, h3]) => document.getElementById('avaliacao-gestores-wrap').innerHTML = h1 + `<div class="aqui-obs-wrap">${h2}</div><div class="voc-wrap">${h3}</div>`);
   } else {
     chefeOnly1.classList.add('hidden');
     chefeOnly2.classList.add('hidden');
@@ -11133,6 +11133,147 @@ async function aquiCarregar(input){
     document.querySelectorAll('.aqui-obs-wrap').forEach(async w => { w.innerHTML = await blocoAquiObservacoes(); });
   }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
 }
+// ===================== A Voz do Cliente (Programa AQUI para o Cliente) =====================
+const VOC_REGRAS = ['Não trato o cliente por "tu"', 'Não abandono o cliente sem resposta', 'Não confronto o cliente', 'Não tenho conversas paralelas', 'Não discuto com o colega'];
+const VOC_MISSAO = ['Ser exemplo do AQUI, junto do Cliente', 'Formar e capacitar a equipa', 'Fazer viver a cultura AQUI para o Cliente', 'Acompanhar e implementar melhorias', 'Dar feedback para reconhecer e aperfeiçoar'];
+const VOC_TIPOS = {formado:'🎓 Explicado / formado', reconhecer:'👏 Reconhecer', corrigir:'🔧 Corrigir'};
+let vocColabs = [], vocObs = [];
+function vocPodeSupervisionar(){ return !!(currentUser && ['gestora','area','responsavel'].includes(currentUser.role)); }
+function vocRefrescar(){ document.querySelectorAll('.voc-wrap').forEach(async w => { try{ w.innerHTML = await blocoVozCliente(); }catch(e){} }); }
+function vocSegunda(iso){ const d = new Date((iso || dataLocalISO(new Date())) + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dataLocalISO(d); }
+function vocPct(v){ return v == null || v === '' ? '—' : Number(v).toLocaleString('pt-PT', {maximumFractionDigits:1}) + '%'; }
+async function blocoVozCliente(){
+  const ini = new Date(); ini.setDate(ini.getDate() - 90);
+  const [sem, plano, obs, colabs] = await Promise.all([
+    sb('loja_voz_cliente?select=*&order=semana_inicio.desc&limit=8').catch(()=>[]),
+    sb('loja_plano_acao?area=eq.Voz%20do%20Cliente&select=*&order=id.desc').catch(()=>[]),
+    sb(`loja_voz_supervisao?select=*&data=gte.${dataLocalISO(ini)}&order=data.desc,id.desc&limit=300`).catch(()=>[]),
+    sb('loja_colaboradores?select=id,nome,secao&order=nome.asc').catch(()=>[])
+  ]);
+  vocObs = obs || []; vocColabs = colabs || [];
+  const dona = souDona(), sup = vocPodeSupervisionar();
+  const S = sem || [], r = S[0], ant = S[1];
+  const dt = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-PT', {day:'2-digit', month:'2-digit'});
+  let h = `<div class="section-title">🗣️ A Voz do Cliente — Portuzelo</div>`;
+
+  // 1) Resultados da semana
+  h += `<div class="card">`;
+  if(r){
+    const sNum = numeroSemanaISO(new Date(r.semana_inicio + 'T12:00:00'));
+    const seta = (a, b, menosMelhor) => { if(a == null || b == null || a === b) return ''; const bom = (a > b) !== !!menosMelhor; return ` <span style="color:${bom ? '#1F7A33' : '#B4231A'}">${a > b ? '▲' : '▼'}</span>`; };
+    const ref = r.loja_score;
+    h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Semana ${sNum} · ${dt(r.semana_inicio)} · ${r.avaliacoes != null ? r.avaliacoes + ' avaliações' : ''}</div>
+      <div class="vs-detail-grid">
+        <div class="vs-box"><div class="vs-label">😀 Correu bem</div><div class="vs-value" style="font-size:22px;color:var(--green);">${vocPct(r.bem)}${seta(r.bem, ant && ant.bem)}</div><div style="font-size:10.5px;color:var(--ink-soft);">Bem + Muito bem</div></div>
+        <div class="vs-box"><div class="vs-label">😞 Correu mal</div><div class="vs-value" style="font-size:22px;color:var(--red);">${vocPct(r.mal)}${seta(r.mal, ant && ant.mal, true)}</div><div style="font-size:10.5px;color:var(--ink-soft);">Mal + Muito mal</div></div>
+      </div>
+      ${(ref != null || r.cluster != null || r.regiao != null || r.pais != null) ? `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;text-align:center;">
+        ${[['Loja', ref], ['Cluster', r.cluster], ['Região', r.regiao], ['País', r.pais]].map(([l, v]) => `<div style="border:1px solid var(--line);border-radius:10px;padding:6px 2px;"><div style="font-size:10.5px;color:var(--ink-soft);">${l}</div><b style="font-size:14px;color:${l === 'Loja' ? 'var(--navy)' : 'var(--ink)'};">${v == null ? '—' : Number(v).toLocaleString('pt-PT',{maximumFractionDigits:1})}</b><div style="font-size:9.5px;color:var(--ink-soft);">/100</div></div>`).join('')}</div>` : ''}`;
+    if(S.length > 1){
+      const L = S.slice().reverse();
+      h += `<div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Evolução "Correu bem" — últimas ${L.length} semanas</div>
+        <div style="display:flex;align-items:flex-end;gap:6px;height:90px;margin-top:6px;">${L.map(x => { const v = Number(x.bem) || 0; return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;"><span style="font-size:9.5px;font-weight:700;">${Math.round(v)}</span><div style="width:100%;max-width:28px;height:${Math.max(4, (v - 50) * 1.4)}px;background:${v >= 85 ? '#1F7A33' : v >= 75 ? '#C77F12' : '#B4231A'};border-radius:4px 4px 0 0;"></div><span style="font-size:9.5px;color:var(--ink-soft);">S${numeroSemanaISO(new Date(x.semana_inicio + 'T12:00:00'))}</span></div>`; }).join('')}</div>`;
+    }
+    if(r.fatores) h += `<div style="font-size:12px;margin-top:10px;"><b>O que mais influenciou (correu mal):</b><div style="white-space:pre-line;color:var(--ink);margin-top:2px;">${rpEsc(r.fatores)}</div></div>`;
+    if(r.comentarios) h += `<div style="font-size:12px;margin-top:8px;"><b>Comentários dos clientes:</b><div style="white-space:pre-line;color:var(--ink-soft);margin-top:2px;font-style:italic;">${rpEsc(r.comentarios)}</div></div>`;
+  } else {
+    h += `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem resultados. O questionário arranca a 19/10 em todas as lojas e o primeiro relatório semanal chega por email a 26/10.</div>`;
+  }
+  if(dona) h += `<details class="lem-novo" style="margin-top:10px;"><summary>➕ Registar resultados da semana (relatório por email)</summary>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-sem">Semana (qualquer dia)</label><input id="voc-sem" type="date" value="${dataLocalISO(new Date(Date.now() - 7*864e5))}"></div><div><label class="com-lbl" for="voc-n">Nº avaliações</label><input id="voc-n" type="number" inputmode="numeric"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-bem">Correu bem %</label><input id="voc-bem" inputmode="decimal" placeholder="80,8"></div><div><label class="com-lbl" for="voc-mal">Correu mal %</label><input id="voc-mal" inputmode="decimal" placeholder="5,2"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-loja">Avaliação loja /100</label><input id="voc-loja" inputmode="decimal"></div><div><label class="com-lbl" for="voc-cl">Cluster /100</label><input id="voc-cl" inputmode="decimal"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-rg">Região /100</label><input id="voc-rg" inputmode="decimal"></div><div><label class="com-lbl" for="voc-ps">País /100</label><input id="voc-ps" inputmode="decimal"></div></div>
+    <label class="com-lbl" for="voc-fat">O que mais influenciou (correu mal)</label><textarea id="voc-fat" rows="3" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;" placeholder="ex.: Disponibilidade de produtos 30%&#10;Rapidez do serviço 25%"></textarea>
+    <label class="com-lbl" for="voc-com">Comentários dos clientes</label><textarea id="voc-com" rows="3" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;" placeholder="Colar os comentários da semana"></textarea>
+    <button class="btn-primary" onclick="vocGuardarSemana()">Guardar semana</button></details>`;
+  h += `</div>`;
+
+  // 2) Plano de ação
+  const P = plano || [];
+  h += `<div class="section-title">🎯 Plano de ação — Voz do Cliente</div><div class="card">`;
+  h += P.length ? P.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><div><b>${rpEsc(p.ponto || '')}</b>${p.acao ? `<div style="color:var(--ink-soft);font-size:11.5px;">${rpEsc(p.acao)}</div>` : ''}</div>${dona ? `<select style="font-size:11.5px;height:30px;" onchange="vocPlanoEstado(${p.id}, this.value)">${['Pendente','Em curso','Concluído'].map(e => `<option ${p.estado === e ? 'selected' : ''}>${e}</option>`).join('')}</select>` : `<span style="font-size:11.5px;white-space:nowrap;">${rpEsc(p.estado || 'Pendente')}</span>`}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);">Sem ações ainda. Use os comentários e o "correu mal" da semana para definir ações.</div>`;
+  if(dona) h += `<button class="econ-btn" style="margin-top:8px;" onclick="vocPlanoNovo()">➕ Nova ação</button>`;
+  h += `</div>`;
+
+  // 3) Educar a equipa
+  h += `<div class="section-title">🎓 Educar a equipa — AQUI para o Cliente</div><div class="card">
+    <div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:4px;">As 5 regras AQUI</div>
+    ${VOC_REGRAS.map((x, i) => `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-top:${i ? '1px solid var(--line)' : 'none'};font-size:13px;"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:#8DC63F;color:#14301E;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:12px;">${i+1}</span>${rpEsc(x)}</div>`).join('')}
+    <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Missão do Responsável de Cliente</summary>
+      <div style="font-size:12px;color:var(--ink-soft);margin:4px 0;">Principal responsável pela satisfação do Cliente e pelos resultados de atendimento da loja.</div>
+      ${VOC_MISSAO.map((x, i) => `<div style="font-size:12.5px;padding:3px 0;">${i+1}. ${rpEsc(x)}</div>`).join('')}</details>
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Como funciona o questionário</summary>
+      <div style="font-size:12.5px;line-height:1.5;margin-top:4px;">
+        • Aparece no <b>Self Checkout</b> e na <b>App O Meu Pingo Doce</b>: todas as compras com a app ou o Cartão Poupa Mais dão origem a um questionário (push de 7 em 7 dias).<br>
+        • 2 perguntas: <b>"Como correu a sua experiência na nossa loja?"</b> (Muito mal → Muito bem) e <b>"O que mais influenciou a sua resposta?"</b> (arrumação, disponibilidade de produtos, rapidez, apoio na caixa, simpatia da equipa, outra razão).<br>
+        • Resultados: dashboard A Voz do Cliente e relatório semanal por email — para <b>reconhecer os melhores, aperfeiçoar o atendimento e alertar situações críticas</b>.<br>
+        • Nas caixas: "Obrigado pela sua visita! Vá à App e dê-nos a sua opinião". Cartaz nas zonas sociais: <b>"Cada gesto teu, conta!"</b></div></details>
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Calendário</summary>
+      <div style="font-size:12.5px;line-height:1.6;margin-top:4px;">16/10 · Newsletter e cartaz nas zonas sociais<br>19/10 · <b>Lançamento em todas as lojas</b><br>20/10 · Comunicação em loja para o cliente (caixas e self-checkouts)<br>Depois do lançamento · Sessões de esclarecimento com as equipas de gestão de loja<br>26/10 · <b>Primeiro relatório semanal</b></div></details>
+    ${dona ? `<button class="econ-btn" style="margin-top:10px;" onclick="vocPartilharRegras()">📲 Partilhar regras com a equipa (WhatsApp)</button>` : ''}
+  </div>`;
+
+  // 4) Supervisão
+  const tot = vocColabs.length;
+  const formados = new Set(vocObs.filter(o => o.tipo === 'formado').map(o => o.colaborador_id || o.colaborador));
+  const mes = dataLocalISO(new Date()).slice(0, 7);
+  const domes = vocObs.filter(o => String(o.data).slice(0, 7) === mes);
+  const corr = {}; domes.filter(o => o.tipo === 'corrigir' && o.regra).forEach(o => corr[o.regra] = (corr[o.regra] || 0) + 1);
+  const topCorr = Object.entries(corr).sort((a, b) => b[1] - a[1]);
+  const nRec = domes.filter(o => o.tipo === 'reconhecer').length, nCor = domes.filter(o => o.tipo === 'corrigir').length;
+  h += `<div class="section-title">👀 Supervisão AQUI — no terreno</div><div class="card">
+    <div class="vs-detail-grid">
+      <div class="vs-box"><div class="vs-label">🎓 Equipa formada</div><div class="vs-value" style="font-size:22px;color:${tot && formados.size >= tot ? 'var(--green)' : '#C77F12'};">${formados.size}${tot ? `<span style="font-size:13px;color:var(--ink-soft);"> / ${tot}</span>` : ''}</div><div style="font-size:10.5px;color:var(--ink-soft);">últimos 90 dias</div></div>
+      <div class="vs-box"><div class="vs-label">👏 Reconhecer · 🔧 Corrigir</div><div class="vs-value" style="font-size:22px;"><span style="color:var(--green);">${nRec}</span> · <span style="color:var(--red);">${nCor}</span></div><div style="font-size:10.5px;color:var(--ink-soft);">este mês</div></div>
+    </div>
+    ${topCorr.length ? `<div style="font-size:12px;margin-top:8px;"><b>Regras mais corrigidas este mês:</b> ${topCorr.map(([k, n]) => `${rpEsc(k)} (${n})`).join(' · ')}</div>` : ''}`;
+  if(sup) h += `<details class="lem-novo" style="margin-top:10px;"><summary>➕ Registar observação de um colaborador</summary>
+    <label class="com-lbl" for="voc-col">Colaborador</label><select id="voc-col"><option value="">— escolher —</option>${vocColabs.map(c => `<option value="${c.id}">${rpEsc(c.nome)}</option>`).join('')}</select>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-tipo">Tipo</label><select id="voc-tipo">${Object.entries(VOC_TIPOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div><div><label class="com-lbl" for="voc-data">Data</label><input id="voc-data" type="date" value="${dataLocalISO(new Date())}"></div></div>
+    <label class="com-lbl" for="voc-regra">Regra / tema</label><select id="voc-regra"><option value="">Todas as regras / atendimento em geral</option>${VOC_REGRAS.map(x => `<option>${rpEsc(x)}</option>`).join('')}<option>Simpatia da equipa</option><option>Apoio na caixa</option><option>Rapidez do serviço</option></select>
+    <label class="com-lbl" for="voc-nota">O que se observou / feedback dado</label><input id="voc-nota" placeholder="ex.: tratou a cliente por tu — expliquei a regra 1">
+    <button class="btn-primary" onclick="vocGuardarObs()">Guardar observação</button></details>`;
+  const ult = vocObs.slice(0, 12);
+  h += ult.length ? `<div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Últimas observações</div>` + ult.map(o => `<div style="padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>${rpEsc(o.colaborador)}</b><span style="font-size:11px;white-space:nowrap;">${VOC_TIPOS[o.tipo] || rpEsc(o.tipo)}</span></div><div style="font-size:11.5px;color:var(--ink-soft);">${dt(o.data)}${o.regra ? ' · ' + rpEsc(o.regra) : ''}${o.registado_por ? ' · por ' + rpEsc(o.registado_por) : ''}</div>${o.nota ? `<div style="font-size:12px;margin-top:2px;">${rpEsc(o.nota)}</div>` : ''}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:8px;">Ainda sem observações. Registe quem já ouviu as regras (🎓) e dê feedback no momento: reconhecer o que corre bem e corrigir com a regra certa.</div>`;
+  if(tot && formados.size < tot){
+    const falta = vocColabs.filter(c => !formados.has(c.id) && !formados.has(c.nome));
+    h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Ainda sem formação nas regras AQUI (${falta.length})</summary><div style="font-size:12px;line-height:1.6;margin-top:4px;">${falta.map(c => rpEsc(c.nome)).join(' · ')}</div></details>`;
+  }
+  h += `</div>`;
+  return h;
+}
+function vocNum(id){ const el = document.getElementById(id); if(!el || el.value.trim() === '') return null; const n = parseFloat(el.value.replace('%','').replace(',', '.')); return isNaN(n) ? null : n; }
+async function vocGuardarSemana(){
+  if(!soDona('registar os resultados da Voz do Cliente')) return;
+  const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const dados = {semana_inicio: vocSegunda(v('voc-sem')), avaliacoes: vocNum('voc-n'), bem: vocNum('voc-bem'), mal: vocNum('voc-mal'), loja_score: vocNum('voc-loja'), cluster: vocNum('voc-cl'), regiao: vocNum('voc-rg'), pais: vocNum('voc-ps'), fatores: v('voc-fat') || null, comentarios: v('voc-com') || null, registado_por: currentUser ? currentUser.name : null};
+  if(dados.bem == null && dados.mal == null){ alert('Preencha pelo menos "Correu bem" ou "Correu mal".'); return; }
+  try{ await sb('loja_voz_cliente?on_conflict=semana_inicio', {method:'POST', body: JSON.stringify(dados), prefer:'resolution=merge-duplicates,return=minimal'}); showToast(); vocRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function vocGuardarObs(){
+  if(!vocPodeSupervisionar()){ alert('🔒 Só responsáveis de secção, gestores e a gestora podem registar observações.'); return; }
+  const sel = document.getElementById('voc-col'); const id = sel && sel.value; if(!id){ alert('Escolha o colaborador.'); return; }
+  const c = vocColabs.find(x => String(x.id) === id);
+  const v = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
+  const dados = {colaborador_id: Number(id), colaborador: c ? c.nome : '', tipo: v('voc-tipo'), regra: v('voc-regra') || null, nota: v('voc-nota') || null, data: v('voc-data') || dataLocalISO(new Date()), registado_por: currentUser ? currentUser.name : null};
+  try{ await sb('loja_voz_supervisao', {method:'POST', body: JSON.stringify(dados), prefer:'return=minimal'}); showToast(); vocRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function vocPlanoNovo(){
+  if(!soDona('criar ações')) return;
+  const ponto = prompt('Ponto a melhorar (ex.: Rapidez na caixa)'); if(!ponto) return;
+  const acao = prompt('Ação (o que vamos fazer, quem e quando)') || '';
+  try{ await sb('loja_plano_acao', {method:'POST', body: JSON.stringify({area:'Voz do Cliente', ponto: ponto.trim(), acao: acao.trim(), estado:'Pendente'}), prefer:'return=minimal'}); showToast(); vocRefrescar(); }catch(e){ alert('Não consegui guardar.'); }
+}
+async function vocPlanoEstado(id, estado){ if(!soDona('alterar ações')) return; try{ await sb(`loja_plano_acao?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({estado})}); showToast(); }catch(e){ alert('Não consegui guardar.'); } }
+function vocPartilharRegras(){
+  if(!soDona('enviar mensagens')) return;
+  const t = `🗣️ *AQUI para o Cliente — A Voz do Cliente*\n\nA partir de 19/10 os nossos clientes vão avaliar a experiência de compra na App O Meu Pingo Doce e nos Self-Checkouts. *Cada gesto teu, conta!*\n\n*As 5 regras AQUI:*\n${VOC_REGRAS.map((x, i) => `${i+1}. ${x}`).join('\n')}\n\nSorrir, atender e cuidar — com todos os clientes, todos os dias. Obrigada! 💚`;
+  if(navigator.share){ navigator.share({text: t}).catch(()=>{}); return; }
+  window.open('https://wa.me/?text=' + encodeURIComponent(t), '_blank');
+}
 async function blocoAquiObservacoes(){
   const rows = await sb('loja_aqui_observacoes?select=data,dados&order=data.desc&limit=6').catch(()=>[]) || [];
   const dona = souDona();
@@ -13942,6 +14083,37 @@ async function blocoReposicaoColaboradores(){
   return html;
 }
 
+// ===== Listas automáticas — escrever o número diretamente =====
+const LISTAS_SECOES = ['Custos Comuns', 'Frutas/Vegetais', 'Talho', 'Peixaria', 'Padaria/Pastelaria', 'Linha de atendimento', 'Frente de Loja'];
+function listasFormHtml(){
+  if(!souDona()) return '';
+  return `<div class="card" style="margin-bottom:14px;"><div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:6px;">✏️ Registar listas automáticas</div>
+    <div class="com-duo"><div><label class="com-lbl" for="lst-data">Dia</label><input id="lst-data" type="date" value="${hojeISO()}" max="${hojeISO()}" onchange="listasMostrarAtual()"></div>
+      <div><label class="com-lbl" for="lst-sec">Secção</label><select id="lst-sec" onchange="listasMostrarAtual()">${LISTAS_SECOES.map(x => `<option>${x}</option>`).join('')}</select></div></div>
+    <label class="com-lbl" for="lst-n">Número de listas</label>
+    <div style="display:flex;gap:8px;align-items:center;"><input id="lst-n" type="number" min="0" inputmode="numeric" style="flex:1;font-size:18px;font-weight:700;" placeholder="0">
+      <button class="btn-primary" style="margin:0;width:auto;padding:0 18px;" onclick="listasGuardar()">Guardar</button></div>
+    <div id="lst-estado" style="font-size:12px;color:var(--ink-soft);margin-top:6px;"></div></div>`;
+}
+async function listasMostrarAtual(){
+  const d = (document.getElementById('lst-data')||{}).value, sec = (document.getElementById('lst-sec')||{}).value, est = document.getElementById('lst-estado'), inp = document.getElementById('lst-n');
+  if(!d || !sec || !est) return;
+  try{ const r = await sb(`loja_listas_automaticas?data=eq.${d}&secao=eq.${encodeURIComponent(sec)}&select=numero_listas`);
+    const n = r && r[0] ? r[0].numero_listas : null;
+    est.textContent = n != null ? `Já registado neste dia: ${n} listas (ao guardar, fica o número novo).` : 'Ainda nada registado neste dia para esta secção.';
+    if(inp) inp.value = n != null ? n : '';
+  }catch(e){}
+}
+async function listasGuardar(){
+  if(!soDona('registar as listas automáticas')) return;
+  const d = document.getElementById('lst-data').value, sec = document.getElementById('lst-sec').value, n = parseInt(document.getElementById('lst-n').value, 10);
+  if(!d){ alert('Escolha o dia.'); return; }
+  if(isNaN(n) || n < 0){ alert('Escreva o número de listas.'); return; }
+  try{
+    await sb('loja_listas_automaticas?on_conflict=data,secao', {method:'POST', body: JSON.stringify({data: d, secao: sec, numero_listas: n, registado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'});
+    showToast(); renderMelhoriaContinua();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
 async function renderMelhoriaContinua(){
   const content = document.getElementById('melhoria-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -13968,7 +14140,7 @@ async function renderMelhoriaContinua(){
   let html = audBotaoAuto() + `<div class="vs-detail-grid" style="margin-bottom:16px;">
     <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score de Melhoria Contínua${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
-  </div>`;
+  </div>` + listasFormHtml();
   // score de melhoria contínua mês a mês (do Resumo da loja)
   try{
     await carregarResumoPainel();
@@ -13984,6 +14156,7 @@ async function renderMelhoriaContinua(){
 
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
   try{ html += `<div class="aqui-obs-wrap">${await blocoAquiObservacoes()}</div>`; }catch(e){}
+  try{ html += `<div class="voc-wrap">${await blocoVozCliente()}</div>`; }catch(e){ console.error('voz do cliente', e); }
 
   const porDiaListas = {};
   listas7dias.forEach(l=>{
@@ -14078,7 +14251,7 @@ async function renderMelhoriaContinua(){
     html += `</div>`;
   });
 
-  content.innerHTML = html;
+  content.innerHTML = html; listasMostrarAtual();
 }
 
 function buildSparkline(rows){
