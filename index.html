@@ -12336,6 +12336,113 @@ function rhBotaoUpload(tipo, texto){
   return `<div class="card" style="margin-bottom:10px;"><input type="file" id="rh-fich-${tipo}" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="rhCarregar(this,'${tipo}')"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#rh-fich-${tipo}')).click()">📎 ${texto}</button><div id="rh-estado-${tipo}" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
 
+// ===== Fundação Jerónimo Martins — inscrições na formação (cartão Recursos Humanos) =====
+let fundLista = [], fundLidos = [], fundFiltro = 'falta';
+function fundPodeValidar(){ return !!(currentUser && ['gestora','area','responsavel'].includes(currentUser.role)); }
+function fundLerExcel(wb){
+  const pess = {};
+  const okRe = /^\s*(ok|sim|x|✓|✔|registad[oa]s?|inscrit[oa]s?|feito|conclu[íi]d[oa])\s*\.?\s*$/i;
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:false});
+    const hi = R.findIndex((r,i) => i < 15 && r.some(c => /n\.?\s*º?\s*pess|n[uú]mero|n\.?º/i.test(String(c))) && r.some(c => /nome/i.test(String(c))));
+    if(hi < 0) continue;
+    const H = R[hi].map(c => String(c).trim().toLowerCase());
+    const cNum = H.findIndex(h => /n\.?\s*º?\s*pess|numero|número|n\.?º/.test(h)), cNome = H.findIndex(h => /nome/.test(h));
+    const cSec = H.findIndex(h => /centro de custo|sec[çc][ãa]o/.test(h)), cFun = H.findIndex(h => /denomin|posi[çc][ãa]o|fun[çc][ãa]o/.test(h));
+    const cEst = H.findIndex(h => /registad|inscri|estado|fundac|ok/.test(h));
+    for(let i = hi+1; i < R.length; i++){ const r = R[i];
+      const num = String(r[cNum]||'').replace(/\D/g,''); const nome = String(r[cNome]||'').trim(); if(!num || !nome) continue;
+      const o = pess[num] = pess[num] || {numero: num, nome, secao: null, funcao: null, registado: false};
+      if(cSec >= 0 && r[cSec] && !o.secao) o.secao = String(r[cSec]).trim();
+      if(cFun >= 0 && r[cFun] && !o.funcao) o.funcao = String(r[cFun]).trim();
+      const est = cEst >= 0 ? [r[cEst]] : r.filter((c,j) => j !== cNum && j !== cNome && j !== cSec && j !== cFun);
+      if(est.some(c => okRe.test(String(c||'')) && String(c).trim().length <= 20)) o.registado = true;
+    }
+  }
+  return Object.values(pess).sort((a,b) => a.nome.localeCompare(b.nome, 'pt'));
+}
+async function fundCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o ficheiro da Fundação')) return;
+  const est = estadoDe(input, 'fund-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
+    msg('A ler o ficheiro…');
+    fundLidos = fundLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}));
+    if(!fundLidos.length) throw new Error('não encontrei as colunas "Nº pess." e "Nome completo"');
+    const atuais = await sb('loja_fundacao_registos?select=numero,registado') || [];
+    const jaReg = new Set(atuais.filter(x => x.registado).map(x => x.numero));
+    const novosOk = fundLidos.filter(p => p.registado && !jaReg.has(p.numero)).length;
+    const novos = fundLidos.filter(p => !atuais.some(x => x.numero === p.numero)).length;
+    const reg = fundLidos.filter(p => p.registado || jaReg.has(p.numero)).length;
+    msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">${fundLidos.length} pessoas no ficheiro</b>
+      <div style="font-size:12.5px;margin:6px 0;">✅ ${reg} inscritas · ⏳ ${fundLidos.length - reg} por inscrever${novosOk ? ` · <b>${novosOk}</b> novas inscrições` : ''}${novos ? ` · ${novos} pessoas novas na lista` : ''}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);">As inscrições já confirmadas na app mantêm-se.</div>
+      <button class="btn-primary" style="margin-top:8px;" onclick="fundGuardar()">Guardar</button></div>`);
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
+}
+async function fundGuardar(){
+  if(!soDona('carregar o ficheiro da Fundação')) return;
+  try{
+    const atuais = await sb('loja_fundacao_registos?select=numero,registado') || [];
+    const jaReg = new Set(atuais.filter(x => x.registado).map(x => x.numero));
+    const agora = new Date().toISOString(), quem = currentUser ? currentUser.name : null;
+    const linhas = fundLidos.map(p => {
+      const o = {numero: p.numero, nome: p.nome, secao: p.secao, funcao: p.funcao, no_ficheiro: true, atualizado_em: agora};
+      if(p.registado && !jaReg.has(p.numero)){ o.registado = true; o.validado_por = 'Ficheiro'; o.validado_em = agora; }
+      return o;
+    });
+    // o upsert precisa das mesmas colunas em todas as linhas
+    const comReg = linhas.filter(l => 'registado' in l), semReg = linhas.filter(l => !('registado' in l));
+    for(const grupo of [comReg, semReg]) if(grupo.length) await sb('loja_fundacao_registos?on_conflict=numero', {method:'POST', body: JSON.stringify(grupo), prefer:'resolution=merge-duplicates,return=minimal'});
+    const fora = atuais.filter(x => !fundLidos.some(p => p.numero === x.numero)).map(x => x.numero);
+    if(fora.length) await sb(`loja_fundacao_registos?numero=in.(${fora.join(',')})`, {method:'PATCH', body: JSON.stringify({no_ficheiro: false})});
+    showToast(); renderFormacoesScreen();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
+async function fundValidar(numero, valor){
+  if(!fundPodeValidar()){ alert('🔒 Só os responsáveis de secção, gestores e a gestora podem validar inscrições.'); return; }
+  const p = fundLista.find(x => x.numero === numero);
+  if(!valor && !confirm(`Retirar a inscrição de ${p ? p.nome : ''}?`)) return;
+  try{
+    await sb(`loja_fundacao_registos?numero=eq.${encodeURIComponent(numero)}`, {method:'PATCH', body: JSON.stringify({registado: valor, validado_por: valor ? (currentUser ? currentUser.name : null) : null, validado_em: valor ? new Date().toISOString() : null})});
+    if(p){ p.registado = valor; p.validado_por = valor ? currentUser.name : null; p.validado_em = valor ? new Date().toISOString() : null; }
+    fundDesenhar(); showToast();
+  }catch(e){ alert('Não consegui guardar.'); }
+}
+function fundMudarFiltro(f){ fundFiltro = f; fundDesenhar(); }
+function fundDesenhar(){
+  const el = document.getElementById('fund-lista'); if(!el) return;
+  const L = fundLista.filter(p => p.no_ficheiro !== false);
+  const ok = L.filter(p => p.registado).length, tot = L.length, pct = tot ? Math.round(ok/tot*100) : 0;
+  const pode = fundPodeValidar();
+  const mostrar = L.filter(p => fundFiltro === 'todos' ? true : fundFiltro === 'ok' ? p.registado : !p.registado);
+  const porSec = {}; mostrar.forEach(p => { const s = p.secao || 'Sem secção'; (porSec[s] = porSec[s] || []).push(p); });
+  const tab = (k, t) => `<button class="econ-btn${fundFiltro === k ? ' filled' : ''}" style="margin:0;" onclick="fundMudarFiltro('${k}')">${t}</button>`;
+  const dt = iso => iso ? new Date(iso).toLocaleDateString('pt-PT') : '';
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+      <div><span style="font-size:28px;font-weight:800;color:${pct >= 100 ? 'var(--green)' : pct >= 50 ? '#C77F12' : 'var(--red)'};">${ok}</span><span style="font-size:14px;color:var(--ink-soft);"> de ${tot} inscritos</span></div><b style="font-size:15px;">${pct}%</b></div>
+    <div style="height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:6px 0 10px;"><div style="height:100%;width:${pct}%;background:var(--green);"></div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${tab('falta', `⏳ Por inscrever (${tot - ok})`)}${tab('ok', `✅ Inscritos (${ok})`)}${tab('todos', `Todos (${tot})`)}</div>
+    ${mostrar.length ? Object.keys(porSec).sort((a,b) => a.localeCompare(b,'pt')).map(s => `<div style="font-size:11.5px;font-weight:800;color:var(--navy);margin:10px 0 2px;text-transform:uppercase;letter-spacing:.3px;">${rpEsc(s)} · ${porSec[s].length}</div>` + porSec[s].map(p => `
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);">
+        ${pode ? `<input type="checkbox" ${p.registado ? 'checked' : ''} style="width:22px;height:22px;flex:none;accent-color:#1F7A33;" onchange="fundValidar('${p.numero}', this.checked)" aria-label="Inscrito">` : `<span style="width:22px;flex:none;text-align:center;">${p.registado ? '✅' : '⏳'}</span>`}
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">${rpEsc(p.nome)}</div>
+          <div style="font-size:11px;color:var(--ink-soft);">${rpEsc(p.funcao || '')}${p.registado && p.validado_por ? ` · ✓ ${rpEsc(p.validado_por)}${p.validado_em ? ' em ' + dt(p.validado_em) : ''}` : ''}</div></div>
+      </div>`).join('')).join('') : `<div style="font-size:13px;color:var(--green);padding:6px 0;">${fundFiltro === 'falta' ? '🎉 Estão todos inscritos!' : 'Ninguém nesta lista.'}</div>`}`;
+}
+async function blocoFundacao(){
+  try{ fundLista = await sb('loja_fundacao_registos?select=*&order=nome.asc') || []; }catch(e){ fundLista = []; }
+  let h = `<div class="section-title">🎓 Formação Fundação Jerónimo Martins — inscrições</div>`;
+  if(souDona()) h += `<div class="card" style="margin-bottom:10px;"><input type="file" id="fund-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="fundCarregar(this)">
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#fund-fich')||document.getElementById('fund-fich')).click()">📎 Atualizar ficheiro de inscrições (Excel)</button>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Ficheiro com "Nº pess." e "Nome completo". Quem tiver "ok" fica inscrito.</div>
+    <div id="fund-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+  if(!fundLista.length) return h + `<div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem lista carregada.</div></div>`;
+  h += `<div class="card" id="fund-lista"></div>`;
+  if(fundPodeValidar()) h += `<div style="font-size:11px;color:var(--ink-soft);margin:4px 2px 0;">Marque a caixa quando a pessoa confirmar a inscrição. Fica registado quem validou.</div>`;
+  setTimeout(fundDesenhar, 0);
+  return h;
+}
 // ===== Indicadores RH para Gerentes (horários e descanso) — cartão Recursos Humanos =====
 const IND_MIN_FDS = 5, IND_MIN_DOM = 15, IND_MAX_TROCAS = 7;
 function indLerExcel(wb){
@@ -12480,11 +12587,12 @@ async function renderFormacoesScreen(){
   const content = document.getElementById('formacoes-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
   let indHtml = ''; try{ indHtml = await blocoIndicadoresRH(); }catch(e){ console.error('indicadores RH', e); }
+  let fundHtml = ''; try{ fundHtml = await blocoFundacao(); }catch(e){ console.error('fundação', e); }
   const bhHtml = await blocoBancoHorasGozar();
   const alteracoesHtml = await blocoAlteracoesHorarioPendentes();
   const formacaoHtml = await blocoFormacaoCompliance();
   const sec = (t, i) => `<div class="section-title" style="margin-top:6px;">${t}</div>`;
-  content.innerHTML = indHtml + ctBotao() + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml;
+  content.innerHTML = indHtml + ctBotao() + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml + fundHtml;
 }
 
 // encontra o elemento do mesmo cartão do ficheiro (há ecrãs escondidos com os mesmos ids)
