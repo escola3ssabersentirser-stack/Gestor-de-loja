@@ -14083,6 +14083,37 @@ async function blocoReposicaoColaboradores(){
   return html;
 }
 
+// ===== Listas automáticas — escrever o número diretamente =====
+const LISTAS_SECOES = ['Custos Comuns', 'Frutas/Vegetais', 'Talho', 'Peixaria', 'Padaria/Pastelaria', 'Linha de atendimento', 'Frente de Loja'];
+function listasFormHtml(){
+  if(!souDona()) return '';
+  return `<div class="card" style="margin-bottom:14px;"><div style="font-size:13px;font-weight:800;color:var(--navy);margin-bottom:6px;">✏️ Registar listas automáticas</div>
+    <div class="com-duo"><div><label class="com-lbl" for="lst-data">Dia</label><input id="lst-data" type="date" value="${hojeISO()}" max="${hojeISO()}" onchange="listasMostrarAtual()"></div>
+      <div><label class="com-lbl" for="lst-sec">Secção</label><select id="lst-sec" onchange="listasMostrarAtual()">${LISTAS_SECOES.map(x => `<option>${x}</option>`).join('')}</select></div></div>
+    <label class="com-lbl" for="lst-n">Número de listas</label>
+    <div style="display:flex;gap:8px;align-items:center;"><input id="lst-n" type="number" min="0" inputmode="numeric" style="flex:1;font-size:18px;font-weight:700;" placeholder="0">
+      <button class="btn-primary" style="margin:0;width:auto;padding:0 18px;" onclick="listasGuardar()">Guardar</button></div>
+    <div id="lst-estado" style="font-size:12px;color:var(--ink-soft);margin-top:6px;"></div></div>`;
+}
+async function listasMostrarAtual(){
+  const d = (document.getElementById('lst-data')||{}).value, sec = (document.getElementById('lst-sec')||{}).value, est = document.getElementById('lst-estado'), inp = document.getElementById('lst-n');
+  if(!d || !sec || !est) return;
+  try{ const r = await sb(`loja_listas_automaticas?data=eq.${d}&secao=eq.${encodeURIComponent(sec)}&select=numero_listas`);
+    const n = r && r[0] ? r[0].numero_listas : null;
+    est.textContent = n != null ? `Já registado neste dia: ${n} listas (ao guardar, fica o número novo).` : 'Ainda nada registado neste dia para esta secção.';
+    if(inp) inp.value = n != null ? n : '';
+  }catch(e){}
+}
+async function listasGuardar(){
+  if(!soDona('registar as listas automáticas')) return;
+  const d = document.getElementById('lst-data').value, sec = document.getElementById('lst-sec').value, n = parseInt(document.getElementById('lst-n').value, 10);
+  if(!d){ alert('Escolha o dia.'); return; }
+  if(isNaN(n) || n < 0){ alert('Escreva o número de listas.'); return; }
+  try{
+    await sb('loja_listas_automaticas?on_conflict=data,secao', {method:'POST', body: JSON.stringify({data: d, secao: sec, numero_listas: n, registado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'});
+    showToast(); renderMelhoriaContinua();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
 async function renderMelhoriaContinua(){
   const content = document.getElementById('melhoria-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -14109,7 +14140,7 @@ async function renderMelhoriaContinua(){
   let html = audBotaoAuto() + `<div class="vs-detail-grid" style="margin-bottom:16px;">
     <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score de Melhoria Contínua${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
-  </div>`;
+  </div>` + listasFormHtml();
   // score de melhoria contínua mês a mês (do Resumo da loja)
   try{
     await carregarResumoPainel();
@@ -14220,7 +14251,7 @@ async function renderMelhoriaContinua(){
     html += `</div>`;
   });
 
-  content.innerHTML = html;
+  content.innerHTML = html; listasMostrarAtual();
 }
 
 function buildSparkline(rows){
