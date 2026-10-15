@@ -2060,7 +2060,7 @@ async function carregarResumoPainel(){
   if(!resumoPainel) resumoPainel = RESUMO_PADRAO;
 }
 
-function escolherFicheiroResumo(){ document.getElementById('rp-input-ficheiro').click(); }
+function escolherFicheiroResumo(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
 
 async function importarResumoExcel(input){
   const f = input.files && input.files[0];
@@ -2208,9 +2208,9 @@ function renderPainelResumo(){
       <div id="rp-datas" class="rp-datas"></div>
     </div>
     <div class="rp-acoes">
-      <button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar ficheiros do dia</button>
+      ${souDona() ? `<button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar ficheiros do dia</button>
       <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls" multiple class="hidden" onchange="importarFicheirosDia(this)">
-      <div id="rp-estado" class="rp-estado">Pode escolher vários ficheiros de uma vez</div>
+      <div id="rp-estado" class="rp-estado">Pode escolher vários ficheiros de uma vez</div>` : ''}
     </div>
   </div>
   <div id="rp-lembretes"></div>
@@ -2891,7 +2891,7 @@ async function impResumo(wb, nomeFicheiro){
 const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades'};
 
 let impResHTML = '';
-function escolherFicheirosDia(){ document.getElementById('rp-input-ficheiro').click(); }
+function escolherFicheirosDia(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
 
 async function importarFicheirosDia(input){
   if(!soDona('carregar ficheiros')){ input.value = ''; return; }
@@ -3352,6 +3352,7 @@ async function valGuardarScore(texto){
   }catch(e){ msg('✕ ' + (e && e.message || e)); }
 }
 async function valCarregarFicheiro(input){
+  if(!soDona('carregar ficheiros')){ if(input) input.value = ''; return; }
   const f = input.files && input.files[0]; input.value = ''; if(!f) return;
   const est = document.getElementById('val-score-estado'); if(est) est.textContent = 'A ler…';
   try{ const t = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); await valGuardarScore(t); }catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
@@ -3614,6 +3615,7 @@ async function renderRelatoriosAuditoria(nome){
       <div id="rel-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></div>` : '');
 }
 async function carregarRelatorioAuditoria(input, nome){
+  if(!soDona('carregar ficheiros')){ if(input) input.value = ''; return; }
   const f = input.files && input.files[0]; input.value = '';
   if(!f) return;
   const est = document.getElementById('rel-estado');
@@ -8714,6 +8716,7 @@ async function infoLerTexto(f){
   throw new Error('use um ficheiro PDF ou Word (.docx)');
 }
 async function infoNegCarregar(input){
+  if(!soDona('carregar ficheiros')){ if(input) input.value = ''; return; }
   const f = input.files && input.files[0]; input.value = ''; if(!f) return;
   const est = document.getElementById('info-neg-estado');
   const msg = t => { if(est) est.textContent = t; };
