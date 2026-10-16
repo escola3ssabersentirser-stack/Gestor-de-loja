@@ -12013,7 +12013,7 @@ async function renderPainelCustos(){
   try{ await carregarResumoPainel(); }catch(e){}
   const [leit, eco, planos] = await Promise.all([
     sb('loja_agua_leituras?select=*&order=data.desc&limit=120').catch(()=>[]),
-    sb('loja_economato_registos?select=*&order=data.desc&limit=300').catch(()=>[]),
+    sb('loja_economato_custos?select=*&order=data.desc&limit=300').catch(()=>[]),
     sb('loja_plano_acao?area=eq.Custos&select=*&order=id.asc').catch(()=>[])
   ]);
   const r = resumoPainel || RESUMO_PADRAO; const C = r.custos || []; const M = r.meses || [];
@@ -12094,9 +12094,9 @@ async function ecoGuardar(){
   if(!soDona('registar o economato')) return;
   const data = (document.getElementById('eco-data')||{}).value; const t = String((document.getElementById('eco-valor')||{}).value||'').replace(/[€\s]/g,'').replace(',','.'); const v = Number(t);
   if(!data || !t || isNaN(v)){ alert('Escreva a data e o valor (€).'); return; }
-  try{ await sb('loja_economato_registos', {method:'POST', body: JSON.stringify({data, valor: v, descricao: (document.getElementById('eco-desc')||{}).value || null, criado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); }
+  try{ await sb('loja_economato_custos', {method:'POST', body: JSON.stringify({data, valor: v, descricao: (document.getElementById('eco-desc')||{}).value || null, criado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); }
 }
-async function ecoApagar(id){ if(!soDona('apagar registos') || !confirm('Apagar este registo?')) return; try{ await sb(`loja_economato_registos?id=eq.${id}`, {method:'DELETE'}); renderPainelCustos(); }catch(e){ alert('Não consegui apagar.'); } }
+async function ecoApagar(id){ if(!soDona('apagar registos') || !confirm('Apagar este registo?')) return; try{ await sb(`loja_economato_custos?id=eq.${id}`, {method:'DELETE'}); renderPainelCustos(); }catch(e){ alert('Não consegui apagar.'); } }
 async function custoPlanoNovo(){
   if(!soDona('criar ações')) return;
   const ponto = (document.getElementById('cp-ponto')||{}).value.trim(), acao = (document.getElementById('cp-acao')||{}).value.trim();
