@@ -3510,7 +3510,7 @@ function objDesenhar(){
     ${dona ? `<button class="econ-btn" style="margin-top:6px;" onclick="objRepartirMeses()">↺ Repartir pelo ritmo de 2025</button>` : ''}
     <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Os meses seguem o ritmo de 2025, com agosto 50 mil € mais baixo e dezembro 50 mil € mais alto. Pode mudar cada mês. * = orçamento 2026 (mês ainda por fechar).</div></div>`;
   h += objMetasHtml();
-  h += `<div class="section-title">📝 Outras metas e notas</div><div class="card">
+  h += `<div class="section-title">📝 Outros objetivos e notas</div><div class="card">
     <label style="font-size:12.5px;color:var(--ink-soft);">Quebra máxima da loja em 2027 (% das vendas)</label>
     ${dona ? `<input id="obj-quebra" type="text" inputmode="decimal" value="${e.quebraObj != null ? String(e.quebraObj).replace('.',',') : ''}" placeholder="ex: 2,8" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);margin:4px 0 10px;box-sizing:border-box;">` : `<div style="font-weight:700;margin:4px 0 10px;">${e.quebraObj != null ? String(e.quebraObj).replace('.',',') + '%' : '—'}</div>`}
     <label style="font-size:12.5px;color:var(--ink-soft);">Notas / estratégia</label>
@@ -3520,7 +3520,7 @@ function objDesenhar(){
   if(e.atualizado) h += `<div style="font-size:11px;color:var(--ink-soft);text-align:center;margin:8px 0 20px;">Guardado a ${new Date(e.atualizado).toLocaleDateString('pt-PT')}${e.por ? ' por ' + rpEsc(e.por) : ''}</div>`;
   box.innerHTML = h;
 }
-// metas de 2027 (definidas pela gestora) com o valor atual quando a app o tem
+// objetivos de 2027 (definidas pela gestora) com o valor atual quando a app o tem
 function objMetasHtml(){
   const e = objEstado, r = e.resumo || {};
   const per = r.periodo || [];
@@ -3537,9 +3537,9 @@ function objMetasHtml(){
   const estado = (ok) => ok == null ? '<span style="color:var(--ink-soft);">—</span>' : ok ? '<span style="color:var(--green);font-weight:800;">✓ cumpre</span>' : '<span style="color:var(--red);font-weight:800;">✗ por atingir</span>';
   const linha = (ic, tit, meta, atual, ok, nota) => `<div style="display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);">
       <span style="font-size:18px;">${ic}</span>
-      <div><div style="font-size:13px;font-weight:700;color:var(--ink);">${tit}</div><div style="font-size:11.5px;color:var(--ink-soft);">Meta: <b style="color:var(--navy);">${meta}</b>${atual != null ? ` · Agora: <b>${atual}</b>` : ''}${nota ? ` · ${nota}` : ''}</div></div>
+      <div><div style="font-size:13px;font-weight:700;color:var(--ink);">${tit}</div><div style="font-size:11.5px;color:var(--ink-soft);">Objetivo: <b style="color:var(--navy);">${meta}</b>${atual != null ? ` · Agora: <b>${atual}</b>` : ''}${nota ? ` · ${nota}` : ''}</div></div>
       <div style="font-size:11.5px;text-align:right;">${estado(ok)}</div></div>`;
-  let h = `<div class="section-title">🎯 Metas da loja para 2027</div><div class="card" style="padding:4px 12px;">`;
+  let h = `<div class="section-title">🎯 Objetivos da loja para 2027</div><div class="card" style="padding:4px 12px;">`;
   h += linha('💶', 'Vendas', objEur(e.total), objEur(e.v26) + ' (2026 est.)', e.v26 >= e.total, objPct(e.total/e.v26-1) + ' de crescimento');
   h += linha('📉', 'Quebra', (e.quebraObj ?? 1.96).toLocaleString('pt-PT') + '% das vendas', qAtual != null ? p1(qAtual) : null, qAtual != null ? qAtual*100 <= (e.quebraObj ?? 1.96) : null);
   const audsCom = (e.auds||[]).filter(a => a.nome !== 'Distrito');
@@ -11991,7 +11991,7 @@ async function renderPainelCustos(){
         <div style="flex:1;background:#C9CFC8;height:${(v.b/max*100).toFixed(1)}%;border-radius:3px 3px 0 0;"></div>
         <div style="flex:1;background:${it.cor};height:${(v.a/max*100).toFixed(1)}%;border-radius:3px 3px 0 0;"></div></div>`).join('')}</div>
     <div style="display:flex;gap:4px;">${vals.map(v => `<div style="flex:1;text-align:center;font-size:9.5px;color:var(--ink-soft);">${v.m}</div>`).join('')}</div>
-    <div style="display:flex;gap:12px;font-size:11px;color:var(--ink-soft);margin-top:6px;"><span><span style="display:inline-block;width:10px;height:10px;background:${it.cor};border-radius:2px;"></span> ${ano}</span><span><span style="display:inline-block;width:10px;height:10px;background:#C9CFC8;border-radius:2px;"></span> ${anoA}</span>${it.meta ? `<span>Meta 2027: ${cPct(it.meta)}</span>` : ''}</div>
+    <div style="display:flex;gap:12px;font-size:11px;color:var(--ink-soft);margin-top:6px;"><span><span style="display:inline-block;width:10px;height:10px;background:${it.cor};border-radius:2px;"></span> ${ano}</span><span><span style="display:inline-block;width:10px;height:10px;background:#C9CFC8;border-radius:2px;"></span> ${anoA}</span>${it.meta ? `<span>Objetivo 2027: ${cPct(it.meta)}</span>` : ''}</div>
   </div>`;
   // 3) tabela mês a mês (4 custos principais)
   h += `<div class="section-title">📋 Tabela mensal</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:470px;">
