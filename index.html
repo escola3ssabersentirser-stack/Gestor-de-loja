@@ -11136,7 +11136,9 @@ async function aquiCarregar(input){
 // ===================== A Voz do Cliente (Programa AQUI para o Cliente) =====================
 const VOC_REGRAS = ['Não trato o cliente por "tu"', 'Não abandono o cliente sem resposta', 'Não confronto o cliente', 'Não tenho conversas paralelas', 'Não discuto com o colega'];
 const VOC_MISSAO = ['Ser exemplo do AQUI, junto do Cliente', 'Formar e capacitar a equipa', 'Fazer viver a cultura AQUI para o Cliente', 'Acompanhar e implementar melhorias', 'Dar feedback para reconhecer e aperfeiçoar'];
-const VOC_TIPOS = {formado:'🎓 Explicado / formado', reconhecer:'👏 Reconhecer', corrigir:'🔧 Corrigir'};
+const VOC_TIPOS = {formado:'🎓 Explicado / formado', reconhecer:'👏 Reconhecer', corrigir:'🔧 Corrigir', avaliacao:'📋 Avaliação AQUI', assinou:'✍️ Assinou a instrução'};
+const VOC_CHECK = ['Cumprimenta e sorri', 'Trata por "o senhor" / "a senhora" (não trata por "tu")', 'Não deixa o cliente sem resposta (responde ou chama quem sabe)', 'Acompanha o cliente ao produto', 'Não confronta o cliente', 'Sem conversas paralelas', 'Não discute com o colega à frente do cliente', 'Agradece e despede-se'];
+let vocAssin = [];
 let vocColabs = [], vocObs = [];
 function vocPodeSupervisionar(){ return !!(currentUser && ['gestora','area','responsavel'].includes(currentUser.role)); }
 function vocRefrescar(){ document.querySelectorAll('.voc-wrap').forEach(async w => { try{ w.innerHTML = await blocoVozCliente(); }catch(e){} }); }
@@ -11144,13 +11146,14 @@ function vocSegunda(iso){ const d = new Date((iso || dataLocalISO(new Date())) +
 function vocPct(v){ return v == null || v === '' ? '—' : Number(v).toLocaleString('pt-PT', {maximumFractionDigits:1}) + '%'; }
 async function blocoVozCliente(){
   const ini = new Date(); ini.setDate(ini.getDate() - 90);
-  const [sem, plano, obs, colabs] = await Promise.all([
+  const [sem, plano, obs, colabs, assin] = await Promise.all([
     sb('loja_voz_cliente?select=*&order=semana_inicio.desc&limit=8').catch(()=>[]),
     sb('loja_plano_acao?area=eq.Voz%20do%20Cliente&select=*&order=id.desc').catch(()=>[]),
     sb(`loja_voz_supervisao?select=*&data=gte.${dataLocalISO(ini)}&order=data.desc,id.desc&limit=300`).catch(()=>[]),
-    sb('loja_colaboradores?select=id,nome,secao&order=nome.asc').catch(()=>[])
+    sb('loja_colaboradores?select=id,nome,secao&order=nome.asc').catch(()=>[]),
+    sb('loja_voz_supervisao?tipo=eq.assinou&select=colaborador_id,colaborador,data').catch(()=>[])
   ]);
-  vocObs = obs || []; vocColabs = colabs || [];
+  vocObs = obs || []; vocColabs = colabs || []; vocAssin = assin || [];
   const dona = souDona(), sup = vocPodeSupervisionar();
   const S = sem || [], r = S[0], ant = S[1];
   const dt = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-PT', {day:'2-digit', month:'2-digit'});
@@ -11222,20 +11225,45 @@ async function blocoVozCliente(){
   const corr = {}; domes.filter(o => o.tipo === 'corrigir' && o.regra).forEach(o => corr[o.regra] = (corr[o.regra] || 0) + 1);
   const topCorr = Object.entries(corr).sort((a, b) => b[1] - a[1]);
   const nRec = domes.filter(o => o.tipo === 'reconhecer').length, nCor = domes.filter(o => o.tipo === 'corrigir').length;
+  const avMes = domes.filter(o => o.tipo === 'avaliacao');
+  const avaliados = new Set(avMes.map(o => o.colaborador_id || o.colaborador));
+  const mediaAv = avMes.filter(o => o.pontuacao != null).length ? Math.round(avMes.filter(o => o.pontuacao != null).reduce((t, o) => t + Number(o.pontuacao), 0) / avMes.filter(o => o.pontuacao != null).length) : null;
+  const assinaram = new Set(vocAssin.map(o => o.colaborador_id || o.colaborador));
+  const porAval = {}; avMes.forEach(o => { const k = o.registado_por || '—'; porAval[k] = (porAval[k] || 0) + 1; });
+  const corPct = v => v == null ? 'var(--ink-soft)' : v >= 90 ? 'var(--green)' : v >= 75 ? '#C77F12' : 'var(--red)';
   h += `<div class="section-title">👀 Supervisão AQUI — no terreno</div><div class="card">
     <div class="vs-detail-grid">
       <div class="vs-box"><div class="vs-label">🎓 Equipa formada</div><div class="vs-value" style="font-size:22px;color:${tot && formados.size >= tot ? 'var(--green)' : '#C77F12'};">${formados.size}${tot ? `<span style="font-size:13px;color:var(--ink-soft);"> / ${tot}</span>` : ''}</div><div style="font-size:10.5px;color:var(--ink-soft);">últimos 90 dias</div></div>
       <div class="vs-box"><div class="vs-label">👏 Reconhecer · 🔧 Corrigir</div><div class="vs-value" style="font-size:22px;"><span style="color:var(--green);">${nRec}</span> · <span style="color:var(--red);">${nCor}</span></div><div style="font-size:10.5px;color:var(--ink-soft);">este mês</div></div>
+      <div class="vs-box"><div class="vs-label">📋 Avaliados este mês</div><div class="vs-value" style="font-size:22px;color:${tot && avaliados.size >= tot ? 'var(--green)' : '#C77F12'};">${avaliados.size}${tot ? `<span style="font-size:13px;color:var(--ink-soft);"> / ${tot}</span>` : ''}</div><div style="font-size:10.5px;color:var(--ink-soft);">objetivo: todos, 1 vez por mês</div></div>
+      <div class="vs-box"><div class="vs-label">⭐ Média das avaliações</div><div class="vs-value" style="font-size:22px;color:${corPct(mediaAv)};">${mediaAv == null ? '—' : mediaAv + '%'}</div><div style="font-size:10.5px;color:var(--ink-soft);">${avMes.length} avaliações este mês</div></div>
+      <div class="vs-box"><div class="vs-label">✍️ Instrução assinada</div><div class="vs-value" style="font-size:22px;color:${tot && assinaram.size >= tot ? 'var(--green)' : '#C77F12'};">${assinaram.size}${tot ? `<span style="font-size:13px;color:var(--ink-soft);"> / ${tot}</span>` : ''}</div><div style="font-size:10.5px;color:var(--ink-soft);">Voz do Cliente</div></div>
     </div>
+    ${Object.keys(porAval).length ? `<div style="font-size:12px;margin-top:8px;"><b>Avaliações por responsável este mês:</b> ${Object.entries(porAval).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${rpEsc(k)} ${n}`).join(' · ')}</div>` : ''}
     ${topCorr.length ? `<div style="font-size:12px;margin-top:8px;"><b>Regras mais corrigidas este mês:</b> ${topCorr.map(([k, n]) => `${rpEsc(k)} (${n})`).join(' · ')}</div>` : ''}`;
-  if(sup) h += `<details class="lem-novo" style="margin-top:10px;"><summary>➕ Registar observação de um colaborador</summary>
+  if(sup) h += `<details class="lem-novo" style="margin-top:10px;"><summary>📋 Nova Avaliação AQUI para o Cliente</summary>
+    <p class="com-ajuda" style="margin:6px 0;">Observe um atendimento real do colaborador e marque o que viu. No fim, dê o feedback na hora: primeiro o que correu bem, depois o que melhorar.</p>
+    <div class="com-duo"><div><label class="com-lbl" for="vav-col">Colaborador</label><select id="vav-col"><option value="">— escolher —</option>${vocColabs.map(c => `<option value="${c.id}">${rpEsc(c.nome)}${avaliados.has(c.id) ? ' ✓' : ''}</option>`).join('')}</select></div><div><label class="com-lbl" for="vav-data">Data</label><input id="vav-data" type="date" value="${dataLocalISO(new Date())}"></div></div>
+    ${VOC_CHECK.map((x, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);"><label for="vav-i${i}" style="font-size:12.5px;">${rpEsc(x)}</label><select id="vav-i${i}" style="flex:none;width:118px;" aria-label="Cumpre?"><option value="sim">✅ Sim</option><option value="nao">❌ Não</option><option value="na">— Não vi</option></select></div>`).join('')}
+    <label class="com-lbl" for="vav-bem">👏 O que correu bem (reconhecer)</label><input id="vav-bem" placeholder="ex.: acompanhou a cliente até ao produto">
+    <label class="com-lbl" for="vav-mel">🔧 O que melhorar (feedback dado)</label><input id="vav-mel" placeholder="ex.: lembrar de agradecer no fim">
+    <button class="btn-primary" onclick="vocGuardarAvaliacao()">Guardar avaliação</button></details>`;
+  if(sup) h += `<details class="lem-novo" style="margin-top:10px;"><summary>➕ Registar observação rápida</summary>
     <label class="com-lbl" for="voc-col">Colaborador</label><select id="voc-col"><option value="">— escolher —</option>${vocColabs.map(c => `<option value="${c.id}">${rpEsc(c.nome)}</option>`).join('')}</select>
-    <div class="com-duo"><div><label class="com-lbl" for="voc-tipo">Tipo</label><select id="voc-tipo">${Object.entries(VOC_TIPOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div><div><label class="com-lbl" for="voc-data">Data</label><input id="voc-data" type="date" value="${dataLocalISO(new Date())}"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-tipo">Tipo</label><select id="voc-tipo">${Object.entries(VOC_TIPOS).filter(([k]) => ['formado','reconhecer','corrigir'].includes(k)).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div><div><label class="com-lbl" for="voc-data">Data</label><input id="voc-data" type="date" value="${dataLocalISO(new Date())}"></div></div>
     <label class="com-lbl" for="voc-regra">Regra / tema</label><select id="voc-regra"><option value="">Todas as regras / atendimento em geral</option>${VOC_REGRAS.map(x => `<option>${rpEsc(x)}</option>`).join('')}<option>Simpatia da equipa</option><option>Apoio na caixa</option><option>Rapidez do serviço</option></select>
     <label class="com-lbl" for="voc-nota">O que se observou / feedback dado</label><input id="voc-nota" placeholder="ex.: tratou a cliente por tu — expliquei a regra 1">
     <button class="btn-primary" onclick="vocGuardarObs()">Guardar observação</button></details>`;
-  const ult = vocObs.slice(0, 12);
-  h += ult.length ? `<div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Últimas observações</div>` + ult.map(o => `<div style="padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>${rpEsc(o.colaborador)}</b><span style="font-size:11px;white-space:nowrap;">${VOC_TIPOS[o.tipo] || rpEsc(o.tipo)}</span></div><div style="font-size:11.5px;color:var(--ink-soft);">${dt(o.data)}${o.regra ? ' · ' + rpEsc(o.regra) : ''}${o.registado_por ? ' · por ' + rpEsc(o.registado_por) : ''}</div>${o.nota ? `<div style="font-size:12px;margin-top:2px;">${rpEsc(o.nota)}</div>` : ''}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:8px;">Ainda sem observações. Registe quem já ouviu as regras (🎓) e dê feedback no momento: reconhecer o que corre bem e corrigir com a regra certa.</div>`;
+  const ult = vocObs.filter(o => o.tipo !== 'assinou').slice(0, 12);
+  h += ult.length ? `<div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Últimas observações</div>` + ult.map(o => `<div style="padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>${rpEsc(o.colaborador)}</b><span style="font-size:11px;white-space:nowrap;">${VOC_TIPOS[o.tipo] || rpEsc(o.tipo)}${o.pontuacao != null ? ` <b style="color:${corPct(Number(o.pontuacao))};">${Math.round(o.pontuacao)}%</b>` : ''}</span></div><div style="font-size:11.5px;color:var(--ink-soft);">${dt(o.data)}${o.regra ? ' · ' + rpEsc(o.regra) : ''}${o.registado_por ? ' · por ' + rpEsc(o.registado_por) : ''}</div>${o.nota ? `<div style="font-size:12px;margin-top:2px;white-space:pre-line;">${rpEsc(o.nota)}</div>` : ''}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:8px;">Ainda sem observações. Registe quem já ouviu as regras (🎓) e dê feedback no momento: reconhecer o que corre bem e corrigir com a regra certa.</div>`;
+  if(tot && avaliados.size < tot){
+    const faltaAv = vocColabs.filter(c => !avaliados.has(c.id) && !avaliados.has(c.nome));
+    h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Ainda sem Avaliação AQUI este mês (${faltaAv.length})</summary><div style="font-size:12px;line-height:1.6;margin-top:4px;">${faltaAv.map(c => rpEsc(c.nome) + (c.secao ? ` <span style="color:var(--ink-soft);">(${rpEsc(c.secao)})</span>` : '')).join(' · ')}</div></details>`;
+  }
+  if(tot && assinaram.size < tot){
+    const faltaAs = vocColabs.filter(c => !assinaram.has(c.id) && !assinaram.has(c.nome));
+    h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Ainda não assinaram a instrução de trabalho (${faltaAs.length})</summary>${faltaAs.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;"><span>${rpEsc(c.nome)}</span>${sup ? `<button class="econ-btn" style="margin:0;" onclick="vocAssinou(${c.id})">✍️ Assinou</button>` : ''}</div>`).join('')}</details>`;
+  }
   if(tot && formados.size < tot){
     const falta = vocColabs.filter(c => !formados.has(c.id) && !formados.has(c.nome));
     h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Ainda sem formação nas regras AQUI (${falta.length})</summary><div style="font-size:12px;line-height:1.6;margin-top:4px;">${falta.map(c => rpEsc(c.nome)).join(' · ')}</div></details>`;
@@ -11259,6 +11287,26 @@ async function vocGuardarObs(){
   const v = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
   const dados = {colaborador_id: Number(id), colaborador: c ? c.nome : '', tipo: v('voc-tipo'), regra: v('voc-regra') || null, nota: v('voc-nota') || null, data: v('voc-data') || dataLocalISO(new Date()), registado_por: currentUser ? currentUser.name : null};
   try{ await sb('loja_voz_supervisao', {method:'POST', body: JSON.stringify(dados), prefer:'return=minimal'}); showToast(); vocRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function vocGuardarAvaliacao(){
+  if(!vocPodeSupervisionar()){ alert('🔒 Só responsáveis de secção, gestores e a gestora podem fazer avaliações.'); return; }
+  const id = (document.getElementById('vav-col') || {}).value; if(!id){ alert('Escolha o colaborador.'); return; }
+  const c = vocColabs.find(x => String(x.id) === id);
+  const v = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
+  const itens = {}; let sim = 0, nao = 0; const falhas = [];
+  VOC_CHECK.forEach((x, i) => { const r = v('vav-i' + i) || 'na'; itens[x] = r; if(r === 'sim') sim++; else if(r === 'nao'){ nao++; falhas.push(x); } });
+  if(!sim && !nao){ alert('Marque pelo menos um ponto observado.'); return; }
+  const pont = Math.round(sim / (sim + nao) * 100);
+  const nota = [v('vav-bem') ? '👏 ' + v('vav-bem') : '', v('vav-mel') ? '🔧 ' + v('vav-mel') : '', falhas.length ? 'A melhorar: ' + falhas.join('; ') : ''].filter(Boolean).join('\n');
+  const dados = {colaborador_id: Number(id), colaborador: c ? c.nome : '', tipo: 'avaliacao', pontuacao: pont, detalhe: {itens, reconhecer: v('vav-bem') || null, melhorar: v('vav-mel') || null}, regra: falhas[0] || null, nota: nota || null, data: v('vav-data') || dataLocalISO(new Date()), registado_por: currentUser ? currentUser.name : null};
+  try{ await sb('loja_voz_supervisao', {method:'POST', body: JSON.stringify(dados), prefer:'return=minimal'}); showToast(); vocRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function vocAssinou(id){
+  if(!vocPodeSupervisionar()){ alert('🔒 Só responsáveis de secção, gestores e a gestora podem registar assinaturas.'); return; }
+  const c = vocColabs.find(x => x.id === id); if(!c) return;
+  try{ await sb('loja_voz_supervisao', {method:'POST', body: JSON.stringify({colaborador_id: id, colaborador: c.nome, tipo: 'assinou', regra: 'Instrução de Trabalho — A Voz do Cliente', data: dataLocalISO(new Date()), registado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); showToast(); vocRefrescar(); }
   catch(e){ alert('Não consegui guardar.'); }
 }
 async function vocPlanoNovo(){
