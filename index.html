@@ -758,7 +758,17 @@
           <button class="rp-nav-btn" onclick="selectMenu('area:validades','Gestão de Validades')"><span class="rp-nav-ic">📅</span><span><b>Gestão de Validades</b><small>execução por secção e artigos a tratar</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:notas','Notas de Crédito')"><span class="rp-nav-ic">🧾</span><span><b>Notas de Crédito</b><small>validar as notas da loja</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:vendasugestiva','Venda Sugestiva')"><span class="rp-nav-ic">🛍️</span><span><b>Venda Sugestiva</b><small>campanha da semana e operadoras</small></span></button>
-          <button class="rp-nav-btn" onclick="rpAbrirAuditorias()" aria-expanded="false" id="rp-btn-aud"><span class="rp-nav-ic">✅</span><span><b>Auditorias</b><small>SHT, RH, Ambiente, Controlo</small></span></button>
+          <button class="rp-nav-btn" onclick="rpAbrirAuditorias()" aria-expanded="false" id="rp-btn-aud"><span class="rp-nav-ic">✅</span><span><b>Auditorias</b><small>HACCP, SHT, RH, Ambiente, Controlo</small></span></button>
+          <div id="rp-aud-lista" class="rp-pills" style="display:none;grid-column:1 / -1;flex-wrap:wrap;gap:8px;padding:10px;border:2px solid #1F7A33;border-radius:14px;background:#F2F7EC;">
+          <button class="h3s-pill" onclick="selectMenu('area:relatorios','Relatórios das auditorias')">📄 Todos os relatórios</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:HACCP','Auditoria HACCP')">🧪 HACCP</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:SHT','Auditoria SHT')">🦺 SHT</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:RH','Auditoria RH')">👤 RH</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Ambiental','Auditoria Ambiente')">🌱 Ambiente</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Controlo','Auditoria Controlo Operacional')">🎯 Controlo Operacional</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Distrito','Auditoria Distrito')">🗺️ Distrito</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Marketing','Auditoria Marketing')">📢 Marketing</button>
+        </div>
           <button class="rp-nav-btn" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')"><span class="rp-nav-ic">👥</span><span><b>Recursos Humanos</b><small>horários, banco de horas, formação</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('melhoria','Melhoria Contínua')"><span class="rp-nav-ic">📈</span><span><b>Melhoria Contínua</b><small>score semanal e evolução</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('dash:gestao:planos-acao','Planos de Ação')"><span class="rp-nav-ic">🎯</span><span><b>Planos de Ação</b><small>ações por secção e responsável</small></span></button>
@@ -769,16 +779,6 @@
           <button class="rp-nav-btn" onclick="selectMenu('comunidade','Comunidade do Mês')"><span class="rp-nav-ic">🤝</span><span><b>Comunidade do Mês</b><small>tema, ferramentas, feedback e PDP</small></span></button>
           <button class="rp-nav-btn rp-nav-destaque" onclick="abrirApresentacao()"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>sempre com os dados mais recentes</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('objetivos2027','Objetivos 2027')"><span class="rp-nav-ic">🚀</span><span><b>2027</b><small>objetivos da loja e secções</small></span></button>
-        </div>
-        <div id="rp-aud-lista" class="rp-pills" style="display:none">
-          <button class="h3s-pill" onclick="selectMenu('area:relatorios','Relatórios das auditorias')">📄 Todos os relatórios</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:HACCP','Auditoria HACCP')">🧪 HACCP</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:SHT','Auditoria SHT')">🦺 SHT</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:RH','Auditoria RH')">👤 RH</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Ambiental','Auditoria Ambiente')">🌱 Ambiente</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Controlo','Auditoria Controlo Operacional')">🎯 Controlo Operacional</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Distrito','Auditoria Distrito')">🗺️ Distrito</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Marketing','Auditoria Marketing')">📢 Marketing</button>
         </div>
         <div class="hidden" aria-hidden="true">
         <div id="h3s-areas">
@@ -2939,6 +2939,16 @@ function rpAbrirAuditorias(){
   const abrir = l.style.display === 'none';
   l.style.display = abrir ? 'flex' : 'none';
   if(b) b.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+  if(abrir){
+    const audits = (storeData && storeData.audits) || [];
+    l.querySelectorAll('button[onclick*="auditoria:"]').forEach(btn => {
+      const m = btn.getAttribute('onclick').match(/auditoria:([^']+)'/); const a = m && audits.find(x => String(x.name) === m[1]);
+      let tag = btn.querySelector('.rp-aud-pct'); if(!tag){ tag = document.createElement('b'); tag.className = 'rp-aud-pct'; tag.style.marginLeft = '6px'; btn.appendChild(tag); }
+      tag.textContent = a && a.pct != null ? a.pct + '%' : '';
+      tag.style.color = a && a.pct != null ? (a.pct >= 95 ? '#1F7A33' : a.pct >= 90 ? '#C77F12' : '#B4231A') : '';
+    });
+    setTimeout(()=> l.scrollIntoView({behavior:'smooth', block:'nearest'}), 50);
+  }
 }
 
 // ===================== COMUNIDADE DO MÊS =====================
