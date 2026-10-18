@@ -385,6 +385,11 @@
   }
   .pa-estado.pendente{background:var(--amber-light);color:#8A5E10;}
   .pa-estado.em-controlo{background:var(--green-light);color:var(--green);}
+  .pa-estado.concluido{background:#1F7A33;color:#fff;}
+  .pa-feito{opacity:.6;} .pa-feito .pa-tit{text-decoration:line-through;}
+  .pa-acoes{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .pa-acoes button{margin:0;padding:5px 10px;font-size:11.5px;min-height:32px;}
+  .tar-tirar{flex:none;border:1px solid var(--line);background:var(--paper);color:#B4231A;border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer;min-height:32px;}
 
   /* ===================== PAINEL INICIAL — ESTILO CARTÕES ===================== */
   .drawer, .drawer-overlay{display:none !important;}
@@ -758,7 +763,17 @@
           <button class="rp-nav-btn" onclick="selectMenu('area:validades','Gestão de Validades')"><span class="rp-nav-ic">📅</span><span><b>Gestão de Validades</b><small>execução por secção e artigos a tratar</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:notas','Notas de Crédito')"><span class="rp-nav-ic">🧾</span><span><b>Notas de Crédito</b><small>validar as notas da loja</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:vendasugestiva','Venda Sugestiva')"><span class="rp-nav-ic">🛍️</span><span><b>Venda Sugestiva</b><small>campanha da semana e operadoras</small></span></button>
-          <button class="rp-nav-btn" onclick="rpAbrirAuditorias()" aria-expanded="false" id="rp-btn-aud"><span class="rp-nav-ic">✅</span><span><b>Auditorias</b><small>SHT, RH, Ambiente, Controlo</small></span></button>
+          <button class="rp-nav-btn" onclick="rpAbrirAuditorias()" aria-expanded="false" id="rp-btn-aud"><span class="rp-nav-ic">✅</span><span><b>Auditorias</b><small>HACCP, SHT, RH, Ambiente, Controlo</small></span></button>
+          <div id="rp-aud-lista" class="rp-pills" style="display:none;grid-column:1 / -1;flex-wrap:wrap;gap:8px;padding:10px;border:2px solid #1F7A33;border-radius:14px;background:#F2F7EC;">
+          <button class="h3s-pill" onclick="selectMenu('area:relatorios','Relatórios das auditorias')">📄 Todos os relatórios</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:HACCP','Auditoria HACCP')">🧪 HACCP</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:SHT','Auditoria SHT')">🦺 SHT</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:RH','Auditoria RH')">👤 RH</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Ambiental','Auditoria Ambiente')">🌱 Ambiente</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Controlo','Auditoria Controlo Operacional')">🎯 Controlo Operacional</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Distrito','Auditoria Distrito')">🗺️ Distrito</button>
+          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Marketing','Auditoria Marketing')">📢 Marketing</button>
+        </div>
           <button class="rp-nav-btn" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')"><span class="rp-nav-ic">👥</span><span><b>Recursos Humanos</b><small>horários, banco de horas, formação</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('melhoria','Melhoria Contínua')"><span class="rp-nav-ic">📈</span><span><b>Melhoria Contínua</b><small>score semanal e evolução</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('dash:gestao:planos-acao','Planos de Ação')"><span class="rp-nav-ic">🎯</span><span><b>Planos de Ação</b><small>ações por secção e responsável</small></span></button>
@@ -769,16 +784,6 @@
           <button class="rp-nav-btn" onclick="selectMenu('comunidade','Comunidade do Mês')"><span class="rp-nav-ic">🤝</span><span><b>Comunidade do Mês</b><small>tema, ferramentas, feedback e PDP</small></span></button>
           <button class="rp-nav-btn rp-nav-destaque" onclick="abrirApresentacao()"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>sempre com os dados mais recentes</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('objetivos2027','Objetivos 2027')"><span class="rp-nav-ic">🚀</span><span><b>2027</b><small>objetivos da loja e secções</small></span></button>
-        </div>
-        <div id="rp-aud-lista" class="rp-pills" style="display:none">
-          <button class="h3s-pill" onclick="selectMenu('area:relatorios','Relatórios das auditorias')">📄 Todos os relatórios</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:HACCP','Auditoria HACCP')">🧪 HACCP</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:SHT','Auditoria SHT')">🦺 SHT</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:RH','Auditoria RH')">👤 RH</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Ambiental','Auditoria Ambiente')">🌱 Ambiente</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Controlo','Auditoria Controlo Operacional')">🎯 Controlo Operacional</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Distrito','Auditoria Distrito')">🗺️ Distrito</button>
-          <button class="h3s-pill claro" onclick="selectMenu('auditoria:Marketing','Auditoria Marketing')">📢 Marketing</button>
         </div>
         <div class="hidden" aria-hidden="true">
         <div id="h3s-areas">
@@ -2209,9 +2214,9 @@ function renderPainelResumo(){
       <div id="rp-datas" class="rp-datas"></div>
     </div>
     <div class="rp-acoes">
-      ${souDona() ? `<button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar ficheiros do dia</button>
-      <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls" multiple class="hidden" onchange="importarFicheirosDia(this)">
-      <div id="rp-estado" class="rp-estado">Pode escolher vários ficheiros de uma vez</div>` : ''}
+      ${souDona() ? `<button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar relatórios</button>
+      <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls,.csv,.pdf,.docx,.txt,.eml" multiple class="hidden" onchange="importarFicheirosDia(this)">
+      <div id="rp-estado" class="rp-estado">Escolha os ficheiros de uma vez (Excel, PDF ou Word): a app descobre o que é cada um e envia para o cartão certo.</div>` : ''}
     </div>
   </div>
   <div id="rp-lembretes"></div>
@@ -2889,7 +2894,57 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades'};
+const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+  indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
+  aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
+  contactos:'Contactos da equipa → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
+// ---------- outros relatórios: a app descobre o tipo e envia para o cartão certo ----------
+function impTipoExtra(wb, nome){
+  const t = (fn) => { try{ return fn(); }catch(e){ return null; } };
+  if(t(() => indLerExcel(wb))) return 'indrh';
+  if((t(() => rhLerGozoBH(wb)) || []).length) return 'gozo';
+  if((t(() => horLerExcel(wb)) || []).length) return 'horarios';
+  if((t(() => repLerExcel(wb)) || []).length) return 'reposicao';
+  if(t(() => aquiLerExcel(wb, nome))) return 'aqui';
+  const temFund = /funda/i.test(nome) || wb.SheetNames.some(n => { const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:''}); return R.slice(0, 4).some(r => r.some(c => /funda[çc][ãa]o/i.test(String(c)))); });
+  if(temFund && (t(() => fundLerExcel(wb)) || []).length) return 'fundacao';
+  if((t(() => rhLerBancoHoras(wb)) || []).length) return 'bancohoras';
+  if((t(() => rhLerFormacoes(wb)) || []).length) return 'formacoes';
+  if((t(() => ctLerExcel(wb)) || []).length) return 'contactos';
+  return null;
+}
+function impTipoTexto(texto, nome){
+  const tx = String(texto || '');
+  if(/score mensal/i.test(tx) && /validades/i.test(tx)) return 'scorevalidades';
+  if(/informa[çc][ãa]o de neg[óo]cio/i.test(nome + ' ' + tx.slice(0, 800))) return 'infoneg';
+  try{ if(audDetetarTipo(tx, nome)) return 'auditoria'; }catch(e){}
+  return null;
+}
+// corre o carregamento próprio de cada cartão com o ficheiro e guarda logo
+async function impExtraCorrer(tipo, f){
+  const falso = {files: [f], value: ''};
+  const caixa = id => { let el = document.getElementById(id); if(!el){ el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); } el.innerHTML = ''; return el; };
+  const cfg = {
+    indrh: ['ind-estado', () => indCarregar(falso)],
+    gozo: ['rh-estado-bh', async () => { await rhCarregar(falso, 'bh'); if(rhGozo && rhGozo.length) await rhGuardarGozo(); }],
+    bancohoras: ['rh-estado-bh', async () => { await rhCarregar(falso, 'bh'); if(rhLidos && rhLidos.tipo === 'bh') await rhGuardar(); }],
+    formacoes: ['rh-estado-form', async () => { await rhCarregar(falso, 'form'); if(rhLidos && rhLidos.tipo === 'form') await rhGuardar(); }],
+    horarios: ['hor-estado', async () => { horLidos = []; await horCarregar(falso); if(horLidos && horLidos.length) await horGuardarLidos(); }],
+    reposicao: ['rep-estado', () => repCarregar(falso)],
+    aqui: ['aqui-estado', () => aquiCarregar(falso)],
+    fundacao: ['fund-estado', async () => { fundLidos = []; await fundCarregar(falso); if(fundLidos && fundLidos.length) await fundGuardar(); }],
+    contactos: ['ct-estado', async () => { ctLidos = []; await ctCarregar(falso); if(ctLidos && ctLidos.length) await ctGuardar(); }],
+    auditoria: ['aud-auto-estado', () => audCarregarAuto(falso)],
+    scorevalidades: ['val-score-estado', () => valCarregarFicheiro(falso)],
+    infoneg: ['info-neg-estado', () => infoNegCarregar(falso)]
+  }[tipo];
+  if(!cfg) throw new Error('tipo desconhecido');
+  const el = caixa(cfg[0]);
+  await cfg[1]();
+  const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  if(/^✕/.test(txt)) throw new Error(txt.replace(/^✕\s*/, ''));
+  return txt ? txt.slice(0, 160) : 'Enviado para o cartão';
+}
 
 let impResHTML = '';
 function escolherFicheirosDia(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
@@ -2912,18 +2967,27 @@ async function importarFicheirosDia(input){
   for(const f of ficheiros){
     const l = {nome: f.name, tipo: '?', msg: 'a ler…', ok: null}; linhas.push(l);
     try{
+      if(!/\.(xlsx|xlsm|xls|csv)$/i.test(f.name)){
+        let texto = '';
+        try{ texto = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); }catch(e){}
+        const tt = impTipoTexto(texto, f.name);
+        if(!tt){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Não percebi que relatório é. Carregue-o no cartão certo.'; continue; }
+        l.tipo = IMP_NOMES[tt]; lidos.push({l, extra: tt, f, tipo: tt, nome: f.name}); continue;
+      }
       const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
-      const tipo = impTipo(wb);
+      let tipo = impTipo(wb);
+      if(!tipo){ const te = impTipoExtra(wb, f.name); if(te){ l.tipo = IMP_NOMES[te]; lidos.push({l, extra: te, f, tipo: te, nome: f.name}); continue; } }
       if(tipo === 'naousado'){ l.ok = 'skip'; l.tipo = 'Não é preciso'; l.msg = 'A app agora só usa vendas e quebras — este ficheiro foi ignorado.'; continue; }
-      if(!tipo){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Este ficheiro não é nenhum dos relatórios que a app conhece.'; continue; }
+      if(!tipo){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Este ficheiro não é nenhum dos relatórios que a app conhece. Envie-o ao Claude para a app aprender a lê-lo.'; continue; }
       l.tipo = IMP_NOMES[tipo]; lidos.push({l, wb, tipo, nome: f.name, data: f.lastModified});
     }catch(e){ l.ok = false; l.tipo = 'Erro a ler'; l.msg = String(e && e.message || e); }
   }
   mostrar(false);
-  lidos.sort((a,b)=>ordem[a.tipo]-ordem[b.tipo]);
+  lidos.sort((a,b)=>(ordem[a.tipo] || 7)-(ordem[b.tipo] || 7));
   for(const x of lidos){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
+      if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
       const fn = {bomdia: impBomDia, markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -2939,6 +3003,16 @@ function rpAbrirAuditorias(){
   const abrir = l.style.display === 'none';
   l.style.display = abrir ? 'flex' : 'none';
   if(b) b.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+  if(abrir){
+    const audits = (storeData && storeData.audits) || [];
+    l.querySelectorAll('button[onclick*="auditoria:"]').forEach(btn => {
+      const m = btn.getAttribute('onclick').match(/auditoria:([^']+)'/); const a = m && audits.find(x => String(x.name) === m[1]);
+      let tag = btn.querySelector('.rp-aud-pct'); if(!tag){ tag = document.createElement('b'); tag.className = 'rp-aud-pct'; tag.style.marginLeft = '6px'; btn.appendChild(tag); }
+      tag.textContent = a && a.pct != null ? a.pct + '%' : '';
+      tag.style.color = a && a.pct != null ? (a.pct >= 95 ? '#1F7A33' : a.pct >= 90 ? '#C77F12' : '#B4231A') : '';
+    });
+    setTimeout(()=> l.scrollIntoView({behavior:'smooth', block:'nearest'}), 50);
+  }
 }
 
 // ===================== COMUNIDADE DO MÊS =====================
@@ -5132,6 +5206,7 @@ async function blocoPlanoDiaSecao(secao, label){
       <input type="checkbox" ${t.concluida?'checked':''} onchange="onCheckboxTaskSecao(${t.id}, '${secao.replace(/'/g,"\\'")}', '${label.replace(/'/g,"\\'")}', this)">
       <span style="flex:1;">${t.texto}${t.responsavel_nome ? ` <span style="color:var(--ink-soft);font-size:11.5px;">— ${t.responsavel_nome}</span>` : ''}${atrasada ? ` <span style="color:var(--red);font-size:11px;font-weight:700;">(${dataLabel})</span>` : ''}
       ${t.concluida && t.executado_nome ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Feito por ${t.executado_nome}</div>` : ''}</span>
+      ${souDona() ? `<button class="tar-tirar" onclick="tarefaTirar(${t.id}, this)" aria-label="Tirar tarefa">🗑️</button>` : ''}
       ${!t.concluida ? `<input type="text" inputmode="numeric" placeholder="Nº colab." id="task-num-${t.id}" style="width:74px;padding:6px 7px;border-radius:8px;border:1px solid var(--line);font-size:11.5px;text-align:center;flex-shrink:0;">` : ''}
     </div>`;
   };
@@ -7928,6 +8003,49 @@ async function renderPlanoAcaoGestores(){
   renderPlanoAcaoGestoresFiltro('');
 }
 
+// ===== Feito / não feito e tirar — planos de ação e tarefas =====
+function paFeito(p){ return /conclu|feito/i.test(String(p && p.estado || '')); }
+function paPodeMarcar(){ return !!(currentUser && ['gestora','area','responsavel'].includes(currentUser.role)); }
+function paAcoesHtml(p){
+  const f = paFeito(p); let h = '';
+  if(paPodeMarcar()) h += `<button class="econ-btn${f ? '' : ' filled'}" onclick="paMarcar(${p.id}, ${!f}, this)">${f ? '↺ Não feito' : '✓ Feito'}</button>`;
+  if(souDona()) h += `<button class="econ-btn" style="color:#B4231A;" onclick="paTirar(${p.id}, this)">🗑️ Tirar</button>`;
+  return h ? `<div class="pa-acoes">${h}</div>` : '';
+}
+function paEstadoHtml(p){ const f = paFeito(p); return `<span class="pa-estado ${f ? 'concluido' : (p.estado === 'Pendente' || !p.estado ? 'pendente' : 'em-controlo')}">${f ? '✓ Feito' : rpEsc(p.estado || 'Pendente')}</span>`; }
+function paCacheAtualizar(id, fn){ [typeof planoAcaoGestoresData !== 'undefined' ? planoAcaoGestoresData : null].forEach(arr => { if(Array.isArray(arr)){ const i = arr.findIndex(x => x.id === id); if(i >= 0){ const r = fn(arr[i]); if(r === null) arr.splice(i, 1); } } }); }
+async function paMarcar(id, feito, btn){
+  if(!paPodeMarcar()){ alert('🔒 Só responsáveis de secção, gestores e a gestora podem marcar tarefas.'); return; }
+  const estado = feito ? 'Concluído' : 'Pendente';
+  try{
+    await sb(`loja_plano_acao?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({estado})});
+    paCacheAtualizar(id, x => { x.estado = estado; return x; });
+    const item = btn && btn.closest('[data-pa]');
+    if(item){ const p = {id, estado}; item.classList.toggle('pa-feito', feito); const est = item.querySelector('.pa-estado'); if(est) est.outerHTML = paEstadoHtml(p); const ac = item.querySelector('.pa-acoes'); if(ac) ac.outerHTML = paAcoesHtml(p); }
+    showToast();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+}
+async function paTirar(id, btn){
+  if(!soDona('tirar tarefas')) return;
+  if(!confirm('Tirar esta ação do plano?')) return;
+  try{
+    await sb(`loja_plano_acao?id=eq.${id}`, {method:'DELETE'});
+    paCacheAtualizar(id, () => null);
+    const item = btn && btn.closest('[data-pa]'); if(item) item.remove();
+    showToast();
+  }catch(e){ alert('Não consegui tirar. Tente novamente.'); }
+}
+async function tarefaTirar(id, btn){
+  if(!soDona('tirar tarefas')) return;
+  if(!confirm('Tirar esta tarefa?')) return;
+  try{
+    await sb(`loja_tarefas?id=eq.${id}`, {method:'DELETE'});
+    if(storeData && Array.isArray(storeData.tasks)) storeData.tasks = storeData.tasks.filter(t => t.id !== id);
+    const row = btn && btn.closest('.task-item, [data-tarefa]'); if(row) row.remove();
+    showToast();
+  }catch(e){ alert('Não consegui tirar. Tente novamente.'); }
+}
+
 function renderPlanoAcaoGestoresFiltro(filtroArea){
   const el = document.getElementById('plano-acao-gestores-wrap');
   const itens = filtroArea ? planoAcaoGestoresData.filter(p=>p.area===filtroArea) : planoAcaoGestoresData;
@@ -7954,15 +8072,14 @@ function renderPlanoAcaoGestoresFiltro(filtroArea){
       const resp = paResponsaveisDe(area); const aj = String(area).replace(/'/g,"\\'");
       html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 0 2px;"><span style="font-size:12.5px;font-weight:700;color:var(--navy);">${area}</span><span style="display:flex;gap:4px;flex-wrap:wrap;">${resp.length ? resp.map((r,i) => `<button class="lem-w" onclick="paEnviar('${aj}', ${i})">📲 ${rpEsc(lemPrimeiroNome(r.nome))}</button>`).join('') : `<button class="lem-w" onclick="paEnviar('${aj}', 0)">📲 Enviar</button>`}</span></div>`;
       grupos[area].forEach(p=>{
-        const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
         const dataP = p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-PT') : '';
-        html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);">
-          <div style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
-          <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${p.acao}</div>
+        html += `<div data-pa="${p.id}" class="${paFeito(p) ? 'pa-feito' : ''}" style="padding:8px 0;border-bottom:1px solid var(--line);">
+          <div class="pa-tit" style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
+          <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${p.acao || ''}</div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
-            <span class="pa-estado ${cls}">${p.estado}</span>
+            ${paEstadoHtml(p)}
             <span style="font-size:10.5px;color:var(--ink-soft);">${dataP}</span>
-          </div>
+          </div>${paAcoesHtml(p)}
         </div>`;
       });
     });
@@ -7970,15 +8087,14 @@ function renderPlanoAcaoGestoresFiltro(filtroArea){
     const resp = paResponsaveisDe(filtroArea); const aj = String(filtroArea).replace(/'/g,"\\'");
     html += `<div style="display:flex;gap:4px;flex-wrap:wrap;padding:8px 0;">${resp.length ? resp.map((r,i) => `<button class="lem-w" onclick="paEnviar('${aj}', ${i})">📲 Enviar a ${rpEsc(lemPrimeiroNome(r.nome))}</button>`).join('') : `<button class="lem-w" onclick="paEnviar('${aj}', 0)">📲 Enviar por WhatsApp</button>`}</div>`;
     itens.forEach(p=>{
-      const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
       const dataP = p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-PT') : '';
-      html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);">
-        <div style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${p.acao}</div>
+      html += `<div data-pa="${p.id}" class="${paFeito(p) ? 'pa-feito' : ''}" style="padding:8px 0;border-bottom:1px solid var(--line);">
+        <div class="pa-tit" style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;line-height:1.4;">${p.acao || ''}</div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
-          <span class="pa-estado ${cls}">${p.estado}</span>
+          ${paEstadoHtml(p)}
           <span style="font-size:10.5px;color:var(--ink-soft);">${dataP}</span>
-        </div>
+        </div>${paAcoesHtml(p)}
       </div>`;
     });
   }
@@ -8026,6 +8142,7 @@ function taskRowEl(t, atrasada){
   row.innerHTML = `<input type="checkbox" ${t.done ? 'checked' : ''} onchange="onCheckboxTask(${t.id}, this)">
     <span style="flex:1;">${t.text}${t.respNome ? ` <span style="color:var(--ink-soft);font-size:11.5px;">— ${t.respNome}</span>` : ''}${atrasada ? ` <span style="color:var(--red);font-size:11px;font-weight:700;">(${dataLabel})</span>` : ''}
     ${t.done && t.execNome ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Feito por ${t.execNome}</div>` : ''}</span>
+    ${souDona() ? `<button class="tar-tirar" onclick="tarefaTirar(${t.id}, this)" aria-label="Tirar tarefa">🗑️</button>` : ''}
     ${!t.done ? `<input type="text" inputmode="numeric" placeholder="Nº colab." id="task-num-${t.id}" style="width:74px;padding:6px 7px;border-radius:8px;border:1px solid var(--line);font-size:11.5px;text-align:center;flex-shrink:0;">` : ''}`;
   return row;
 }
@@ -10154,6 +10271,7 @@ async function blocoPlanoNoturno(){
     <input type="checkbox" ${t.concluida?'checked':''} onchange="onCheckboxTaskNoturno(${t.id}, this)">
     <span style="flex:1;">${t.texto}${t.responsavel_nome ? ` <span style="color:var(--ink-soft);font-size:11.5px;">— ${t.responsavel_nome}</span>` : ''}
     ${t.concluida && t.executado_nome ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Feito por ${t.executado_nome}</div>` : ''}</span>
+    ${souDona() ? `<button class="tar-tirar" onclick="tarefaTirar(${t.id}, this)" aria-label="Tirar tarefa">🗑️</button>` : ''}
     ${!t.concluida ? `<input type="text" inputmode="numeric" placeholder="Nº colab." id="task-noturno-num-${t.id}" style="width:74px;padding:6px 7px;border-radius:8px;border:1px solid var(--line);font-size:11.5px;text-align:center;flex-shrink:0;">` : ''}
   </div>`;
 
@@ -10351,11 +10469,10 @@ async function blocoPlanoAcaoSecao(secao, label){
   if(!itens.length) return '';
   let html = `<div class="section-title">🎯 Plano de Ação <span class="count">· ${itens.length}</span></div><div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   itens.forEach(p=>{
-    const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
-    html += `<div style="padding:9px 0;border-bottom:1px solid var(--line);">
-      <div style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
-      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4;">${p.acao}</div>
-      <span class="pa-estado ${cls}">${p.estado}</span>
+    html += `<div data-pa="${p.id}" class="${paFeito(p) ? 'pa-feito' : ''}" style="padding:9px 0;border-bottom:1px solid var(--line);">
+      <div class="pa-tit" style="font-size:13px;font-weight:600;color:var(--ink);">${p.ponto}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;line-height:1.4;">${p.acao || ''}</div>
+      ${paEstadoHtml(p)}${paAcoesHtml(p)}
     </div>`;
   });
   html += `</div>`;
@@ -11136,7 +11253,9 @@ async function aquiCarregar(input){
 // ===================== A Voz do Cliente (Programa AQUI para o Cliente) =====================
 const VOC_REGRAS = ['Não trato o cliente por "tu"', 'Não abandono o cliente sem resposta', 'Não confronto o cliente', 'Não tenho conversas paralelas', 'Não discuto com o colega'];
 const VOC_MISSAO = ['Ser exemplo do AQUI, junto do Cliente', 'Formar e capacitar a equipa', 'Fazer viver a cultura AQUI para o Cliente', 'Acompanhar e implementar melhorias', 'Dar feedback para reconhecer e aperfeiçoar'];
-const VOC_TIPOS = {formado:'🎓 Explicado / formado', reconhecer:'👏 Reconhecer', corrigir:'🔧 Corrigir'};
+const VOC_TIPOS = {formado:'🎓 Explicado / formado', reconhecer:'👏 Reconhecer', corrigir:'🔧 Corrigir', avaliacao:'📋 Avaliação AQUI', assinou:'✍️ Assinou a instrução'};
+const VOC_CHECK = ['Cumprimenta e sorri', 'Trata por "o senhor" / "a senhora" (não trata por "tu")', 'Não deixa o cliente sem resposta (responde ou chama quem sabe)', 'Acompanha o cliente ao produto', 'Não confronta o cliente', 'Sem conversas paralelas', 'Não discute com o colega à frente do cliente', 'Agradece e despede-se'];
+let vocAssin = [];
 let vocColabs = [], vocObs = [];
 function vocPodeSupervisionar(){ return !!(currentUser && ['gestora','area','responsavel'].includes(currentUser.role)); }
 function vocRefrescar(){ document.querySelectorAll('.voc-wrap').forEach(async w => { try{ w.innerHTML = await blocoVozCliente(); }catch(e){} }); }
@@ -11144,13 +11263,14 @@ function vocSegunda(iso){ const d = new Date((iso || dataLocalISO(new Date())) +
 function vocPct(v){ return v == null || v === '' ? '—' : Number(v).toLocaleString('pt-PT', {maximumFractionDigits:1}) + '%'; }
 async function blocoVozCliente(){
   const ini = new Date(); ini.setDate(ini.getDate() - 90);
-  const [sem, plano, obs, colabs] = await Promise.all([
+  const [sem, plano, obs, colabs, assin] = await Promise.all([
     sb('loja_voz_cliente?select=*&order=semana_inicio.desc&limit=8').catch(()=>[]),
     sb('loja_plano_acao?area=eq.Voz%20do%20Cliente&select=*&order=id.desc').catch(()=>[]),
     sb(`loja_voz_supervisao?select=*&data=gte.${dataLocalISO(ini)}&order=data.desc,id.desc&limit=300`).catch(()=>[]),
-    sb('loja_colaboradores?select=id,nome,secao&order=nome.asc').catch(()=>[])
+    sb('loja_colaboradores?select=id,nome,secao&order=nome.asc').catch(()=>[]),
+    sb('loja_voz_supervisao?tipo=eq.assinou&select=colaborador_id,colaborador,data').catch(()=>[])
   ]);
-  vocObs = obs || []; vocColabs = colabs || [];
+  vocObs = obs || []; vocColabs = colabs || []; vocAssin = assin || [];
   const dona = souDona(), sup = vocPodeSupervisionar();
   const S = sem || [], r = S[0], ant = S[1];
   const dt = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-PT', {day:'2-digit', month:'2-digit'});
@@ -11192,7 +11312,7 @@ async function blocoVozCliente(){
   // 2) Plano de ação
   const P = plano || [];
   h += `<div class="section-title">🎯 Plano de ação — Voz do Cliente</div><div class="card">`;
-  h += P.length ? P.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><div><b>${rpEsc(p.ponto || '')}</b>${p.acao ? `<div style="color:var(--ink-soft);font-size:11.5px;">${rpEsc(p.acao)}</div>` : ''}</div>${dona ? `<select style="font-size:11.5px;height:30px;" onchange="vocPlanoEstado(${p.id}, this.value)">${['Pendente','Em curso','Concluído'].map(e => `<option ${p.estado === e ? 'selected' : ''}>${e}</option>`).join('')}</select>` : `<span style="font-size:11.5px;white-space:nowrap;">${rpEsc(p.estado || 'Pendente')}</span>`}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);">Sem ações ainda. Use os comentários e o "correu mal" da semana para definir ações.</div>`;
+  h += P.length ? P.map(p => `<div data-pa="${p.id}" class="${paFeito(p) ? 'pa-feito' : ''}" style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b class="pa-tit">${rpEsc(p.ponto || '')}</b>${paEstadoHtml(p)}</div>${p.acao ? `<div style="color:var(--ink-soft);font-size:11.5px;">${rpEsc(p.acao)}</div>` : ''}${paAcoesHtml(p)}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);">Sem ações ainda. Use os comentários e o "correu mal" da semana para definir ações.</div>`;
   if(dona) h += `<button class="econ-btn" style="margin-top:8px;" onclick="vocPlanoNovo()">➕ Nova ação</button>`;
   h += `</div>`;
 
@@ -11222,20 +11342,54 @@ async function blocoVozCliente(){
   const corr = {}; domes.filter(o => o.tipo === 'corrigir' && o.regra).forEach(o => corr[o.regra] = (corr[o.regra] || 0) + 1);
   const topCorr = Object.entries(corr).sort((a, b) => b[1] - a[1]);
   const nRec = domes.filter(o => o.tipo === 'reconhecer').length, nCor = domes.filter(o => o.tipo === 'corrigir').length;
+  const avMes = domes.filter(o => o.tipo === 'avaliacao');
+  const avaliados = new Set(avMes.map(o => o.colaborador_id || o.colaborador));
+  const mediaAv = avMes.filter(o => o.pontuacao != null).length ? Math.round(avMes.filter(o => o.pontuacao != null).reduce((t, o) => t + Number(o.pontuacao), 0) / avMes.filter(o => o.pontuacao != null).length) : null;
+  const assinaram = new Set(vocAssin.map(o => o.colaborador_id || o.colaborador));
+  const porAval = {}; avMes.forEach(o => { const k = o.registado_por || '—'; porAval[k] = (porAval[k] || 0) + 1; });
+  const corPct = v => v == null ? 'var(--ink-soft)' : v >= 90 ? 'var(--green)' : v >= 75 ? '#C77F12' : 'var(--red)';
+  const hojeIso = dataLocalISO(new Date());
+  const deHoje = vocObs.filter(o => String(o.data) === hojeIso && ['avaliacao','reconhecer','corrigir'].includes(o.tipo));
+  const porRespHoje = {}; deHoje.forEach(o => { const k = o.registado_por || '—'; porRespHoje[k] = (porRespHoje[k] || 0) + 1; });
   h += `<div class="section-title">👀 Supervisão AQUI — no terreno</div><div class="card">
+    <div style="background:#F2F7EC;border:1.5px solid #1F7A33;border-radius:12px;padding:10px 12px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><b style="font-size:14px;">📅 Hoje — avaliações e feedback</b><b style="font-size:20px;color:${deHoje.length ? 'var(--green)' : '#C77F12'};">${deHoje.length}</b></div>
+      <div style="font-size:12px;margin-top:2px;">${Object.keys(porRespHoje).length ? Object.entries(porRespHoje).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${rpEsc(k)}: <b>${n}</b>`).join(' · ') : '<span style="color:var(--ink-soft);">Ainda nenhum responsável registou avaliações hoje.</span>'}</div>
+      ${deHoje.length ? deHoje.slice(0, 8).map(o => `<div style="font-size:12px;padding:5px 0;border-top:1px solid #D5E5C8;margin-top:5px;"><b>${rpEsc(o.colaborador)}</b> · ${VOC_TIPOS[o.tipo] || rpEsc(o.tipo)}${o.pontuacao != null ? ` <b style="color:${corPct(Number(o.pontuacao))};">${Math.round(o.pontuacao)}%</b>` : ''}${o.registado_por ? ` <span style="color:var(--ink-soft);">· ${rpEsc(o.registado_por)}</span>` : ''}${o.nota ? `<div style="white-space:pre-line;color:var(--ink);">${rpEsc(o.nota)}</div>` : ''}</div>`).join('') : ''}
+      ${sup ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Cada responsável regista aqui, todos os dias, as avaliações que faz e o feedback que dá (formulário "Nova Avaliação AQUI" mais abaixo).</div>` : ''}
+    </div>
     <div class="vs-detail-grid">
       <div class="vs-box"><div class="vs-label">🎓 Equipa formada</div><div class="vs-value" style="font-size:22px;color:${tot && formados.size >= tot ? 'var(--green)' : '#C77F12'};">${formados.size}${tot ? `<span style="font-size:13px;color:var(--ink-soft);"> / ${tot}</span>` : ''}</div><div style="font-size:10.5px;color:var(--ink-soft);">últimos 90 dias</div></div>
       <div class="vs-box"><div class="vs-label">👏 Reconhecer · 🔧 Corrigir</div><div class="vs-value" style="font-size:22px;"><span style="color:var(--green);">${nRec}</span> · <span style="color:var(--red);">${nCor}</span></div><div style="font-size:10.5px;color:var(--ink-soft);">este mês</div></div>
+      <div class="vs-box"><div class="vs-label">📋 Avaliados este mês</div><div class="vs-value" style="font-size:22px;color:${tot && avaliados.size >= tot ? 'var(--green)' : '#C77F12'};">${avaliados.size}${tot ? `<span style="font-size:13px;color:var(--ink-soft);"> / ${tot}</span>` : ''}</div><div style="font-size:10.5px;color:var(--ink-soft);">objetivo: todos, 1 vez por mês</div></div>
+      <div class="vs-box"><div class="vs-label">⭐ Média das avaliações</div><div class="vs-value" style="font-size:22px;color:${corPct(mediaAv)};">${mediaAv == null ? '—' : mediaAv + '%'}</div><div style="font-size:10.5px;color:var(--ink-soft);">${avMes.length} avaliações este mês</div></div>
+      <div class="vs-box"><div class="vs-label">✍️ Instrução assinada</div><div class="vs-value" style="font-size:22px;color:${tot && assinaram.size >= tot ? 'var(--green)' : '#C77F12'};">${assinaram.size}${tot ? `<span style="font-size:13px;color:var(--ink-soft);"> / ${tot}</span>` : ''}</div><div style="font-size:10.5px;color:var(--ink-soft);">Voz do Cliente</div></div>
     </div>
+    ${Object.keys(porAval).length ? `<div style="font-size:12px;margin-top:8px;"><b>Avaliações por responsável este mês:</b> ${Object.entries(porAval).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${rpEsc(k)} ${n}`).join(' · ')}</div>` : ''}
     ${topCorr.length ? `<div style="font-size:12px;margin-top:8px;"><b>Regras mais corrigidas este mês:</b> ${topCorr.map(([k, n]) => `${rpEsc(k)} (${n})`).join(' · ')}</div>` : ''}`;
-  if(sup) h += `<details class="lem-novo" style="margin-top:10px;"><summary>➕ Registar observação de um colaborador</summary>
+  if(sup) h += `<details class="lem-novo" style="margin-top:10px;"><summary>📋 Nova Avaliação AQUI para o Cliente</summary>
+    <p class="com-ajuda" style="margin:6px 0;">Observe um atendimento real do colaborador e marque o que viu. No fim, dê o feedback na hora: primeiro o que correu bem, depois o que melhorar.</p>
+    <div class="com-duo"><div><label class="com-lbl" for="vav-col">Colaborador</label><select id="vav-col"><option value="">— escolher —</option>${vocColabs.map(c => `<option value="${c.id}">${rpEsc(c.nome)}${avaliados.has(c.id) ? ' ✓' : ''}</option>`).join('')}</select></div><div><label class="com-lbl" for="vav-data">Data</label><input id="vav-data" type="date" value="${dataLocalISO(new Date())}"></div></div>
+    ${VOC_CHECK.map((x, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);"><label for="vav-i${i}" style="font-size:12.5px;">${rpEsc(x)}</label><select id="vav-i${i}" style="flex:none;width:118px;" aria-label="Cumpre?"><option value="sim">✅ Sim</option><option value="nao">❌ Não</option><option value="na">— Não vi</option></select></div>`).join('')}
+    <label class="com-lbl" for="vav-bem">👏 O que correu bem (reconhecer)</label><input id="vav-bem" placeholder="ex.: acompanhou a cliente até ao produto">
+    <label class="com-lbl" for="vav-mel">🔧 O que melhorar (feedback dado)</label><input id="vav-mel" placeholder="ex.: lembrar de agradecer no fim">
+    <button class="btn-primary" onclick="vocGuardarAvaliacao()">Guardar avaliação</button></details>`;
+  if(sup) h += `<details class="lem-novo" style="margin-top:10px;"><summary>➕ Registar observação rápida</summary>
     <label class="com-lbl" for="voc-col">Colaborador</label><select id="voc-col"><option value="">— escolher —</option>${vocColabs.map(c => `<option value="${c.id}">${rpEsc(c.nome)}</option>`).join('')}</select>
-    <div class="com-duo"><div><label class="com-lbl" for="voc-tipo">Tipo</label><select id="voc-tipo">${Object.entries(VOC_TIPOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div><div><label class="com-lbl" for="voc-data">Data</label><input id="voc-data" type="date" value="${dataLocalISO(new Date())}"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-tipo">Tipo</label><select id="voc-tipo">${Object.entries(VOC_TIPOS).filter(([k]) => ['formado','reconhecer','corrigir'].includes(k)).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div><div><label class="com-lbl" for="voc-data">Data</label><input id="voc-data" type="date" value="${dataLocalISO(new Date())}"></div></div>
     <label class="com-lbl" for="voc-regra">Regra / tema</label><select id="voc-regra"><option value="">Todas as regras / atendimento em geral</option>${VOC_REGRAS.map(x => `<option>${rpEsc(x)}</option>`).join('')}<option>Simpatia da equipa</option><option>Apoio na caixa</option><option>Rapidez do serviço</option></select>
     <label class="com-lbl" for="voc-nota">O que se observou / feedback dado</label><input id="voc-nota" placeholder="ex.: tratou a cliente por tu — expliquei a regra 1">
     <button class="btn-primary" onclick="vocGuardarObs()">Guardar observação</button></details>`;
-  const ult = vocObs.slice(0, 12);
-  h += ult.length ? `<div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Últimas observações</div>` + ult.map(o => `<div style="padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>${rpEsc(o.colaborador)}</b><span style="font-size:11px;white-space:nowrap;">${VOC_TIPOS[o.tipo] || rpEsc(o.tipo)}</span></div><div style="font-size:11.5px;color:var(--ink-soft);">${dt(o.data)}${o.regra ? ' · ' + rpEsc(o.regra) : ''}${o.registado_por ? ' · por ' + rpEsc(o.registado_por) : ''}</div>${o.nota ? `<div style="font-size:12px;margin-top:2px;">${rpEsc(o.nota)}</div>` : ''}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:8px;">Ainda sem observações. Registe quem já ouviu as regras (🎓) e dê feedback no momento: reconhecer o que corre bem e corrigir com a regra certa.</div>`;
+  const ult = vocObs.filter(o => o.tipo !== 'assinou').slice(0, 12);
+  h += ult.length ? `<div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Últimas observações</div>` + ult.map(o => `<div style="padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>${rpEsc(o.colaborador)}</b><span style="font-size:11px;white-space:nowrap;">${VOC_TIPOS[o.tipo] || rpEsc(o.tipo)}${o.pontuacao != null ? ` <b style="color:${corPct(Number(o.pontuacao))};">${Math.round(o.pontuacao)}%</b>` : ''}</span></div><div style="font-size:11.5px;color:var(--ink-soft);">${dt(o.data)}${o.regra ? ' · ' + rpEsc(o.regra) : ''}${o.registado_por ? ' · por ' + rpEsc(o.registado_por) : ''}</div>${o.nota ? `<div style="font-size:12px;margin-top:2px;white-space:pre-line;">${rpEsc(o.nota)}</div>` : ''}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:8px;">Ainda sem observações. Registe quem já ouviu as regras (🎓) e dê feedback no momento: reconhecer o que corre bem e corrigir com a regra certa.</div>`;
+  if(tot && avaliados.size < tot){
+    const faltaAv = vocColabs.filter(c => !avaliados.has(c.id) && !avaliados.has(c.nome));
+    h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Ainda sem Avaliação AQUI este mês (${faltaAv.length})</summary><div style="font-size:12px;line-height:1.6;margin-top:4px;">${faltaAv.map(c => rpEsc(c.nome) + (c.secao ? ` <span style="color:var(--ink-soft);">(${rpEsc(c.secao)})</span>` : '')).join(' · ')}</div></details>`;
+  }
+  if(tot && assinaram.size < tot){
+    const faltaAs = vocColabs.filter(c => !assinaram.has(c.id) && !assinaram.has(c.nome));
+    h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Ainda não assinaram a instrução de trabalho (${faltaAs.length})</summary>${faltaAs.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;"><span>${rpEsc(c.nome)}</span>${sup ? `<button class="econ-btn" style="margin:0;" onclick="vocAssinou(${c.id})">✍️ Assinou</button>` : ''}</div>`).join('')}</details>`;
+  }
   if(tot && formados.size < tot){
     const falta = vocColabs.filter(c => !formados.has(c.id) && !formados.has(c.nome));
     h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Ainda sem formação nas regras AQUI (${falta.length})</summary><div style="font-size:12px;line-height:1.6;margin-top:4px;">${falta.map(c => rpEsc(c.nome)).join(' · ')}</div></details>`;
@@ -11259,6 +11413,26 @@ async function vocGuardarObs(){
   const v = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
   const dados = {colaborador_id: Number(id), colaborador: c ? c.nome : '', tipo: v('voc-tipo'), regra: v('voc-regra') || null, nota: v('voc-nota') || null, data: v('voc-data') || dataLocalISO(new Date()), registado_por: currentUser ? currentUser.name : null};
   try{ await sb('loja_voz_supervisao', {method:'POST', body: JSON.stringify(dados), prefer:'return=minimal'}); showToast(); vocRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function vocGuardarAvaliacao(){
+  if(!vocPodeSupervisionar()){ alert('🔒 Só responsáveis de secção, gestores e a gestora podem fazer avaliações.'); return; }
+  const id = (document.getElementById('vav-col') || {}).value; if(!id){ alert('Escolha o colaborador.'); return; }
+  const c = vocColabs.find(x => String(x.id) === id);
+  const v = k => { const el = document.getElementById(k); return el ? el.value.trim() : ''; };
+  const itens = {}; let sim = 0, nao = 0; const falhas = [];
+  VOC_CHECK.forEach((x, i) => { const r = v('vav-i' + i) || 'na'; itens[x] = r; if(r === 'sim') sim++; else if(r === 'nao'){ nao++; falhas.push(x); } });
+  if(!sim && !nao){ alert('Marque pelo menos um ponto observado.'); return; }
+  const pont = Math.round(sim / (sim + nao) * 100);
+  const nota = [v('vav-bem') ? '👏 ' + v('vav-bem') : '', v('vav-mel') ? '🔧 ' + v('vav-mel') : '', falhas.length ? 'A melhorar: ' + falhas.join('; ') : ''].filter(Boolean).join('\n');
+  const dados = {colaborador_id: Number(id), colaborador: c ? c.nome : '', tipo: 'avaliacao', pontuacao: pont, detalhe: {itens, reconhecer: v('vav-bem') || null, melhorar: v('vav-mel') || null}, regra: falhas[0] || null, nota: nota || null, data: v('vav-data') || dataLocalISO(new Date()), registado_por: currentUser ? currentUser.name : null};
+  try{ await sb('loja_voz_supervisao', {method:'POST', body: JSON.stringify(dados), prefer:'return=minimal'}); showToast(); vocRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function vocAssinou(id){
+  if(!vocPodeSupervisionar()){ alert('🔒 Só responsáveis de secção, gestores e a gestora podem registar assinaturas.'); return; }
+  const c = vocColabs.find(x => x.id === id); if(!c) return;
+  try{ await sb('loja_voz_supervisao', {method:'POST', body: JSON.stringify({colaborador_id: id, colaborador: c.nome, tipo: 'assinou', regra: 'Instrução de Trabalho — A Voz do Cliente', data: dataLocalISO(new Date()), registado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); showToast(); vocRefrescar(); }
   catch(e){ alert('Não consegui guardar.'); }
 }
 async function vocPlanoNovo(){
@@ -11965,7 +12139,7 @@ async function renderPainelCustos(){
   try{ await carregarResumoPainel(); }catch(e){}
   const [leit, eco, planos] = await Promise.all([
     sb('loja_agua_leituras?select=*&order=data.desc&limit=120').catch(()=>[]),
-    sb('loja_economato_registos?select=*&order=data.desc&limit=300').catch(()=>[]),
+    sb('loja_economato_custos?select=*&order=data.desc&limit=300').catch(()=>[]),
     sb('loja_plano_acao?area=eq.Custos&select=*&order=id.asc').catch(()=>[])
   ]);
   const r = resumoPainel || RESUMO_PADRAO; const C = r.custos || []; const M = r.meses || [];
@@ -12026,7 +12200,7 @@ async function renderPainelCustos(){
   </div>`;
   // 6) plano de ação dos custos
   h += `<div class="section-title">🎯 Plano de ação — custos <span class="count">· ${planos.filter(p => !/conclu/i.test(p.estado)).length} em curso</span></div><div class="card" style="padding:4px 12px;">
-    ${planos.length ? planos.map(p => `<div style="padding:8px 0;border-top:1px solid var(--line);${/conclu/i.test(p.estado) ? 'opacity:.55;' : ''}"><div style="font-size:13px;font-weight:700;${/conclu/i.test(p.estado) ? 'text-decoration:line-through;' : ''}">${rpEsc(p.ponto)}</div><div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${rpEsc(p.acao)}</div>${dona ? `<button class="econ-btn" style="margin-top:6px;padding:4px 10px;font-size:11.5px;" onclick="custoPlanoEstado(${p.id}, '${/conclu/i.test(p.estado) ? 'Pendente' : 'Concluído'}')">${/conclu/i.test(p.estado) ? '↺ Reabrir' : '✓ Concluído'}</button>` : ''}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0;">Ainda sem ações. ${dona ? 'Use as sugestões abaixo ou escreva a sua.' : ''}</div>`}
+    ${planos.length ? planos.map(p => `<div data-pa="${p.id}" class="${paFeito(p) ? 'pa-feito' : ''}" style="padding:8px 0;border-top:1px solid var(--line);"><div style="display:flex;justify-content:space-between;gap:8px;"><div class="pa-tit" style="font-size:13px;font-weight:700;">${rpEsc(p.ponto)}</div>${paEstadoHtml(p)}</div><div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${rpEsc(p.acao || '')}</div>${paAcoesHtml(p)}</div>`).join('') : `<div style="font-size:12.5px;color:var(--ink-soft);padding:8px 0;">Ainda sem ações. ${dona ? 'Use as sugestões abaixo ou escreva a sua.' : ''}</div>`}
     ${dona ? `<details style="margin:8px 0;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">➕ Nova ação</summary>
       <input id="cp-ponto" placeholder="Ponto (ex.: Luz +12% vs ${anoA})" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);margin:6px 0;">
       <textarea id="cp-acao" rows="2" placeholder="Ação (o quê, quem, até quando)" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);"></textarea>
@@ -12046,9 +12220,9 @@ async function ecoGuardar(){
   if(!soDona('registar o economato')) return;
   const data = (document.getElementById('eco-data')||{}).value; const t = String((document.getElementById('eco-valor')||{}).value||'').replace(/[€\s]/g,'').replace(',','.'); const v = Number(t);
   if(!data || !t || isNaN(v)){ alert('Escreva a data e o valor (€).'); return; }
-  try{ await sb('loja_economato_registos', {method:'POST', body: JSON.stringify({data, valor: v, descricao: (document.getElementById('eco-desc')||{}).value || null, criado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); }
+  try{ await sb('loja_economato_custos', {method:'POST', body: JSON.stringify({data, valor: v, descricao: (document.getElementById('eco-desc')||{}).value || null, criado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); showToast(); renderPainelCustos(); }catch(e){ alert('Não consegui guardar.'); }
 }
-async function ecoApagar(id){ if(!soDona('apagar registos') || !confirm('Apagar este registo?')) return; try{ await sb(`loja_economato_registos?id=eq.${id}`, {method:'DELETE'}); renderPainelCustos(); }catch(e){ alert('Não consegui apagar.'); } }
+async function ecoApagar(id){ if(!soDona('apagar registos') || !confirm('Apagar este registo?')) return; try{ await sb(`loja_economato_custos?id=eq.${id}`, {method:'DELETE'}); renderPainelCustos(); }catch(e){ alert('Não consegui apagar.'); } }
 async function custoPlanoNovo(){
   if(!soDona('criar ações')) return;
   const ponto = (document.getElementById('cp-ponto')||{}).value.trim(), acao = (document.getElementById('cp-acao')||{}).value.trim();
@@ -12478,7 +12652,20 @@ function rhBotaoUpload(tipo, texto){
 }
 
 // ===== Fundação Jerónimo Martins — inscrições na formação (cartão Recursos Humanos) =====
-let fundLista = [], fundLidos = [], fundFiltro = 'falta';
+let fundLista = [], fundLidos = [], fundFiltro = 'falta', fundTel = {}, fundEnviados = new Set();
+const FUND_LINK = 'https://www.fundacao-jeronimomartins.com/SelfRegister', FUND_PRAZO = '2026-10-20';
+function fundPrazoTxt(){ const d = new Date(FUND_PRAZO + 'T12:00:00'); return d.toLocaleDateString('pt-PT', {weekday:'long'}).replace('-feira','') + ', dia ' + FUND_PRAZO.slice(8,10) + '/' + FUND_PRAZO.slice(5,7); }
+function fundMensagem(nome){ const pn = String(nome || '').trim().split(/\s+/)[0] || ''; return `Olá${pn ? ' ' + pn : ''} 😊\nLembrete: tens de fazer a tua inscrição na formação da Fundação Jerónimo Martins até ${fundPrazoTxt()}.\n\nInscreve-te aqui: ${FUND_LINK}\n\nDepois de te inscreveres, avisa o teu responsável para ficar registado. Obrigada!\nConceição`; }
+async function fundLembrar(numero){
+  const p = fundLista.find(x => x.numero === numero); if(!p) return;
+  lemWhats(fundTel[String(numero).replace(/^0+/,'')] || '', fundMensagem(p.nome));
+  try{ await sb('loja_lembretes_log', {method:'POST', body: JSON.stringify({tipo:'fundacao', chave: numero, semana: FUND_PRAZO, enviado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); }catch(e){}
+  fundEnviados.add(numero); fundDesenhar();
+}
+function fundLembrarGrupo(){
+  const falta = fundLista.filter(p => p.no_ficheiro !== false && !p.registado).length;
+  lemWhats('', `Olá a todos 😊\nLembrete: quem ainda não fez a inscrição na formação da Fundação Jerónimo Martins tem de a fazer até ${fundPrazoTxt()}.\n\nInscrevam-se aqui: ${FUND_LINK}\n\nDepois de se inscreverem, avisem o vosso responsável para ficar registado. Faltam ${falta} pessoas. Obrigada!\nConceição`);
+}
 function fundPodeValidar(){ return !!(currentUser && ['gestora','area','responsavel'].includes(currentUser.role)); }
 function fundLerExcel(wb){
   const pess = {};
@@ -12560,19 +12747,26 @@ function fundDesenhar(){
   const porSec = {}; mostrar.forEach(p => { const s = p.secao || 'Sem secção'; (porSec[s] = porSec[s] || []).push(p); });
   const tab = (k, t) => `<button class="econ-btn${fundFiltro === k ? ' filled' : ''}" style="margin:0;" onclick="fundMudarFiltro('${k}')">${t}</button>`;
   const dt = iso => iso ? new Date(iso).toLocaleDateString('pt-PT') : '';
-  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+  const diasPrazo = Math.round((new Date(FUND_PRAZO + 'T23:59:00') - new Date()) / 864e5);
+  el.innerHTML = `<div style="background:${diasPrazo < 0 ? '#FBE3DE' : '#FFF4D6'};border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:12.5px;">⏰ <b>Prazo de inscrição: ${fundPrazoTxt()}</b>${diasPrazo >= 0 ? ` · ${diasPrazo === 0 ? 'é hoje' : 'faltam ' + diasPrazo + (diasPrazo === 1 ? ' dia' : ' dias')}` : ' · prazo terminado'}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"><a class="econ-btn" style="margin:0;text-decoration:none;" href="${FUND_LINK}" target="_blank" rel="noopener">🔗 Página de inscrição</a>${souDona() && tot - ok > 0 ? `<button class="econ-btn filled" style="margin:0;" onclick="fundLembrarGrupo()">📲 Lembrete para o grupo</button>` : ''}</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
       <div><span style="font-size:28px;font-weight:800;color:${pct >= 100 ? 'var(--green)' : pct >= 50 ? '#C77F12' : 'var(--red)'};">${ok}</span><span style="font-size:14px;color:var(--ink-soft);"> de ${tot} inscritos</span></div><b style="font-size:15px;">${pct}%</b></div>
     <div style="height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:6px 0 10px;"><div style="height:100%;width:${pct}%;background:var(--green);"></div></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${tab('falta', `⏳ Por inscrever (${tot - ok})`)}${tab('ok', `✅ Inscritos (${ok})`)}${tab('todos', `Todos (${tot})`)}</div>
     ${mostrar.length ? Object.keys(porSec).sort((a,b) => a.localeCompare(b,'pt')).map(s => `<div style="font-size:11.5px;font-weight:800;color:var(--navy);margin:10px 0 2px;text-transform:uppercase;letter-spacing:.3px;">${rpEsc(s)} · ${porSec[s].length}</div>` + porSec[s].map(p => `
       <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);">
         ${pode ? `<input type="checkbox" ${p.registado ? 'checked' : ''} style="width:22px;height:22px;flex:none;accent-color:#1F7A33;" onchange="fundValidar('${p.numero}', this.checked)" aria-label="Inscrito">` : `<span style="width:22px;flex:none;text-align:center;">${p.registado ? '✅' : '⏳'}</span>`}
-        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">${rpEsc(p.nome)}</div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">${rpEsc(p.nome)}${!p.registado && fundEnviados.has(p.numero) ? ' <span style="font-size:10.5px;color:var(--green);font-weight:700;">· lembrete enviado</span>' : ''}</div>
           <div style="font-size:11px;color:var(--ink-soft);">${rpEsc(p.funcao || '')}${p.registado && p.validado_por ? ` · ✓ ${rpEsc(p.validado_por)}${p.validado_em ? ' em ' + dt(p.validado_em) : ''}` : ''}</div></div>
+        ${!p.registado && souDona() ? `<button class="lem-w" style="flex:none;" onclick="fundLembrar('${p.numero}')" aria-label="Enviar lembrete por WhatsApp">📲 ${fundEnviados.has(p.numero) ? 'De novo' : 'Lembrar'}</button>` : ''}
       </div>`).join('')).join('') : `<div style="font-size:13px;color:var(--green);padding:6px 0;">${fundFiltro === 'falta' ? '🎉 Estão todos inscritos!' : 'Ninguém nesta lista.'}</div>`}`;
 }
 async function blocoFundacao(){
   try{ fundLista = await sb('loja_fundacao_registos?select=*&order=nome.asc') || []; }catch(e){ fundLista = []; }
+  try{ const [tels, env] = await Promise.all([sb('loja_colaboradores?select=numero_pessoal,telefone').catch(()=>[]), sb(`loja_lembretes_log?tipo=eq.fundacao&semana=eq.${FUND_PRAZO}&select=chave`).catch(()=>[])]);
+    fundTel = {}; (tels || []).forEach(c => { if(c.telefone) fundTel[String(c.numero_pessoal || '').replace(/\D/g,'').replace(/^0+/,'')] = c.telefone; });
+    fundEnviados = new Set((env || []).map(x => x.chave)); }catch(e){}
   let h = `<div class="section-title">🎓 Formação Fundação Jerónimo Martins — inscrições</div>`;
   if(souDona()) h += `<div class="card" style="margin-bottom:10px;"><input type="file" id="fund-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="fundCarregar(this)">
     <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#fund-fich')||document.getElementById('fund-fich')).click()">📎 Atualizar ficheiro de inscrições (Excel)</button>
