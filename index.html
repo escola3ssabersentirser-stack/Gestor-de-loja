@@ -2214,9 +2214,9 @@ function renderPainelResumo(){
       <div id="rp-datas" class="rp-datas"></div>
     </div>
     <div class="rp-acoes">
-      ${souDona() ? `<button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar ficheiros do dia</button>
-      <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls" multiple class="hidden" onchange="importarFicheirosDia(this)">
-      <div id="rp-estado" class="rp-estado">Pode escolher vários ficheiros de uma vez</div>` : ''}
+      ${souDona() ? `<button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar relatórios</button>
+      <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls,.csv,.pdf,.docx,.txt,.eml" multiple class="hidden" onchange="importarFicheirosDia(this)">
+      <div id="rp-estado" class="rp-estado">Escolha os ficheiros de uma vez (Excel, PDF ou Word): a app descobre o que é cada um e envia para o cartão certo.</div>` : ''}
     </div>
   </div>
   <div id="rp-lembretes"></div>
@@ -2894,7 +2894,57 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades'};
+const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+  indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
+  aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
+  contactos:'Contactos da equipa → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
+// ---------- outros relatórios: a app descobre o tipo e envia para o cartão certo ----------
+function impTipoExtra(wb, nome){
+  const t = (fn) => { try{ return fn(); }catch(e){ return null; } };
+  if(t(() => indLerExcel(wb))) return 'indrh';
+  if((t(() => rhLerGozoBH(wb)) || []).length) return 'gozo';
+  if((t(() => horLerExcel(wb)) || []).length) return 'horarios';
+  if((t(() => repLerExcel(wb)) || []).length) return 'reposicao';
+  if(t(() => aquiLerExcel(wb, nome))) return 'aqui';
+  const temFund = /funda/i.test(nome) || wb.SheetNames.some(n => { const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:''}); return R.slice(0, 4).some(r => r.some(c => /funda[çc][ãa]o/i.test(String(c)))); });
+  if(temFund && (t(() => fundLerExcel(wb)) || []).length) return 'fundacao';
+  if((t(() => rhLerBancoHoras(wb)) || []).length) return 'bancohoras';
+  if((t(() => rhLerFormacoes(wb)) || []).length) return 'formacoes';
+  if((t(() => ctLerExcel(wb)) || []).length) return 'contactos';
+  return null;
+}
+function impTipoTexto(texto, nome){
+  const tx = String(texto || '');
+  if(/score mensal/i.test(tx) && /validades/i.test(tx)) return 'scorevalidades';
+  if(/informa[çc][ãa]o de neg[óo]cio/i.test(nome + ' ' + tx.slice(0, 800))) return 'infoneg';
+  try{ if(audDetetarTipo(tx, nome)) return 'auditoria'; }catch(e){}
+  return null;
+}
+// corre o carregamento próprio de cada cartão com o ficheiro e guarda logo
+async function impExtraCorrer(tipo, f){
+  const falso = {files: [f], value: ''};
+  const caixa = id => { let el = document.getElementById(id); if(!el){ el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); } el.innerHTML = ''; return el; };
+  const cfg = {
+    indrh: ['ind-estado', () => indCarregar(falso)],
+    gozo: ['rh-estado-bh', async () => { await rhCarregar(falso, 'bh'); if(rhGozo && rhGozo.length) await rhGuardarGozo(); }],
+    bancohoras: ['rh-estado-bh', async () => { await rhCarregar(falso, 'bh'); if(rhLidos && rhLidos.tipo === 'bh') await rhGuardar(); }],
+    formacoes: ['rh-estado-form', async () => { await rhCarregar(falso, 'form'); if(rhLidos && rhLidos.tipo === 'form') await rhGuardar(); }],
+    horarios: ['hor-estado', async () => { horLidos = []; await horCarregar(falso); if(horLidos && horLidos.length) await horGuardarLidos(); }],
+    reposicao: ['rep-estado', () => repCarregar(falso)],
+    aqui: ['aqui-estado', () => aquiCarregar(falso)],
+    fundacao: ['fund-estado', async () => { fundLidos = []; await fundCarregar(falso); if(fundLidos && fundLidos.length) await fundGuardar(); }],
+    contactos: ['ct-estado', async () => { ctLidos = []; await ctCarregar(falso); if(ctLidos && ctLidos.length) await ctGuardar(); }],
+    auditoria: ['aud-auto-estado', () => audCarregarAuto(falso)],
+    scorevalidades: ['val-score-estado', () => valCarregarFicheiro(falso)],
+    infoneg: ['info-neg-estado', () => infoNegCarregar(falso)]
+  }[tipo];
+  if(!cfg) throw new Error('tipo desconhecido');
+  const el = caixa(cfg[0]);
+  await cfg[1]();
+  const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  if(/^✕/.test(txt)) throw new Error(txt.replace(/^✕\s*/, ''));
+  return txt ? txt.slice(0, 160) : 'Enviado para o cartão';
+}
 
 let impResHTML = '';
 function escolherFicheirosDia(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
@@ -2917,18 +2967,27 @@ async function importarFicheirosDia(input){
   for(const f of ficheiros){
     const l = {nome: f.name, tipo: '?', msg: 'a ler…', ok: null}; linhas.push(l);
     try{
+      if(!/\.(xlsx|xlsm|xls|csv)$/i.test(f.name)){
+        let texto = '';
+        try{ texto = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); }catch(e){}
+        const tt = impTipoTexto(texto, f.name);
+        if(!tt){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Não percebi que relatório é. Carregue-o no cartão certo.'; continue; }
+        l.tipo = IMP_NOMES[tt]; lidos.push({l, extra: tt, f, tipo: tt, nome: f.name}); continue;
+      }
       const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
-      const tipo = impTipo(wb);
+      let tipo = impTipo(wb);
+      if(!tipo){ const te = impTipoExtra(wb, f.name); if(te){ l.tipo = IMP_NOMES[te]; lidos.push({l, extra: te, f, tipo: te, nome: f.name}); continue; } }
       if(tipo === 'naousado'){ l.ok = 'skip'; l.tipo = 'Não é preciso'; l.msg = 'A app agora só usa vendas e quebras — este ficheiro foi ignorado.'; continue; }
-      if(!tipo){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Este ficheiro não é nenhum dos relatórios que a app conhece.'; continue; }
+      if(!tipo){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Este ficheiro não é nenhum dos relatórios que a app conhece. Envie-o ao Claude para a app aprender a lê-lo.'; continue; }
       l.tipo = IMP_NOMES[tipo]; lidos.push({l, wb, tipo, nome: f.name, data: f.lastModified});
     }catch(e){ l.ok = false; l.tipo = 'Erro a ler'; l.msg = String(e && e.message || e); }
   }
   mostrar(false);
-  lidos.sort((a,b)=>ordem[a.tipo]-ordem[b.tipo]);
+  lidos.sort((a,b)=>(ordem[a.tipo] || 7)-(ordem[b.tipo] || 7));
   for(const x of lidos){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
+      if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
       const fn = {bomdia: impBomDia, markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -12593,7 +12652,20 @@ function rhBotaoUpload(tipo, texto){
 }
 
 // ===== Fundação Jerónimo Martins — inscrições na formação (cartão Recursos Humanos) =====
-let fundLista = [], fundLidos = [], fundFiltro = 'falta';
+let fundLista = [], fundLidos = [], fundFiltro = 'falta', fundTel = {}, fundEnviados = new Set();
+const FUND_LINK = 'https://www.fundacao-jeronimomartins.com/SelfRegister', FUND_PRAZO = '2026-10-20';
+function fundPrazoTxt(){ const d = new Date(FUND_PRAZO + 'T12:00:00'); return d.toLocaleDateString('pt-PT', {weekday:'long'}).replace('-feira','') + ', dia ' + FUND_PRAZO.slice(8,10) + '/' + FUND_PRAZO.slice(5,7); }
+function fundMensagem(nome){ const pn = String(nome || '').trim().split(/\s+/)[0] || ''; return `Olá${pn ? ' ' + pn : ''} 😊\nLembrete: tens de fazer a tua inscrição na formação da Fundação Jerónimo Martins até ${fundPrazoTxt()}.\n\nInscreve-te aqui: ${FUND_LINK}\n\nDepois de te inscreveres, avisa o teu responsável para ficar registado. Obrigada!\nConceição`; }
+async function fundLembrar(numero){
+  const p = fundLista.find(x => x.numero === numero); if(!p) return;
+  lemWhats(fundTel[String(numero).replace(/^0+/,'')] || '', fundMensagem(p.nome));
+  try{ await sb('loja_lembretes_log', {method:'POST', body: JSON.stringify({tipo:'fundacao', chave: numero, semana: FUND_PRAZO, enviado_por: currentUser ? currentUser.name : null}), prefer:'return=minimal'}); }catch(e){}
+  fundEnviados.add(numero); fundDesenhar();
+}
+function fundLembrarGrupo(){
+  const falta = fundLista.filter(p => p.no_ficheiro !== false && !p.registado).length;
+  lemWhats('', `Olá a todos 😊\nLembrete: quem ainda não fez a inscrição na formação da Fundação Jerónimo Martins tem de a fazer até ${fundPrazoTxt()}.\n\nInscrevam-se aqui: ${FUND_LINK}\n\nDepois de se inscreverem, avisem o vosso responsável para ficar registado. Faltam ${falta} pessoas. Obrigada!\nConceição`);
+}
 function fundPodeValidar(){ return !!(currentUser && ['gestora','area','responsavel'].includes(currentUser.role)); }
 function fundLerExcel(wb){
   const pess = {};
@@ -12675,19 +12747,26 @@ function fundDesenhar(){
   const porSec = {}; mostrar.forEach(p => { const s = p.secao || 'Sem secção'; (porSec[s] = porSec[s] || []).push(p); });
   const tab = (k, t) => `<button class="econ-btn${fundFiltro === k ? ' filled' : ''}" style="margin:0;" onclick="fundMudarFiltro('${k}')">${t}</button>`;
   const dt = iso => iso ? new Date(iso).toLocaleDateString('pt-PT') : '';
-  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+  const diasPrazo = Math.round((new Date(FUND_PRAZO + 'T23:59:00') - new Date()) / 864e5);
+  el.innerHTML = `<div style="background:${diasPrazo < 0 ? '#FBE3DE' : '#FFF4D6'};border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:12.5px;">⏰ <b>Prazo de inscrição: ${fundPrazoTxt()}</b>${diasPrazo >= 0 ? ` · ${diasPrazo === 0 ? 'é hoje' : 'faltam ' + diasPrazo + (diasPrazo === 1 ? ' dia' : ' dias')}` : ' · prazo terminado'}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"><a class="econ-btn" style="margin:0;text-decoration:none;" href="${FUND_LINK}" target="_blank" rel="noopener">🔗 Página de inscrição</a>${souDona() && tot - ok > 0 ? `<button class="econ-btn filled" style="margin:0;" onclick="fundLembrarGrupo()">📲 Lembrete para o grupo</button>` : ''}</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
       <div><span style="font-size:28px;font-weight:800;color:${pct >= 100 ? 'var(--green)' : pct >= 50 ? '#C77F12' : 'var(--red)'};">${ok}</span><span style="font-size:14px;color:var(--ink-soft);"> de ${tot} inscritos</span></div><b style="font-size:15px;">${pct}%</b></div>
     <div style="height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:6px 0 10px;"><div style="height:100%;width:${pct}%;background:var(--green);"></div></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${tab('falta', `⏳ Por inscrever (${tot - ok})`)}${tab('ok', `✅ Inscritos (${ok})`)}${tab('todos', `Todos (${tot})`)}</div>
     ${mostrar.length ? Object.keys(porSec).sort((a,b) => a.localeCompare(b,'pt')).map(s => `<div style="font-size:11.5px;font-weight:800;color:var(--navy);margin:10px 0 2px;text-transform:uppercase;letter-spacing:.3px;">${rpEsc(s)} · ${porSec[s].length}</div>` + porSec[s].map(p => `
       <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);">
         ${pode ? `<input type="checkbox" ${p.registado ? 'checked' : ''} style="width:22px;height:22px;flex:none;accent-color:#1F7A33;" onchange="fundValidar('${p.numero}', this.checked)" aria-label="Inscrito">` : `<span style="width:22px;flex:none;text-align:center;">${p.registado ? '✅' : '⏳'}</span>`}
-        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">${rpEsc(p.nome)}</div>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">${rpEsc(p.nome)}${!p.registado && fundEnviados.has(p.numero) ? ' <span style="font-size:10.5px;color:var(--green);font-weight:700;">· lembrete enviado</span>' : ''}</div>
           <div style="font-size:11px;color:var(--ink-soft);">${rpEsc(p.funcao || '')}${p.registado && p.validado_por ? ` · ✓ ${rpEsc(p.validado_por)}${p.validado_em ? ' em ' + dt(p.validado_em) : ''}` : ''}</div></div>
+        ${!p.registado && souDona() ? `<button class="lem-w" style="flex:none;" onclick="fundLembrar('${p.numero}')" aria-label="Enviar lembrete por WhatsApp">📲 ${fundEnviados.has(p.numero) ? 'De novo' : 'Lembrar'}</button>` : ''}
       </div>`).join('')).join('') : `<div style="font-size:13px;color:var(--green);padding:6px 0;">${fundFiltro === 'falta' ? '🎉 Estão todos inscritos!' : 'Ninguém nesta lista.'}</div>`}`;
 }
 async function blocoFundacao(){
   try{ fundLista = await sb('loja_fundacao_registos?select=*&order=nome.asc') || []; }catch(e){ fundLista = []; }
+  try{ const [tels, env] = await Promise.all([sb('loja_colaboradores?select=numero_pessoal,telefone').catch(()=>[]), sb(`loja_lembretes_log?tipo=eq.fundacao&semana=eq.${FUND_PRAZO}&select=chave`).catch(()=>[])]);
+    fundTel = {}; (tels || []).forEach(c => { if(c.telefone) fundTel[String(c.numero_pessoal || '').replace(/\D/g,'').replace(/^0+/,'')] = c.telefone; });
+    fundEnviados = new Set((env || []).map(x => x.chave)); }catch(e){}
   let h = `<div class="section-title">🎓 Formação Fundação Jerónimo Martins — inscrições</div>`;
   if(souDona()) h += `<div class="card" style="margin-bottom:10px;"><input type="file" id="fund-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="fundCarregar(this)">
     <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#fund-fich')||document.getElementById('fund-fich')).click()">📎 Atualizar ficheiro de inscrições (Excel)</button>
