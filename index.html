@@ -7633,6 +7633,83 @@ function planoLabelSemana(p){
   const d = new Date(ano, Number(m[2]) - 1, Number(m[1]), 12);
   return `Semana ${numeroSemanaISO(d)} · ${rpEsc(t)}`;
 }
+// ===== Plano semanal: valores a cumprir (loja e secções) =====
+async function planoValoresDados(){
+  const hoje = new Date(); const seg = new Date(hoje); seg.setDate(hoje.getDate() - ((hoje.getDay() + 6) % 7));
+  const segIso = dataLocalISO(seg);
+  const [painel, obj, inv, score, md, alertas, repet] = await Promise.all([
+    sb('loja_resumo_painel?id=eq.1&select=dados').catch(()=>[]),
+    sb('loja_objetivos?select=dados&limit=1').catch(()=>[]),
+    sb(`loja_resultado_diario_secao?data=gte.${segIso}&resultado_inventario=not.is.null&select=secao,data,resultado_inventario`).catch(()=>[]),
+    sb('loja_validades_score?select=dados&order=ano.desc,data_atualizacao.desc.nullslast&limit=1').catch(()=>[]),
+    sb('loja_markdown_pct_divisao?select=divisao,pct_nao_realizado_valor,mes_referencia&order=pct_nao_realizado_valor.desc').catch(()=>[]),
+    sb('loja_alertas_quebra_artigo?resolvido=eq.false&select=secao,descricao,valor_quebra&order=valor_quebra.desc&limit=60').catch(()=>[]),
+    sb('loja_artigos_repetidos?select=descricao,secao,repeticoes&order=repeticoes.desc&limit=20').catch(()=>[])
+  ]);
+  const P = (painel && painel[0] && painel[0].dados) || {};
+  const O = (obj && obj[0] && obj[0].dados) || {};
+  const secs = (P.secoes || []).filter(x => x.real || x.q);
+  const vendas = secs.reduce((t, x) => t + (Number(x.real) || 0), 0), quebra = secs.reduce((t, x) => t + (Number(x.q) || 0), 0);
+  const invSec = {}; (inv || []).forEach(r => { invSec[r.secao] = (invSec[r.secao] || 0) + Number(r.resultado_inventario); });
+  const mcQ = (P.mes_curso || []).find(x => /Quebra em %/i.test(x.ind || '')), mcE = (P.mes_curso || []).find(x => /^Quebra \(€\)/i.test(x.ind || ''));
+  const qpOficial = mcQ && mcQ.atual != null ? (Math.abs(mcQ.atual) < 1 ? Math.abs(mcQ.atual) * 100 : Math.abs(mcQ.atual)) : null;
+  return {segIso, quebraObj: O.quebra_obj || 1.96, lojaQp: qpOficial != null ? qpOficial : (vendas ? quebra / vendas * 100 : null), lojaQ: mcE && mcE.atual != null ? Math.abs(mcE.atual) : quebra, secs, invSec,
+    score: (score && score[0] && score[0].dados) || null, md: md || [], alertas: alertas || [], repet: repet || []};
+}
+function planoValoresHtml(d){
+  const pct = (v, c = 2) => v == null || isNaN(v) ? '—' : Number(v).toLocaleString('pt-PT', {minimumFractionDigits: c, maximumFractionDigits: c}) + '%';
+  const eur = v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString('pt-PT') + ' €';
+  const cor = (ok) => ok == null ? 'var(--ink)' : ok ? 'var(--green)' : 'var(--red)';
+  const tab = (cab, linhas) => `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;"><thead><tr>${cab.map((c, i) => `<th style="text-align:${i ? 'right' : 'left'};padding:4px 3px;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-soft);">${c}</th>`).join('')}</tr></thead><tbody>${linhas.join('')}</tbody></table>`;
+  const tr = (cels, forte) => `<tr style="${forte ? 'font-weight:800;background:#F2F7EC;' : ''}border-top:1px solid var(--line);">${cels.map((c, i) => `<td style="padding:5px 3px;text-align:${i ? 'right' : 'left'};">${c}</td>`).join('')}</tr>`;
+  const bloco = (tit, corpo) => `<details open style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--navy);padding:4px 0;">${tit}</summary>${corpo}</details>`;
+  let h = `<div class="section-title">🎯 Valores a cumprir esta semana — loja e secções</div><div class="card">`;
+  // 1) quebra
+  const qs = d.secs.filter(x => x.q != null).sort((a, b) => (b.q || 0) - (a.q || 0));
+  h += bloco(`📉 Quebra do mês · objetivo ${pct(d.quebraObj)}`, tab(['Secção', 'Quebra €', '% vendas', 'Ano passado'], [
+    tr(['Loja', eur(d.lojaQ), `<b style="color:${cor(d.lojaQp == null ? null : d.lojaQp <= d.quebraObj)};">${pct(d.lojaQp)}</b>`, '—'], true),
+    ...qs.slice(0, 12).map(x => tr([rpEsc(x.sec), eur(x.q), `<span style="color:${cor(x.qp_aa == null ? null : x.qp <= x.qp_aa)};">${pct(x.qp * 100)}</span>`, pct(x.qp_aa == null ? null : x.qp_aa * 100)]))
+  ]) + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:3px;">Verde = melhor ou igual ao ano passado · vermelho = pior.</div>`);
+  // 2) inventário da semana
+  const invL = Object.entries(d.invSec).filter(([s]) => !INV_CATEGORIAS.includes(s));
+  const invC = Object.entries(d.invSec).filter(([s]) => INV_CATEGORIAS.includes(s));
+  const invTot = invL.reduce((t, [, v]) => t + v, 0);
+  h += bloco(`📋 Resultados de inventário · semana desde ${d.segIso.slice(8, 10)}/${d.segIso.slice(5, 7)}`, invL.length || invC.length ? tab(['Secção', 'Resultado'], [
+    tr(['Loja', `<span style="color:${cor(invTot >= 0)};">${eur(invTot)}</span>`], true),
+    ...invL.sort((a, b) => a[1] - b[1]).map(([s, v]) => tr([rpEsc(labelSecaoPainel(s)), `<span style="color:${cor(v >= 0)};">${eur(v)}</span>`])),
+    ...invC.sort((a, b) => a[1] - b[1]).map(([s, v]) => tr(['↳ ' + rpEsc(s), `<span style="color:${cor(v >= 0)};">${eur(v)}</span>`]))
+  ]) : '<div style="font-size:12px;color:var(--ink-soft);padding:4px 0;">Ainda sem resultados de inventário registados esta semana.</div>');
+  // 3) score validades
+  const S = d.score;
+  h += bloco(`🏅 Score de validades${S && S.mes ? ' · ' + rpEsc(S.mes) : ''}`, S ? tab(['Secção', 'Execução', 'Aceitação', 'Não realizado'], [
+    tr([`Loja · score <b>${pct(S.score, 1)}</b>${S.posicao ? ' · ' + S.posicao + 'º' : ''}`, pct(S.execucao, 1), pct(S.aceitacao, 1), pct(S.mnr_pct, 1)], true),
+    ...(S.secoes || []).filter(x => x.aceitacao != null || x.execucao != null).map(x => tr([rpEsc(x.secao), `<span style="color:${cor(x.execucao == null ? null : x.execucao >= 98)};">${pct(x.execucao, 1)}</span>`, `<span style="color:${cor(x.aceitacao == null ? null : x.aceitacao >= 80)};">${pct(x.aceitacao, 1)}</span>`, `<span style="color:${cor(x.nao_realizado == null ? null : x.nao_realizado <= 5)};">${pct(x.nao_realizado, 1)}</span>`]))
+  ]) : '<div style="font-size:12px;color:var(--ink-soft);padding:4px 0;">Sem score carregado.</div>');
+  // 4) markdown
+  h += bloco('🏷️ Markdown — % não realizado por divisão', d.md.length ? tab(['Divisão', 'Não realizado'], d.md.slice(0, 10).map(x => tr([rpEsc(x.divisao), `<span style="color:${cor(x.pct_nao_realizado_valor <= 2)};">${pct(x.pct_nao_realizado_valor)}</span>`]))) : '<div style="font-size:12px;color:var(--ink-soft);padding:4px 0;">Sem dados de markdown.</div>');
+  // 5) artigos problemáticos
+  const porSec = {}; d.alertas.forEach(a => { const k = a.secao || 'Sem secção'; (porSec[k] = porSec[k] || []).push(a); });
+  const top = S && S.artigos ? S.artigos.slice(0, 5) : [];
+  h += bloco(`⚠️ Artigos problemáticos (${d.alertas.length})`, (Object.keys(porSec).length ? Object.entries(porSec).sort((a, b) => b[1].length - a[1].length).map(([sec, arr]) => `<div style="padding:5px 0;border-top:1px solid var(--line);font-size:12px;"><b>${rpEsc(sec)} · ${arr.length}</b><div style="color:var(--ink-soft);">${arr.slice(0, 5).map(a => rpEsc(a.descricao) + (a.valor_quebra ? ' (' + eur(a.valor_quebra) + ')' : '')).join(' · ')}</div></div>`).join('') : '<div style="font-size:12px;color:var(--green);padding:4px 0;">✓ Sem artigos com quebra por tratar.</div>')
+    + (top.length ? `<div style="font-size:12px;margin-top:6px;"><b>Mais markdown quebrado (score validades):</b> ${top.map(a => rpEsc(a.artigo) + ' ' + eur(a.md_quebrado)).join(' · ')}</div>` : '')
+    + (d.repet.length ? `<div style="font-size:12px;margin-top:6px;"><b>Artigos sem vendas repetidos:</b> ${d.repet.slice(0, 5).map(a => rpEsc(a.descricao)).join(' · ')}</div>` : ''));
+  return h + `</div>`;
+}
+function planoValoresTexto(d){
+  const pct = (v, c = 2) => v == null || isNaN(v) ? '—' : Number(v).toFixed(c).replace('.', ',') + '%';
+  const eur = v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString('pt-PT') + ' €';
+  const L = ['🎯 Valores a cumprir esta semana'];
+  L.push(`📉 Quebra do mês: loja ${pct(d.lojaQp)} (objetivo ${pct(d.quebraObj)})`);
+  d.secs.filter(x => x.q != null).sort((a, b) => (b.q || 0) - (a.q || 0)).slice(0, 8).forEach(x => L.push(`   ${x.sec}: ${eur(x.q)} · ${pct(x.qp * 100)}`));
+  const inv = Object.entries(d.invSec).filter(([s]) => !INV_CATEGORIAS.includes(s));
+  L.push(`📋 Inventário da semana: loja ${eur(inv.reduce((t, [, v]) => t + v, 0))}`);
+  Object.entries(d.invSec).forEach(([s, v]) => L.push(`   ${INV_CATEGORIAS.includes(s) ? '↳ ' : ''}${labelSecaoPainel(s)}: ${eur(v)}`));
+  if(d.score) L.push(`🏅 Score validades: ${pct(d.score.score, 1)} · execução ${pct(d.score.execucao, 1)} · aceitação ${pct(d.score.aceitacao, 1)} · não realizado ${pct(d.score.mnr_pct, 1)}`);
+  if(d.md.length) L.push('🏷️ Markdown não realizado: ' + d.md.slice(0, 5).map(x => `${x.divisao} ${pct(x.pct_nao_realizado_valor)}`).join(' · '));
+  if(d.alertas.length) L.push(`⚠️ Artigos problemáticos: ${d.alertas.length} — ` + d.alertas.slice(0, 6).map(a => `${a.descricao}${a.secao ? ' (' + a.secao + ')' : ''}`).join(' · '));
+  return L.join('\n');
+}
+
 async function renderPlanoSemanal(){
   const wrap = document.getElementById('plano-semanal-wrap');
   const [rows, ns] = await Promise.all([sb('loja_plano_semana?select=*&order=id.desc&limit=5'), numerosSemanaAtual()]);
@@ -7648,6 +7725,7 @@ async function renderPlanoSemanal(){
     ${ns.plano.info ? `<div style="font-size:12px;color:var(--ink);margin:6px 0 10px;white-space:pre-line;"><b>📰 ${rpEsc(ns.plano.info.semana || 'Informação de negócio')}:</b> ${rpEsc(String(ns.plano.info.resumo||'').slice(0, 300))}${String(ns.plano.info.resumo||'').length > 300 ? '…' : ''}</div>` : `<div style="font-size:12px;color:#B4231A;margin:6px 0 10px;">⚠️ Ainda não foi carregada a informação de negócio da Semana ${ns.plano.semanaN}.</div>`}
     ${podeCriar && !daSemana ? `<button class="btn-primary" style="margin:0;" onclick="criarPlanoSemanal()">+ Fazer o plano da ${ns.plano.label.split(' · ')[0]}</button>` : ''}
   </div>`;
+  try{ html += planoValoresHtml(await planoValoresDados()); }catch(e){ console.error('valores plano', e); }
   if(podeCriar && daSemana){
     html += `<button class="btn-primary" style="margin:0 0 10px;" onclick="criarPlanoSemanal()">+ Novo Plano da Semana</button>`;
   }
@@ -7937,6 +8015,7 @@ async function guardarPlanoSemanalModal(){
 }
 
 async function gerarPlanoSemanalWord(semana, contexto, acoesTexto, assinaturaGestora, assinaturasSecao){
+  try{ contexto = String(contexto || '') + '\n\n' + planoValoresTexto(await planoValoresDados()); }catch(e){}
   const paragrafosContexto = contexto.split('\n').map(linha =>
     `<p style="margin:2pt 0;${/^[📅📊🎯💰📉🏷️⏰🎓🛒]/.test(linha)?'font-weight:bold;':''}">${escaparHtmlDoc(linha) || '&nbsp;'}</p>`
   ).join('');
