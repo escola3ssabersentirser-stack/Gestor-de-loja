@@ -2897,7 +2897,7 @@ async function impResumo(wb, nomeFicheiro){
 const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
-  contactos:'Contactos da equipa → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
+  contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
 // ---------- outros relatórios: a app descobre o tipo e envia para o cartão certo ----------
 function impTipoExtra(wb, nome){
   const t = (fn) => { try{ return fn(); }catch(e){ return null; } };
@@ -2910,6 +2910,7 @@ function impTipoExtra(wb, nome){
   if(temFund && (t(() => fundLerExcel(wb)) || []).length) return 'fundacao';
   if((t(() => rhLerBancoHoras(wb)) || []).length) return 'bancohoras';
   if((t(() => rhLerFormacoes(wb)) || []).length) return 'formacoes';
+  if((t(() => dpLerExcel(wb)) || []).length) return 'dadospessoais';
   if((t(() => ctLerExcel(wb)) || []).length) return 'contactos';
   return null;
 }
@@ -2936,7 +2937,8 @@ async function impExtraCorrer(tipo, f){
     contactos: ['ct-estado', async () => { ctLidos = []; await ctCarregar(falso); if(ctLidos && ctLidos.length) await ctGuardar(); }],
     auditoria: ['aud-auto-estado', () => audCarregarAuto(falso)],
     scorevalidades: ['val-score-estado', () => valCarregarFicheiro(falso)],
-    infoneg: ['info-neg-estado', () => infoNegCarregar(falso)]
+    infoneg: ['info-neg-estado', () => infoNegCarregar(falso)],
+    dadospessoais: ['dp-estado', async () => { const wb = XLSX.read(await f.arrayBuffer(), {type:'array'}); fim = await dpGuardar(dpLerExcel(wb)); }]
   }[tipo];
   if(!cfg) throw new Error('tipo desconhecido');
   const el = caixa(cfg[0]);
@@ -12884,12 +12886,57 @@ function ctEncontrar(x, colabs){
   return colabs.filter(k => { const t = ctNorm(k.nome).split(' '); let j = 0; for(const w of p){ j = t.indexOf(w, j); if(j < 0) return false; j++; } return p.length > 0 && t[0] === p[0] || (p.length > 1 && t[t.length-1] === p[p.length-1] && t.includes(p[0])); });
 }
 let ctLidos = [];
+// ===== Dados pessoais (telefone, data de nascimento/aniversário, emails) — qualquer Excel com estas colunas =====
+function dpLerExcel(wb){
+  const pess = {};
+  for(const n of wb.SheetNames){
+    const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
+    const hi = R.findIndex((r,i) => i < 15 && r.some(c => /telefone|telem[oó]vel|nascim|e-?mail|endere[çc]o de mail/i.test(String(c))) && r.some(c => /nome|pessoal|conhecido|colaborador/i.test(String(c))));
+    if(hi < 0) continue;
+    const H = R[hi].map(c => String(c).trim().toLowerCase());
+    const ci = re => H.findIndex(h => re.test(h));
+    const cTel = ci(/telefone|telem/), cNasc = ci(/nascim/), cMail = ci(/mail/);
+    let cNome = ci(/nome|conhecido/), cNum = ci(/n\.?\s*º?\s*(pess|colab)|numero|número/);
+    // às vezes a coluna "Nº pessoal" traz o nome
+    const amostra = R.slice(hi+1, hi+6).map(r => String(r[cNum] || ''));
+    if(cNome < 0 && cNum >= 0 && amostra.some(v => /[a-zà-ú]{3}/i.test(v))){ cNome = cNum; cNum = -1; }
+    if(cNome < 0) continue;
+    for(let i = hi+1; i < R.length; i++){ const r = R[i]; const nome = String(r[cNome] || '').trim(); if(!nome) continue;
+      const num = cNum >= 0 ? String(r[cNum] || '').replace(/\D/g,'') : '';
+      const o = pess[num || nome] = pess[num || nome] || {nome, numero: num, emails: []};
+      if(cTel >= 0){ const t = ctTelefone(r[cTel]); if(t) o.tel = t; }
+      if(cNasc >= 0 && r[cNasc] !== ''){ const d = horIso(r[cNasc]); if(d) o.nasc = d; }
+      if(cMail >= 0){ const m = String(r[cMail] || '').trim().toLowerCase(); if(/@/.test(m)) o.emails.push(m); }
+    }
+  }
+  return Object.values(pess).filter(p => p.tel || p.nasc || p.emails.length);
+}
+async function dpGuardar(lista){
+  if(!soDona('atualizar os dados dos colaboradores')) return '';
+  const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome,telefone') || [];
+  let ok = 0; const falta = [];
+  for(const x of lista){
+    const m = ctEncontrar(x, colabs); if(m.length !== 1){ falta.push(x.nome + (m.length > 1 ? ' (mais do que uma pessoa)' : '')); continue; }
+    const dados = {};
+    if(x.tel) dados.telefone = x.tel;
+    if(x.nasc){ dados.data_nascimento = x.nasc; dados.dia_aniversario = Number(x.nasc.slice(8,10)); dados.mes_aniversario = Number(x.nasc.slice(5,7)); }
+    const trab = x.emails.find(e => /jeronimo-martins/.test(e)), pes = x.emails.find(e => !/jeronimo-martins|jm-hello/.test(e));
+    if(pes) dados.email = pes; if(trab) dados.email_trabalho = trab;
+    if(!Object.keys(dados).length) continue;
+    await sb(`loja_colaboradores?id=eq.${m[0].id}`, {method:'PATCH', body: JSON.stringify(dados)}); ok++;
+  }
+  lemDados = null;
+  const tipos = [lista.some(x => x.tel) && 'telefones', lista.some(x => x.nasc) && 'aniversários', lista.some(x => x.emails.length) && 'emails'].filter(Boolean).join(', ');
+  return `✓ ${ok} colaboradores atualizados (${tipos})${falta.length ? ' · não encontrados: ' + falta.join(', ') : ''}`;
+}
 async function ctCarregar(input){
   const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('atualizar os contactos')) return;
   const est = document.getElementById('ct-estado'); const msg = t => { if(est) est.innerHTML = t; };
   try{
     if(typeof XLSX === 'undefined') throw new Error('sem ligação para ler o Excel');
-    const linhas = ctLerExcel(XLSX.read(await f.arrayBuffer(), {type:'array'}));
+    const wbCt = XLSX.read(await f.arrayBuffer(), {type:'array'});
+    const dp = dpLerExcel(wbCt); if(dp.length && dp.some(x => x.nasc || x.emails.length)){ msg('A guardar…'); msg('<span style="color:var(--green);">' + rpEsc(await dpGuardar(dp)) + '</span>'); return; }
+    const linhas = ctLerExcel(wbCt).length ? ctLerExcel(wbCt) : dp.filter(x => x.tel).map(x => ({nome: x.nome, tel: x.tel, numero: x.numero}));
     if(!linhas.length) throw new Error('não encontrei as colunas "Nome" (ou "Conhecido como") e "Telefone"');
     const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome,telefone') || [];
     ctLidos = linhas.map(x => { const m = ctEncontrar(x, colabs); return {...x, colab: m.length === 1 ? m[0] : null, ambiguo: m.length > 1}; });
@@ -12915,7 +12962,7 @@ async function ctGuardar(){
 }
 function ctBotao(){
   if(!souDona()) return '';
-  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="ct-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="ctCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#ct-fich')||document.getElementById('ct-fich')).click()">📎 Atualizar contactos da equipa (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Ficheiro com o nome e o telefone de cada pessoa. A app junta pelo nome e mostra o que muda antes de guardar.</div><div id="ct-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="ct-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="ctCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#ct-fich')||document.getElementById('ct-fich')).click()">📎 Atualizar dados da equipa (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Ficheiro com o nome e o telefone, a data de nascimento ou o email de cada pessoa. A app junta pelo nome e mostra o que muda antes de guardar.</div><div id="ct-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
 
 async function renderFormacoesScreen(){
