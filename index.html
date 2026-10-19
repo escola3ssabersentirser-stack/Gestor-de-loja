@@ -11781,9 +11781,6 @@ async function renderSecaoDetail(secao, label){
 let secaoTabAtiva = 'resumo';
 
 const DEPARTAMENTOS_LOJA = ['Talho','Peixaria','Frutas/Vegetais','Linha de atendimento','Frente de Loja','Custos Comuns','Padaria/Pastelaria'];
-// categorias do Livre Serviço com resultado de inventário próprio
-const INV_CATEGORIAS = ['Iogurtes','Congelados','Bacalhau','Marcearia','DPH','Bebidas','Drogaria','Farmácia','Tabaco'];
-const INV_LINHAS = [...DEPARTAMENTOS_LOJA, ...INV_CATEGORIAS];
 
 function labelSecaoPainel(secao){
   const m = MENU_ITEMS.find(i=>i.id==='secao:'+secao);
@@ -14784,8 +14781,7 @@ async function invGridCarregar(){
   let total = 0;
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;">
     <thead><tr><th style="text-align:left;padding:4px 2px;">Secção</th><th style="text-align:right;padding:4px 2px;">Resultado (€)</th><th style="text-align:right;padding:4px 2px;font-weight:400;color:var(--ink-soft);">Anterior</th></tr></thead><tbody>`;
-  INV_LINHAS.forEach((sec, i) => {
-    if(sec === INV_CATEGORIAS[0]) html += `<tr><td colspan="3" style="padding:12px 2px 4px;font-size:12px;font-weight:800;color:var(--navy);border-top:2px solid var(--line);">🛒 Livre Serviço — por categoria</td></tr>`;
+  DEPARTAMENTOS_LOJA.forEach((sec, i) => {
     const r = (doDia||[]).find(x => x.secao === sec);
     const v = r && r.resultado_inventario !== null && r.resultado_inventario !== undefined ? Number(r.resultado_inventario) : null;
     if(v !== null) total += v;
@@ -14826,7 +14822,7 @@ async function invGridGuardar(){
   const data = (document.getElementById('inv-grid-data')||{}).value || hojeISO();
   const lerNum = (t) => { t = String(t||'').trim().replace(/\s|€/g,'').replace(/^−/,'-').replace(/^\+/,''); if(!t || t === '-') return null; if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.'); const v = parseFloat(t); return isNaN(v) ? NaN : v; };
   const linhas = []; const erros = [];
-  INV_LINHAS.forEach((sec, i) => {
+  DEPARTAMENTOS_LOJA.forEach((sec, i) => {
     const el = document.getElementById('inv-grid-'+i); if(!el) return;
     const v = lerNum(el.value);
     if(Number.isNaN(v)) erros.push(labelSecaoPainel(sec));
