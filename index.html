@@ -759,6 +759,7 @@
           <button class="rp-nav-btn" onclick="selectMenu('painel-vendas','Vendas')"><span class="rp-nav-ic">💶</span><span><b>Vendas</b><small>por dia, por secção e objetivo</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('painel-custos','Custos da Loja')"><span class="rp-nav-ic">💡</span><span><b>Custos da loja</b><small>luz, água, pessoal, economato</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('controlo-quebra','Controlo de Quebra')"><span class="rp-nav-ic">📉</span><span><b>Quebras</b><small>artigos, secções e motivos</small></span></button>
+          <button class="rp-nav-btn" onclick="selectMenu('inventario','Resultados de Inventário')"><span class="rp-nav-ic">📋</span><span><b>Inventário</b><small>registar resultados por secção e categoria</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('markdown','Markdown')"><span class="rp-nav-ic">🏷️</span><span><b>Markdown</b><small>para baixar a quebra</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:validades','Gestão de Validades')"><span class="rp-nav-ic">📅</span><span><b>Gestão de Validades</b><small>execução por secção e artigos a tratar</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:notas','Notas de Crédito')"><span class="rp-nav-ic">🧾</span><span><b>Notas de Crédito</b><small>validar as notas da loja</small></span></button>
@@ -4116,6 +4117,9 @@ function selectMenu(id, label){
   } else if(id === 'controlo-quebra'){
     document.getElementById('controlo-quebra-screen').classList.remove('hidden');
     renderControloQuebra();
+  } else if(id === 'inventario'){
+    document.getElementById('controlo-quebra-screen').classList.remove('hidden');
+    renderControloQuebra().then(() => { const c = document.getElementById('inv-grid-card'); if(c) c.scrollIntoView({behavior:'smooth', block:'start'}); });
   } else if(id === 'markdown'){
     document.getElementById('markdown-screen').classList.remove('hidden');
     renderMarkdownScreen();
@@ -14850,10 +14854,10 @@ async function renderControloQuebra(){
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
 
   const [pctDivisoes, validadesExec, resultados, vendasSecoes] = await Promise.all([
-    sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc'),
-    sb('loja_validades_execucao_pct?select=*&order=tx_execucao_pct.asc'),
-    sb('loja_resultado_diario_secao?select=*&order=data.desc&limit=120'),
-    sb('loja_vendas_secao?select=*')
+    sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc').catch(()=>[]),
+    sb('loja_validades_execucao_pct?select=*&order=tx_execucao_pct.asc').catch(()=>[]),
+    sb('loja_resultado_diario_secao?select=*&order=data.desc&limit=120').catch(()=>[]),
+    sb('loja_vendas_secao?select=*').catch(()=>[])
   ]);
 
   let html = '';
