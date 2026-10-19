@@ -759,6 +759,7 @@
           <button class="rp-nav-btn" onclick="selectMenu('painel-vendas','Vendas')"><span class="rp-nav-ic">💶</span><span><b>Vendas</b><small>por dia, por secção e objetivo</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('painel-custos','Custos da Loja')"><span class="rp-nav-ic">💡</span><span><b>Custos da loja</b><small>luz, água, pessoal, economato</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('controlo-quebra','Controlo de Quebra')"><span class="rp-nav-ic">📉</span><span><b>Quebras</b><small>artigos, secções e motivos</small></span></button>
+          <button class="rp-nav-btn" onclick="selectMenu('inventario','Resultados de Inventário')"><span class="rp-nav-ic">📋</span><span><b>Inventário</b><small>registar resultados por secção e categoria</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('markdown','Markdown')"><span class="rp-nav-ic">🏷️</span><span><b>Markdown</b><small>para baixar a quebra</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:validades','Gestão de Validades')"><span class="rp-nav-ic">📅</span><span><b>Gestão de Validades</b><small>execução por secção e artigos a tratar</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:notas','Notas de Crédito')"><span class="rp-nav-ic">🧾</span><span><b>Notas de Crédito</b><small>validar as notas da loja</small></span></button>
@@ -4116,6 +4117,9 @@ function selectMenu(id, label){
   } else if(id === 'controlo-quebra'){
     document.getElementById('controlo-quebra-screen').classList.remove('hidden');
     renderControloQuebra();
+  } else if(id === 'inventario'){
+    document.getElementById('controlo-quebra-screen').classList.remove('hidden');
+    renderControloQuebra().then(() => { const c = document.getElementById('inv-grid-card'); if(c) c.scrollIntoView({behavior:'smooth', block:'start'}); });
   } else if(id === 'markdown'){
     document.getElementById('markdown-screen').classList.remove('hidden');
     renderMarkdownScreen();
@@ -5382,6 +5386,7 @@ async function blocoResultadoDiarioSecao(secao, label){
   const r = rows && rows.length ? rows[0] : null;
   const fmtE = (v) => v===null||v===undefined ? '—' : Number(v).toLocaleString('pt-PT',{maximumFractionDigits:0})+' €';
   const fmtB = (v) => v===true ? '✓ Sim' : (v===false ? '✗ Não' : '—');
+  const catsHoje = secao === 'Custos Comuns' ? ((await sb(`loja_resultado_diario_secao?data=eq.${hoje}&secao=in.(${INV_CATEGORIAS.map(c => '"' + c + '"').join(',')})&select=secao,resultado_inventario`).catch(()=>[])) || []).filter(c => c.resultado_inventario != null).sort((a, b) => INV_CATEGORIAS.indexOf(a.secao) - INV_CATEGORIAS.indexOf(b.secao)) : [];
 
   let html = `<div class="section-title">📋 Resultados de Inventário — Hoje</div>`;
   html += `<div class="card">`;
@@ -5389,6 +5394,7 @@ async function blocoResultadoDiarioSecao(secao, label){
   if(r){
     html += `<table style="width:100%;border-collapse:collapse;font-size:12.5px;">
       <tr><td style="padding:5px 0;color:var(--ink-soft);">Resultado de Inventário</td><td style="text-align:right;font-weight:700;">${fmtE(r.resultado_inventario)}</td></tr>
+      ${catsHoje.length ? catsHoje.map(c => `<tr><td style="padding:3px 0 3px 14px;color:var(--ink-soft);font-size:12px;">↳ ${rpEsc(c.secao)}</td><td style="text-align:right;font-size:12px;font-weight:600;color:${Number(c.resultado_inventario) < 0 ? 'var(--red)' : 'var(--green)'};">${fmtE(c.resultado_inventario)}</td></tr>`).join('') : ''}
       <tr><td style="padding:5px 0;color:var(--ink-soft);">Nº Listas Automáticas</td><td style="text-align:right;font-weight:700;">${r.numero_listas_automaticas ?? '—'}</td></tr>
       <tr><td style="padding:5px 0;color:var(--ink-soft);">OSA</td><td style="text-align:right;font-weight:700;color:${r.osa==='OK'?'var(--green)':'var(--red)'};">${r.osa || '—'}</td></tr>
       <tr><td style="padding:5px 0;color:var(--ink-soft);">Sem Stock tratados</td><td style="text-align:right;font-weight:700;">${r.sem_stock_tratados ?? '—'}</td></tr>
@@ -5425,6 +5431,12 @@ async function marcarResultadoDiarioBool(secao, campo, valor){
 }
 
 let modalInventarioSecaoAtual = null;
+function invCampoSinal(id, label, valor){
+  return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span style="flex:1;font-size:12.5px;">${label}</span>
+    <button type="button" onclick="invTrocarSinal('${id}',-1)" style="width:38px;height:38px;border-radius:8px;border:1px solid var(--red);background:#fff4f4;color:var(--red);font-size:18px;font-weight:800;">−</button>
+    <input id="${id}" type="text" inputmode="decimal" placeholder="0,00" oninput="invCorSinal(this)" value="${valor ?? ''}" style="width:96px;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:14px;text-align:right;color:${valor == null ? 'inherit' : (Number(valor) < 0 ? 'var(--red)' : 'var(--green)')};">
+    <button type="button" onclick="invTrocarSinal('${id}',1)" style="width:38px;height:38px;border-radius:8px;border:1px solid var(--green);background:#f1faf3;color:var(--green);font-size:18px;font-weight:800;">+</button></div>`;
+}
 
 async function editarResultadoDiarioSecao(secao, label){
   modalInventarioSecaoAtual = secao;
@@ -5443,6 +5455,12 @@ async function editarResultadoDiarioSecao(secao, label){
       <div style="display:flex;gap:6px;"><button type="button" onclick="invTrocarSinal('inv-resultado',-1)" style="width:44px;border-radius:8px;border:1px solid var(--red);background:#fff4f4;color:var(--red);font-size:20px;font-weight:800;">−</button>
       <input id="inv-resultado" type="text" inputmode="decimal" placeholder="0,00" oninput="invCorSinal(this)" value="${atual.resultado_inventario ?? ''}" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;text-align:right;font-weight:700;">
       <button type="button" onclick="invTrocarSinal('inv-resultado',1)" style="width:44px;border-radius:8px;border:1px solid var(--green);background:#f1faf3;color:var(--green);font-size:20px;font-weight:800;">+</button></div></div>`;
+  if(secao === 'Custos Comuns'){
+    const cats = await sb(`loja_resultado_diario_secao?data=eq.${hojeISO()}&secao=in.(${INV_CATEGORIAS.map(c => '"' + c + '"').join(',')})&select=secao,resultado_inventario`).catch(()=>[]) || [];
+    html += `<div style="background:#F2F7EC;border-radius:10px;padding:10px;margin-bottom:12px;"><div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:6px;">🛒 Resultado por categoria (€)</div>`
+      + INV_CATEGORIAS.map((c, i) => { const x = cats.find(k => k.secao === c); return invCampoSinal('inv-cat-' + i, c, x ? x.resultado_inventario : null); }).join('')
+      + `<div style="font-size:11px;color:var(--ink-soft);">Se preencher as categorias, o resultado do Livre Serviço passa a ser a soma delas.</div></div>`;
+  }
   html += campo('inv-listas', 'Número de listas automáticas hoje', atual.numero_listas_automaticas);
   html += campo('inv-semstock', 'Quantos "Sem Stock" tratados hoje', atual.sem_stock_tratados);
   html += `<div style="margin-bottom:12px;">
@@ -5469,13 +5487,21 @@ async function guardarModalInventario(){
   const int = (id) => { const v = parseInt(document.getElementById(id).value||''); return isNaN(v) ? null : v; };
 
   try{
+    let resultadoSec = num('inv-resultado');
+    if(secao === 'Custos Comuns' && document.getElementById('inv-cat-0')){
+      const cats = INV_CATEGORIAS.map((c, i) => ({c, v: num('inv-cat-' + i)})).filter(x => x.v !== null);
+      if(cats.length){
+        await sb('loja_resultado_diario_secao?on_conflict=data,secao', {method:'POST', body: JSON.stringify(cats.map(x => ({data: hojeISO(), secao: x.c, resultado_inventario: Math.round(x.v*100)/100, registado_por: currentUser ? currentUser.name : null}))), prefer:'resolution=merge-duplicates,return=minimal'});
+        resultadoSec = Math.round(cats.reduce((t, x) => t + x.v, 0) * 100) / 100;
+      }
+    }
     const rows = await sb(`loja_resultado_diario_secao?data=eq.${hojeISO()}&secao=eq.${encodeURIComponent(secao)}&select=rotina_validades_tratada,higienizacoes_assinadas`);
     const atual = rows && rows.length ? rows[0] : {};
     await sb(`loja_resultado_diario_secao?on_conflict=data,secao`, {
       method:"POST",
       body: JSON.stringify({
         data: hojeISO(), secao,
-        resultado_inventario: num('inv-resultado'),
+        resultado_inventario: resultadoSec,
         numero_listas_automaticas: int('inv-listas'),
         osa: document.getElementById('inv-osa').value,
         sem_stock_tratados: int('inv-semstock'),
@@ -11781,6 +11807,9 @@ async function renderSecaoDetail(secao, label){
 let secaoTabAtiva = 'resumo';
 
 const DEPARTAMENTOS_LOJA = ['Talho','Peixaria','Frutas/Vegetais','Linha de atendimento','Frente de Loja','Custos Comuns','Padaria/Pastelaria'];
+// categorias do Livre Serviço com resultado de inventário próprio
+const INV_CATEGORIAS = ['Iogurtes','Congelados','Bacalhau','Marcearia','DPH','Bebidas','Drogaria','Farmácia','Tabaco'];
+const INV_LINHAS = [...DEPARTAMENTOS_LOJA, ...INV_CATEGORIAS];
 
 function labelSecaoPainel(secao){
   const m = MENU_ITEMS.find(i=>i.id==='secao:'+secao);
@@ -14778,13 +14807,14 @@ async function invGridCarregar(){
     sb(`loja_resultado_diario_secao?resultado_inventario=not.is.null&data=lt.${data}&select=secao,data,resultado_inventario&order=data.desc&limit=200`).catch(()=>[])
   ]);
   const podeEditar = souDona();
-  let total = 0;
+  let total = 0, subCat = 0;
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;">
     <thead><tr><th style="text-align:left;padding:4px 2px;">Secção</th><th style="text-align:right;padding:4px 2px;">Resultado (€)</th><th style="text-align:right;padding:4px 2px;font-weight:400;color:var(--ink-soft);">Anterior</th></tr></thead><tbody>`;
-  DEPARTAMENTOS_LOJA.forEach((sec, i) => {
+  INV_LINHAS.forEach((sec, i) => {
+    if(sec === INV_CATEGORIAS[0]) html += `<tr><td colspan="3" style="padding:12px 2px 4px;font-size:12px;font-weight:800;color:var(--navy);border-top:2px solid var(--line);">🛒 Livre Serviço — por categoria</td></tr>`;
     const r = (doDia||[]).find(x => x.secao === sec);
     const v = r && r.resultado_inventario !== null && r.resultado_inventario !== undefined ? Number(r.resultado_inventario) : null;
-    if(v !== null) total += v;
+    if(v !== null){ if(INV_CATEGORIAS.includes(sec)) subCat += v; else total += v; }
     const ant = (historico||[]).find(x => x.secao === sec);
     const antTxt = ant ? `${Number(ant.resultado_inventario).toLocaleString('pt-PT',{maximumFractionDigits:0})} € <span style="font-size:10px;">(${new Date(ant.data+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})})</span>` : '—';
     const campo = podeEditar
@@ -14796,6 +14826,7 @@ async function invGridCarregar(){
       <td style="padding:6px 2px;text-align:right;font-size:11px;color:var(--ink-soft);">${antTxt}</td>
     </tr>`;
   });
+  html += `<tr><td style="padding:6px 2px;font-size:12px;color:var(--ink-soft);">Soma das categorias (entra no Livre Serviço)</td><td style="padding:6px 2px;text-align:right;font-size:12px;font-weight:700;color:${subCat<0?'var(--red)':'var(--green)'};">${subCat.toLocaleString('pt-PT',{maximumFractionDigits:2})} €</td><td></td></tr>`;
   html += `<tr style="border-top:2px solid var(--line);"><td style="padding:8px 2px;font-weight:700;">Total da loja</td><td style="padding:8px 2px;text-align:right;font-weight:800;color:${total<0?'var(--red)':'var(--green)'};">${total.toLocaleString('pt-PT',{maximumFractionDigits:2})} €</td><td></td></tr>`;
   html += `</tbody></table>`;
   html += podeEditar
@@ -14822,13 +14853,19 @@ async function invGridGuardar(){
   const data = (document.getElementById('inv-grid-data')||{}).value || hojeISO();
   const lerNum = (t) => { t = String(t||'').trim().replace(/\s|€/g,'').replace(/^−/,'-').replace(/^\+/,''); if(!t || t === '-') return null; if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.'); const v = parseFloat(t); return isNaN(v) ? NaN : v; };
   const linhas = []; const erros = [];
-  DEPARTAMENTOS_LOJA.forEach((sec, i) => {
+  INV_LINHAS.forEach((sec, i) => {
     const el = document.getElementById('inv-grid-'+i); if(!el) return;
     const v = lerNum(el.value);
     if(Number.isNaN(v)) erros.push(labelSecaoPainel(sec));
     else if(v !== null) linhas.push({data, secao: sec, resultado_inventario: Math.round(v*100)/100, registado_por: currentUser ? currentUser.name : null});
   });
   if(erros.length){ alert('Valor inválido em: ' + erros.join(', ') + '. Use só números, por exemplo -120,50'); return; }
+  const catLinhas = linhas.filter(l => INV_CATEGORIAS.includes(l.secao));
+  if(catLinhas.length){
+    const soma = Math.round(catLinhas.reduce((t, l) => t + l.resultado_inventario, 0) * 100) / 100;
+    const cc = linhas.find(l => l.secao === 'Custos Comuns');
+    if(cc) cc.resultado_inventario = soma; else linhas.push({data, secao: 'Custos Comuns', resultado_inventario: soma, registado_por: currentUser ? currentUser.name : null});
+  }
   if(!linhas.length){ alert('Escreva pelo menos um resultado.'); return; }
   try{
     await sb('loja_resultado_diario_secao?on_conflict=data,secao', {method:'POST', body: JSON.stringify(linhas), prefer:'resolution=merge-duplicates,return=minimal'});
@@ -14846,10 +14883,10 @@ async function renderControloQuebra(){
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
 
   const [pctDivisoes, validadesExec, resultados, vendasSecoes] = await Promise.all([
-    sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc'),
-    sb('loja_validades_execucao_pct?select=*&order=tx_execucao_pct.asc'),
-    sb('loja_resultado_diario_secao?select=*&order=data.desc&limit=120'),
-    sb('loja_vendas_secao?select=*')
+    sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc').catch(()=>[]),
+    sb('loja_validades_execucao_pct?select=*&order=tx_execucao_pct.asc').catch(()=>[]),
+    sb('loja_resultado_diario_secao?select=*&order=data.desc&limit=120').catch(()=>[]),
+    sb('loja_vendas_secao?select=*').catch(()=>[])
   ]);
 
   let html = '';
@@ -14950,7 +14987,7 @@ async function renderControloQuebra(){
   const porDia = {};
   resultados.forEach(r=>{
     if(!porDia[r.data]) porDia[r.data] = 0;
-    if(r.resultado_inventario !== null && r.resultado_inventario !== undefined) porDia[r.data] += Number(r.resultado_inventario);
+    if(r.resultado_inventario !== null && r.resultado_inventario !== undefined && !INV_CATEGORIAS.includes(r.secao)) porDia[r.data] += Number(r.resultado_inventario);
   });
   const dias = Object.keys(porDia).sort();
   const maisRecentePorSecaoResumo = {};
