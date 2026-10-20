@@ -14957,6 +14957,62 @@ async function invGridGuardar(){
   }
 }
 
+// ===== Plano de Ação — Produção e Quebras (cartão Quebras) =====
+let ppLista = [];
+async function blocoPlanoProducao(){
+  try{ ppLista = await sb('loja_plano_producao?select=*&order=ordem.asc,id.asc') || []; }catch(e){ ppLista = []; }
+  const dona = souDona(), marca = paPodeMarcar();
+  const feitos = ppLista.filter(x => x.feito).length;
+  const corP = {Alta:'#B4231A', 'Média':'#C77F12', Pontual:'#1E4E8C'};
+  let h = `<div class="section-title">🎯 Plano de Ação — Produção e Quebras <span class="count">· ${feitos}/${ppLista.length} feitas</span></div><div class="card">
+    <div style="background:#FBE3DE;border:1.5px solid #B4231A;border-radius:10px;padding:9px 11px;font-size:12.5px;margin-bottom:8px;"><b style="color:#B4231A;">⚠️ Problema grave:</b> estamos a aumentar a produção e esse aumento não está a ser registado. <b>Aumento de produção sem registo = quebra.</b> Toda a produção fica registada no mapa de produção, no momento.</div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:8px;">
+      ${[['1','Mapas de produção Pronto a Comer','preenchidos ao longo do dia'],['2','Formação da equipa do talho','e balcão apelativo o dia todo'],['3','Não mexer no MRP da fruta e flores','só a supervisão altera'],['4','Etiquetas de markdown impressas','sem etiqueta é quebra (motivo 21 e 922)']].map(([n,t,d]) => `<div style="background:#EEF2F7;border-radius:10px;padding:7px 9px;font-size:11.5px;"><b style="color:#1E3A5F;">Foco ${n} · ${t}</b><div style="color:var(--ink-soft);">${d}</div></div>`).join('')}
+    </div>
+    <div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-bottom:6px;"><div style="height:100%;width:${ppLista.length ? Math.round(feitos/ppLista.length*100) : 0}%;background:var(--green);"></div></div>`;
+  ['Alta','Média','Pontual'].forEach(pr => {
+    const L = ppLista.filter(x => (x.prioridade || 'Média') === pr); if(!L.length) return;
+    h += `<div style="font-size:11.5px;font-weight:800;color:${corP[pr]};text-transform:uppercase;letter-spacing:.3px;margin:12px 0 2px;">Prioridade ${pr} · ${L.filter(x => x.feito).length}/${L.length}</div>`;
+    h += L.map(x => `<div data-pp="${x.id}" style="padding:8px 0;border-top:1px solid var(--line);${x.feito ? 'opacity:.6;' : ''}">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;"><b style="font-size:13px;${x.feito ? 'text-decoration:line-through;' : ''}">${x.ordem ? x.ordem + '. ' : ''}${rpEsc(x.acao)}</b><span style="font-size:10.5px;background:#F2F2EE;border-radius:999px;padding:2px 8px;white-space:nowrap;">${rpEsc(x.secao || '')}</span></div>
+      ${x.como ? `<div style="font-size:12px;color:var(--ink);margin-top:2px;">${rpEsc(x.como)}</div>` : ''}
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">🕒 ${rpEsc(x.quando || '—')} · 👤 ${x.responsavel ? rpEsc(x.responsavel) : '<i>por definir</i>'}${x.medir ? ' · 📏 ' + rpEsc(x.medir) : ''}</div>
+      ${x.feito ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ Feito${x.feito_por ? ' por ' + rpEsc(x.feito_por) : ''}${x.feito_em ? ' em ' + new Date(x.feito_em).toLocaleDateString('pt-PT') : ''}</div>` : ''}
+      <div class="pa-acoes">${marca ? `<button class="econ-btn${x.feito ? '' : ' filled'}" onclick="ppMarcar(${x.id}, ${!x.feito})">${x.feito ? '↺ Não feito' : '✓ Feito'}</button>` : ''}${dona ? `<button class="econ-btn" onclick="ppEditar(${x.id})">✏️ Responsável e prazo</button><button class="econ-btn" style="color:#B4231A;" onclick="ppTirar(${x.id})">🗑️</button>` : ''}</div>
+    </div>`).join('');
+  });
+  if(dona) h += `<button class="econ-btn" style="margin-top:10px;" onclick="ppNova()">➕ Nova ação</button>`;
+  return h + `</div>`;
+}
+async function ppRefrescar(){ const el = document.getElementById('pp-wrap'); if(el) el.innerHTML = await blocoPlanoProducao(); }
+async function ppMarcar(id, feito){
+  if(!paPodeMarcar()){ alert('🔒 Só responsáveis, gestores e a gestora podem marcar ações.'); return; }
+  try{ await sb(`loja_plano_producao?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({feito, feito_por: feito ? (currentUser ? currentUser.name : null) : null, feito_em: feito ? new Date().toISOString() : null})}); showToast(); ppRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function ppEditar(id){
+  if(!soDona('alterar o plano')) return;
+  const x = ppLista.find(k => k.id === id); if(!x) return;
+  const resp = prompt('Responsável:', x.responsavel || ''); if(resp === null) return;
+  const quando = prompt('Quando / prazo:', x.quando || ''); if(quando === null) return;
+  try{ await sb(`loja_plano_producao?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({responsavel: resp.trim() || null, quando: quando.trim() || null})}); showToast(); ppRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+async function ppTirar(id){
+  if(!soDona('tirar ações') || !confirm('Tirar esta ação do plano?')) return;
+  try{ await sb(`loja_plano_producao?id=eq.${id}`, {method:'DELETE'}); showToast(); ppRefrescar(); }catch(e){ alert('Não consegui tirar.'); }
+}
+async function ppNova(){
+  if(!soDona('criar ações')) return;
+  const acao = prompt('Ação:'); if(!acao) return;
+  const secao = prompt('Secção:') || '';
+  const como = prompt('Como fazer:') || '';
+  const pr = (prompt('Prioridade (Alta, Média ou Pontual):', 'Média') || 'Média').trim();
+  const ordem = (ppLista.reduce((m, x) => Math.max(m, x.ordem || 0), 0)) + 1;
+  try{ await sb('loja_plano_producao', {method:'POST', body: JSON.stringify({ordem, prioridade: /alta/i.test(pr) ? 'Alta' : /pont/i.test(pr) ? 'Pontual' : 'Média', secao, acao, como, quando: 'Todos os dias'}), prefer:'return=minimal'}); showToast(); ppRefrescar(); }
+  catch(e){ alert('Não consegui guardar.'); }
+}
+
 async function renderControloQuebra(){
   const content = document.getElementById('controlo-quebra-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -14970,6 +15026,7 @@ async function renderControloQuebra(){
 
   let html = '';
 
+  try{ html += `<div id="pp-wrap">${await blocoPlanoProducao()}</div>`; }catch(e){ console.error('plano produção', e); }
   html += await blocoInventarioPorSecao();
   html += await blocoScoreValidades();
   html += await blocoAlertasQuebraArtigo(null);
