@@ -2711,7 +2711,9 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
     estimada = true;
   }
   await impVerificarData('categorias', dataRef);
-  const top = lista.slice(0,10).map(x => ({...x, data_referencia: dataRef}));
+  // guarda as 10 que mais perdem em € e as 10 que mais perdem em % (sem repetir)
+  const porEuro = [...lista].sort((a,b) => (b.venda_aa - b.venda_ac) - (a.venda_aa - a.venda_ac)).slice(0,10);
+  const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
   await sb('loja_categorias_perda_vendas?id=gt.0', {method:'DELETE'});
   await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top)});
   await impGuardarData('categorias', dataRef);
@@ -12165,7 +12167,7 @@ async function renderPainelVendas(){
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_vendas_secao?select=*'),
     sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
-    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=5')
+    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=40').catch(()=>[])
   ]);
   const r = resumoRows[0] || {};
   const calc = await calcularVendasPorPeriodo();
@@ -12196,14 +12198,15 @@ async function renderPainelVendas(){
   });
   html += `</div>`;
 
-  html += `<div class="section-title">📊 Categorias que Mais Perdem Vendas</div><div class="card">`;
-  if(categoriasPerda.length){
-    categoriasPerda.forEach(c=>{
-      html += `<div style="display:flex;justify-content:space-between;padding:4px 0;">
-        <span style="font-size:12px;color:var(--ink);">${c.categoria} <span style="color:var(--ink-soft);font-size:10.5px;">(${c.divisao})</span></span>
-        <span style="font-size:12px;font-weight:700;color:var(--red);">${c.delta_pct.toFixed(1)}%</span>
-      </div>`;
-    });
+  const topPerda = (categoriasPerda || []).map(c => ({...c, perda: Number(c.venda_aa) - Number(c.venda_ac)})).filter(c => c.perda > 0).sort((a, b) => b.perda - a.perda).slice(0, 10);
+  const totPerda = topPerda.reduce((t, c) => t + c.perda, 0);
+  const eurC = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  html += `<div class="section-title">📉 Top 10 — categorias que mais perdem vendas</div><div class="card">`;
+  if(topPerda.length){
+    html += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Mês até ${topPerda[0].data_referencia ? new Date(topPerda[0].data_referencia + 'T12:00:00').toLocaleDateString('pt-PT') : '—'}, comparado com o ano passado · perda total destas 10: <b style="color:var(--red);">${eurC(totPerda)}</b></div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="text-align:left;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Categoria</th><th style="text-align:right;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Este ano</th><th style="text-align:right;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Ano passado</th><th style="text-align:right;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Perda</th></tr></thead><tbody>`
+      + topPerda.map((c, i) => `<tr style="border-top:1px solid var(--line);"><td style="padding:6px 2px;"><b>${i+1}.</b> ${rpEsc(c.categoria)}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(c.divisao || '')}</div></td><td style="padding:6px 2px;text-align:right;">${eurC(c.venda_ac)}</td><td style="padding:6px 2px;text-align:right;color:var(--ink-soft);">${eurC(c.venda_aa)}</td><td style="padding:6px 2px;text-align:right;"><b style="color:var(--red);">−${eurC(c.perda)}</b><div style="font-size:10.5px;color:var(--red);">${Number(c.delta_pct).toLocaleString('pt-PT',{maximumFractionDigits:1})}%</div></td></tr>`).join('')
+      + `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Ordenado pelo valor perdido em euros. Atualiza ao carregar o relatório "Vendas e Quebras".</div>`;
   } else {
     html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
   }
