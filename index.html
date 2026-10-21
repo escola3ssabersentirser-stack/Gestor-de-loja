@@ -2356,6 +2356,7 @@ function impTipo(wb){
   if(nomes.some(n => n.trim() === 'Resumo 30 dias') && nomes.some(n => n.trim() === 'Validades por tratar')) return 'validades';
   for(const n of nomes){
     const R = impLinhas(wb.Sheets[n]);
+    if(impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','PRODUÇÃO','QUEBRAS UN','QUEBRA SUGESTÃO'])) return 'mapasproducao';
     if(impCabecalho(R, ['Nome Operador','Vendas Operador'])) return 'vendasugestiva';
     if(impCabecalho(R, ['Numero Factura','Valor Fact']) || impCabecalho(R, ['Loja','Numero Factura','Numero da Transaccao'])) return 'notascredito';
   }
@@ -2580,6 +2581,30 @@ function impEtiquetasMes(R, hIdx, bloco, extra){
   }
   return out;
 }
+// Quebra sem etiqueta: (vendas em markdown + quebra) − markdown realizado = quantidade que não teve etiqueta impressa
+function mkdSemEtiquetaLer(R, hIdx, bloco, dataRef){
+  let titulos = null;
+  for(let k = hIdx; k >= Math.max(0, hIdx-4); k--){ const row = (R[k]||[]).map(impTxt); if(row.some(t => t.toUpperCase().includes('ETIQUETAS IMPRESSAS'))){ titulos = row; break; } }
+  if(!titulos || bloco.col < 0) return [];
+  const c = txt => titulos.findIndex((t,i) => i >= bloco.col && t.toUpperCase().includes(txt));
+  const cImp = c('ETIQUETAS IMPRESSAS'), cReal = c('MARKDOWN REALIZADO'), cVq = c('VENDAS MARKDOWN (QTD)'), cQq = c('QUEBRA IDENTIFICADA (QTD)'), cQv = c('QUEBRA IDENTIFICADA (VALOR)'), cNr = c('NÃO REALIZADO (VALOR)');
+  if(cQq < 0 || cReal < 0) return [];
+  const row = (R[hIdx]||[]).map(impTxt);
+  const cLoja = row.indexOf('Cód Retail') >= 0 ? row.indexOf('Cód Retail') : 0;
+  const cDiv = row.indexOf('Divisão (txt)'), cArt = row.indexOf('Artigo (txt)'), cCod = row.indexOf('Artigo (cód)');
+  const out = [];
+  for(let i = hIdx + 1; i < R.length; i++){
+    const r = R[i] || []; if(impTxt(r[cLoja]).replace(/\.0$/, '') !== IMP_LOJA) continue;
+    const n = k => k >= 0 ? (impNum(r[k]) || 0) : 0;
+    const qq = n(cQq), pot = n(cVq) + qq, sem = pot - n(cReal);
+    if(!(qq > 0) || !(sem > 0.001)) continue;
+    const dv = impTxt(r[cDiv]).toUpperCase();
+    out.push({divisao: dv, secao_app: IMP_SECAO_MKD[dv] || null, artigo_cod: cCod >= 0 ? impTxt(r[cCod]).replace(/\.0$/, '') : null, artigo: impTxt(r[cArt]),
+      impressas: n(cImp), qtd_potencial: impR2(pot), qtd_sem_etiqueta: impR2(sem), quebra_qtd: impR2(qq), quebra_valor: impR2(n(cQv)),
+      valor_sem_etiqueta: impR2(cNr >= 0 ? n(cNr) : (qq ? sem * n(cQv) / qq : 0)), mes_referencia: bloco.mes, data_referencia: dataRef});
+  }
+  return out.sort((a, b) => b.valor_sem_etiqueta - a.valor_sem_etiqueta);
+}
 async function impMarkdown(wb){
   const nDiv = wb.SheetNames.find(n => n.trim() === 'Markdown da Loja por Divisão');
   const nArt = wb.SheetNames.find(n => n.startsWith('Markdown da Loja por Divisão e'));
@@ -2640,9 +2665,20 @@ async function impMarkdown(wb){
       for(let i=0;i<etq.length;i+=200) await sb('loja_markdown_etiquetas', {method:'POST', body: JSON.stringify(etq.slice(i,i+200))});
     }
   }catch(e){ console.warn('etiquetas', e); }
+  // artigos que foram para quebra sem etiqueta de markdown (mês em vigor)
+  let nSemEtq = 0;
+  try{
+    if(nArt){
+      const A = impLinhas(wb.Sheets[nArt]); const ha = impCabecalho(A, ['Artigo (txt)']);
+      if(ha){ const se = mkdSemEtiquetaLer(A, ha.i, impBlocoMes(A, ha.i), dataRef);
+        await sb('loja_markdown_sem_etiqueta?id=gt.0', {method:'DELETE'});
+        if(se.length) await sb('loja_markdown_sem_etiqueta', {method:'POST', body: JSON.stringify(se)});
+        nSemEtq = se.length; }
+    }
+  }catch(e){ console.warn('sem etiqueta', e); }
   const pior = [...divisoes].sort((a,b)=>b.pct-a.pct)[0];
   await impGuardarData('markdown', dataRef);
-  return `dados até ${impDDMM(dataRef)} · ${bloco.mes}: ${divisoes.length} divisões${pior && pior.pct > 0 ? ' (pior: ' + impTitulo(pior.divisao) + ' ' + pior.pct.toLocaleString('pt-PT') + '%)' : ''}, ${nArtigos} artigos`;
+  return `dados até ${impDDMM(dataRef)} · ${bloco.mes}: ${divisoes.length} divisões${pior && pior.pct > 0 ? ' (pior: ' + impTitulo(pior.divisao) + ' ' + pior.pct.toLocaleString('pt-PT') + '%)' : ''}, ${nArtigos} artigos · ${nSemEtq} artigos foram para quebra sem etiqueta`;
 }
 
 // O "Vendas e Quebras Mensal" também traz o total e as secções do mês: atualiza o painel se for mais recente
@@ -2711,12 +2747,54 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
     estimada = true;
   }
   await impVerificarData('categorias', dataRef);
-  const top = lista.slice(0,10).map(x => ({...x, data_referencia: dataRef}));
+  // guarda as 10 que mais perdem em € e as 10 que mais perdem em % (sem repetir)
+  const porEuro = [...lista].sort((a,b) => (b.venda_aa - b.venda_ac) - (a.venda_aa - a.venda_ac)).slice(0,10);
+  const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro, ...lista.filter(x => x.venda_aa > x.venda_ac)].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
   await sb('loja_categorias_perda_vendas?id=gt.0', {method:'DELETE'});
-  await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top)});
+  for(let i = 0; i < top.length; i += 300) await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top.slice(i, i + 300))});
   await impGuardarData('categorias', dataRef);
   let painelOk = false; if(!estimada){ try{ painelOk = await impPainelDoVQ(wb, dataRef); }catch(e){} }
   return `dados até ${impDDMM(dataRef)}${estimada ? ' (data estimada)' : ''}${painelOk ? ' · painel atualizado' : ''} · 10 categorias que mais perdem vendas (pior: ${top[0].categoria} ${top[0].delta_pct.toLocaleString('pt-PT')}%)`;
+}
+
+// ---------- MAPAS DE PRODUÇÃO (Padaria, Salgados, Sandes, Churrascaria, Café e Bolos) ----------
+const MP_SECOES = {'PADARIA':'Padaria', 'SALGADOS':'Salgados', 'SANDES TA':'Sandes Take Away', 'CHURRASCARIA':'Churrascaria', 'CAFÉ E BOLOS':'Café e Bolos', 'CAFE E BOLOS':'Café e Bolos'};
+function mpLerExcel(wb){
+  const out = [];
+  for(const n of wb.SheetNames){
+    const R = impLinhas(wb.Sheets[n]);
+    const h = impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','DATA','PRODUÇÃO','QUEBRAS UN']);
+    if(!h) continue;
+    const nome = n.trim().toUpperCase();
+    const secao = MP_SECOES[nome] || impTitulo(nome);
+    const c = t => h.col(t);
+    const cMin = c('MÍNIMOS') >= 0 ? c('MÍNIMOS') : c('ENCHIMENTOS');
+    const v = (r, t) => { const i = typeof t === 'number' ? t : c(t); return i >= 0 ? impNum(r[i]) : null; };
+    for(let i = h.i + 1; i < R.length; i++){
+      const r = R[i] || [];
+      if(impTxt(r[c('LOJA')]).replace(/\.0$/, '') !== IMP_LOJA) continue;
+      const cod = impTxt(r[c('ARTIGO')]).replace(/\.0$/, ''); const data = impData(r[c('DATA')]);
+      if(!cod || cod === '0' || !data) continue;
+      const qun = Math.abs(v(r, 'QUEBRAS UN') || 0), qmin = Math.abs(v(r, 'QUEBRA MÍNIMO') || 0), qsug = Math.abs(v(r, 'QUEBRA SUGESTÃO') || 0);
+      const exc = c('QUEBRA EXCESSO PRODUÇÃO') >= 0 ? Math.abs(v(r, 'QUEBRA EXCESSO PRODUÇÃO') || 0) : Math.max(0, qun - qmin - qsug);
+      out.push({secao, artigo_cod: cod, artigo: impTitulo(r[c('DESCRIÇÃO ARTIGO')]), data,
+        minimos: v(r, cMin), sugestao: v(r, 'SUGESTÃO'), producao: v(r, 'PRODUÇÃO'), cumprimento: impR2(v(r, 'CUMPRIMENTO %')),
+        vendas_eur: impR2(v(r, 'VENDAS €')), vendas_un: v(r, 'VENDAS UN'), quebra_un: impR2(qun), quebra_eur: impR2(Math.abs(v(r, 'QUEBRAS €') || 0)),
+        quebra_minimo: impR2(qmin), quebra_sugestao: impR2(qsug), quebra_excesso: impR2(exc),
+        sem_stock: c('SEM STOCK') >= 0 && Number(r[c('SEM STOCK')]) === 1 ? '1' : '0'});
+    }
+  }
+  return out;
+}
+async function impMapasProducao(wb){
+  const linhas = mpLerExcel(wb);
+  if(!linhas.length) throw new Error('não encontrei artigos da loja ' + IMP_LOJA + ' neste mapa');
+  for(let i = 0; i < linhas.length; i += 400){
+    await sb('loja_mp_artigos?on_conflict=secao,artigo_cod,data', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify(linhas.slice(i, i + 400))});
+  }
+  const datas = linhas.map(x => x.data).sort(), secs = [...new Set(linhas.map(x => x.secao))];
+  const prod = linhas.reduce((s, x) => s + (x.producao || 0), 0), q = linhas.reduce((s, x) => s + (x.quebra_un || 0), 0);
+  return `${secs.join(', ')} · ${impDDMM(datas[0])} a ${impDDMM(datas[datas.length - 1])} · ${linhas.length} linhas · ${prod ? Math.round(q / prod * 100) : 0}% da produção foi para quebra`;
 }
 
 // ---------- RELATÓRIO DE GESTÃO DE VALIDADES ----------
@@ -2898,7 +2976,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {resumo:'Resumo da loja', bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -2994,7 +3072,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {bomdia: impBomDia, markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo}[x.tipo];
+      const fn = {mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
     mostrar(false);
@@ -12165,7 +12243,7 @@ async function renderPainelVendas(){
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_vendas_secao?select=*'),
     sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
-    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=5')
+    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=2000').catch(()=>[])
   ]);
   const r = resumoRows[0] || {};
   const calc = await calcularVendasPorPeriodo();
@@ -12196,20 +12274,44 @@ async function renderPainelVendas(){
   });
   html += `</div>`;
 
-  html += `<div class="section-title">📊 Categorias que Mais Perdem Vendas</div><div class="card">`;
-  if(categoriasPerda.length){
-    categoriasPerda.forEach(c=>{
-      html += `<div style="display:flex;justify-content:space-between;padding:4px 0;">
-        <span style="font-size:12px;color:var(--ink);">${c.categoria} <span style="color:var(--ink-soft);font-size:10.5px;">(${c.divisao})</span></span>
-        <span style="font-size:12px;font-weight:700;color:var(--red);">${c.delta_pct.toFixed(1)}%</span>
-      </div>`;
-    });
+  const topPerda = (categoriasPerda || []).map(c => ({...c, perda: Number(c.venda_aa) - Number(c.venda_ac)})).filter(c => c.perda > 0).sort((a, b) => b.perda - a.perda).slice(0, 10);
+  const totPerda = topPerda.reduce((t, c) => t + c.perda, 0);
+  const eurC = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  html += `<div class="section-title">📉 Top 10 — categorias que mais perdem vendas</div><div class="card">`;
+  if(topPerda.length){
+    html += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Mês até ${topPerda[0].data_referencia ? new Date(topPerda[0].data_referencia + 'T12:00:00').toLocaleDateString('pt-PT') : '—'}, comparado com o ano passado · perda total destas 10: <b style="color:var(--red);">${eurC(totPerda)}</b></div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="text-align:left;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Categoria</th><th style="text-align:right;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Este ano</th><th style="text-align:right;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Ano passado</th><th style="text-align:right;padding:4px 2px;color:var(--ink-soft);font-size:11px;">Perda</th></tr></thead><tbody>`
+      + topPerda.map((c, i) => `<tr style="border-top:1px solid var(--line);"><td style="padding:6px 2px;"><b>${i+1}.</b> ${rpEsc(c.categoria)}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(c.divisao || '')}</div></td><td style="padding:6px 2px;text-align:right;">${eurC(c.venda_ac)}</td><td style="padding:6px 2px;text-align:right;color:var(--ink-soft);">${eurC(c.venda_aa)}</td><td style="padding:6px 2px;text-align:right;"><b style="color:var(--red);">−${eurC(c.perda)}</b><div style="font-size:10.5px;color:var(--red);">${Number(c.delta_pct).toLocaleString('pt-PT',{maximumFractionDigits:1})}%</div></td></tr>`).join('')
+      + `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Ordenado pelo valor perdido em euros. Atualiza ao carregar o relatório "Vendas e Quebras".</div>`;
   } else {
     html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
   }
   html += `</div>`;
 
+  try{ html += vendasPerdaPorDivisao(categoriasPerda || []); }catch(e){ console.error('perda por divisão', e); }
+
   content.innerHTML = html;
+}
+
+// categorias que mais perdem vendas (€), agrupadas por divisão
+function vendasPerdaPorDivisao(cats){
+  const eur = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const l = cats.map(c => ({...c, perda: Number(c.venda_aa) - Number(c.venda_ac)})).filter(c => c.perda > 0);
+  let h = `<div class="section-title">🗂️ Categorias que mais perdem vendas — por divisão</div><div class="card">`;
+  if(!l.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados. Carregue o relatório "Vendas e Quebras".</div></div>`;
+  const div = {};
+  l.forEach(c => { const k = c.divisao || '—'; (div[k] = div[k] || {nome: k, perda: 0, cats: []}); div[k].perda += c.perda; div[k].cats.push(c); });
+  const lista = Object.values(div).sort((a, b) => b.perda - a.perda);
+  const max = lista[0].perda;
+  h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Mês até ${l[0].data_referencia ? new Date(l[0].data_referencia + 'T12:00:00').toLocaleDateString('pt-PT') : '—'} vs ano passado · só categorias que vendem menos · toque na divisão para ver todas</div>`;
+  h += lista.map((d, i) => { const cs = d.cats.sort((a, b) => b.perda - a.perda);
+    const linha = c => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0 4px 10px;border-top:1px dashed var(--line);font-size:12px;"><span style="min-width:0;">${rpEsc(c.categoria)}<span style="color:var(--ink-soft);font-size:10.5px;"> · ${eur(c.venda_ac)} vs ${eur(c.venda_aa)} (${Number(c.delta_pct).toLocaleString('pt-PT', {maximumFractionDigits:1})}%)</span></span><b style="color:var(--red);white-space:nowrap;">−${eur(c.perda)}</b></div>`;
+    return `<details ${i < 3 ? 'open' : ''} style="border-top:1px solid var(--line);padding:6px 0;"><summary style="cursor:pointer;list-style:none;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;"><b>${rpEsc(d.nome)}</b><b style="color:var(--red);">−${eur(d.perda)}</b></div>
+      <div style="height:6px;border-radius:4px;background:var(--line);margin-top:4px;overflow:hidden;"><div style="height:100%;width:${(d.perda / max * 100).toFixed(1)}%;background:var(--red);"></div></div>
+      <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;">${cs.length} categoria${cs.length > 1 ? 's' : ''} a perder · pior: ${rpEsc(cs[0].categoria)}</div></summary>
+      ${cs.slice(0, 5).map(linha).join('')}${cs.length > 5 ? `<details><summary style="cursor:pointer;font-size:11.5px;padding:4px 10px;color:var(--ink-soft);">mais ${cs.length - 5}</summary>${cs.slice(5).map(linha).join('')}</details>` : ''}</details>`; }).join('');
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Perda = venda do ano passado − venda deste ano. Atualiza ao carregar o relatório "Vendas e Quebras".</div></div>`;
 }
 
 // ===================== CUSTOS DA LOJA (luz, água, pessoal, economato) =====================
@@ -15031,7 +15133,88 @@ async function blocoPlanoProducao(){
   if(dona) h += `<button class="econ-btn" style="margin-top:10px;" onclick="ppNova()">➕ Nova ação</button>`;
   return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Toque na ação para ver como fazer. ● vermelho = prioridade alta.</div></div>`;
 }
-async function ppRefrescar(){ const el = document.getElementById('pp-wrap'); if(el) el.innerHTML = await blocoPlanoProducao(); }
+// ---------- QUEBRA SEM ETIQUETA DE MARKDOWN (mês em vigor) ----------
+async function blocoQuebraSemEtiqueta(){
+  let rows = [];
+  try{ rows = await sb('loja_markdown_sem_etiqueta?select=*&order=valor_sem_etiqueta.desc&limit=500') || []; }catch(e){ rows = []; }
+  const eur = v => Number(v || 0).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
+  const qt = v => Number(v || 0).toLocaleString('pt-PT', {maximumFractionDigits:2});
+  let h = `<div class="section-title">⚠️ Quebra sem etiqueta de markdown${rows[0] ? ` <span class="count">· ${rpEsc(rows[0].mes_referencia || '')} até ${rows[0].data_referencia ? impDDMM(rows[0].data_referencia) : ''}</span>` : ''}</div><div class="card">`;
+  if(!rows.length) return h + `<div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o Relatório de Markdown da loja em "📥 Carregar relatórios".</div></div>`;
+  const totSem = rows.reduce((s, x) => s + Number(x.valor_sem_etiqueta || 0), 0), totQ = rows.reduce((s, x) => s + Number(x.quebra_valor || 0), 0);
+  const totUn = rows.reduce((s, x) => s + Number(x.qtd_sem_etiqueta || 0), 0), zero = rows.filter(x => !Number(x.impressas));
+  const tile = (v, t, cor) => `<div style="flex:1;min-width:120px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:18px;font-weight:800;color:${cor};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
+  h += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+    ${tile(rows.length, 'artigos foram para quebra sem etiqueta', 'var(--ink)')}
+    ${tile(qt(totUn), 'un/kg sem etiqueta impressa', 'var(--amber)')}
+    ${tile(eur(totSem), 'perdido por não marcar', 'var(--red)')}
+    ${tile(eur(totQ), 'quebra destes artigos', 'var(--red)')}</div>`;
+  if(zero.length) h += `<div style="background:#FBE3DE;border:1.5px solid #B4231A;border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;">🚫 <b>${zero.length} artigo${zero.length > 1 ? 's' : ''} sem nenhuma etiqueta impressa</b> e foram para quebra: ${zero.map(x => rpEsc(impTitulo(x.artigo))).join(', ')}.</div>`;
+  const linha = x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao_app ? labelSecaoPainel(x.secao_app) : impTitulo(x.divisao))}${!Number(x.impressas) ? ' · <b style="color:#B4231A;">0 etiquetas</b>' : ' · ' + qt(x.impressas) + ' etiq.'}</div></td>
+    <td><b style="color:var(--amber);">${qt(x.qtd_sem_etiqueta)}</b></td><td>${qt(x.quebra_qtd)}</td><td>${eur(x.quebra_valor)}</td><td><b style="color:var(--red);">${eur(x.valor_sem_etiqueta)}</b></td></tr>`;
+  const tabela = l => `<div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr><th style="text-align:left;">Artigo</th><th>Sem etiqueta (un/kg)</th><th>Quebra (un/kg)</th><th>Quebra €</th><th>€ sem etiqueta</th></tr></thead><tbody>${l.map(linha).join('')}</tbody></table></div>`;
+  h += `<div style="font-size:12.5px;font-weight:700;margin:4px 0;">Top 10 — maior valor perdido sem etiqueta</div>` + tabela(rows.slice(0, 10));
+  if(rows.length > 10) h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;">Ver todos os ${rows.length} artigos</summary>${tabela(rows.slice(10))}</details>`;
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Sem etiqueta = (vendido em markdown + quebra) − etiquetado. É o que podia ter sido vendido com desconto e foi para o lixo. Mês em vigor; atualiza ao carregar o Relatório de Markdown.</div></div>`;
+}
+
+// ---------- MAPAS DE PRODUÇÃO: leitura (excesso de produção, % para quebra, artigos problemáticos) ----------
+async function blocoMapasProducao(){
+  let rows = [];
+  try{ rows = await sb('loja_mp_artigos?select=*&order=data.desc&limit=3000') || []; }catch(e){ rows = []; }
+  let h = `<div class="section-title">🍞 Mapas de produção — leitura</div>`;
+  if(!rows.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue os mapas de produção (Padaria e Meal Solutions) em "📥 Carregar relatórios".</div></div>`;
+  const fim = rows[0].data, d0 = new Date(fim + 'T12:00:00'); d0.setDate(d0.getDate() - 6); const ini = impISO(d0);
+  rows = rows.filter(x => x.data >= ini);
+  const datas = [...new Set(rows.map(x => x.data))].sort(), nDias = datas.length;
+  const N = v => Number(v || 0), eur = v => N(v).toLocaleString('pt-PT', {maximumFractionDigits:0}) + ' €', un = v => N(v).toLocaleString('pt-PT', {maximumFractionDigits:0});
+  const pc = (a, b) => b ? Math.round(a / b * 1000) / 10 : 0;
+  const corQ = p => p > 20 ? 'var(--red)' : p > 10 ? 'var(--amber)' : 'var(--green)';
+  const soma = l => l.reduce((s, x) => { ['producao','sugestao','vendas_un','vendas_eur','quebra_un','quebra_eur','quebra_minimo','quebra_sugestao','quebra_excesso'].forEach(k => s[k] += N(x[k])); s.semStock += x.sem_stock === '1' ? 1 : 0; return s; }, {producao:0, sugestao:0, vendas_un:0, vendas_eur:0, quebra_un:0, quebra_eur:0, quebra_minimo:0, quebra_sugestao:0, quebra_excesso:0, semStock:0});
+  const secoes = [...new Set(rows.map(x => x.secao))];
+  const porSec = secoes.map(s => ({secao: s, ...soma(rows.filter(x => x.secao === s))})).filter(s => s.producao > 0).sort((a, b) => b.quebra_eur - a.quebra_eur);
+  const T = soma(rows);
+  h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${impDDMM(datas[0])} a ${impDDMM(datas[nDias - 1])} · ${nDias} dias</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div style="flex:1;min-width:110px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:20px;font-weight:800;color:${corQ(pc(T.quebra_un, T.producao))};">${pc(T.quebra_un, T.producao).toLocaleString('pt-PT')}%</div><div style="font-size:11px;color:var(--ink-soft);">da produção foi para quebra</div></div>
+      <div style="flex:1;min-width:110px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:20px;font-weight:800;color:var(--red);">${eur(T.quebra_eur)}</div><div style="font-size:11px;color:var(--ink-soft);">de quebra (${un(T.quebra_un)} un)</div></div>
+      <div style="flex:1;min-width:110px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:20px;font-weight:800;color:var(--amber);">${un(T.quebra_excesso)} un</div><div style="font-size:11px;color:var(--ink-soft);">quebra por excesso de produção (${pc(T.quebra_excesso, T.quebra_un)}% da quebra)</div></div>
+    </div>
+    <div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr><th style="text-align:left;">Secção</th><th>Sugestão</th><th>Produção</th><th>Cumpr.</th><th>Vendas</th><th>Quebra</th><th>% quebra</th><th>Excesso</th></tr></thead><tbody>
+    ${porSec.map(s => `<tr><td style="text-align:left;font-weight:600;">${rpEsc(s.secao)}</td><td>${un(s.sugestao)}</td><td>${un(s.producao)}</td><td style="color:${pc(s.producao, s.sugestao) > 105 ? 'var(--red)' : 'inherit'};">${Math.round(pc(s.producao, s.sugestao))}%</td><td>${eur(s.vendas_eur)}</td><td>${un(s.quebra_un)} un<br><b style="color:var(--red);">${eur(s.quebra_eur)}</b></td><td><b style="color:${corQ(pc(s.quebra_un, s.producao))};">${pc(s.quebra_un, s.producao).toLocaleString('pt-PT')}%</b></td><td>${un(s.quebra_excesso)} un</td></tr>`).join('')}
+    </tbody></table></div>
+    <div style="font-size:11.5px;margin-top:8px;"><b>De onde vem a quebra:</b> mínimos ${un(T.quebra_minimo)} un (${pc(T.quebra_minimo, T.quebra_un)}%) · sugestão ${un(T.quebra_sugestao)} un (${pc(T.quebra_sugestao, T.quebra_un)}%) · <b style="color:var(--red);">excesso de produção ${un(T.quebra_excesso)} un (${pc(T.quebra_excesso, T.quebra_un)}%)</b></div></div>`;
+  // por artigo
+  const chaves = [...new Set(rows.map(x => x.secao + '|' + x.artigo_cod))];
+  const arts = chaves.map(k => { const l = rows.filter(x => x.secao + '|' + x.artigo_cod === k); return {secao: l[0].secao, artigo: l[0].artigo, dias: l.length, ...soma(l)}; });
+  const conselho = a => {
+    const mediaV = Math.ceil(a.vendas_un / Math.max(1, a.dias)), mediaP = Math.round(a.producao / Math.max(1, a.dias));
+    if(a.quebra_excesso >= Math.max(2, a.quebra_un * 0.4)) return `Produziu acima da sugestão. <b>Seguir o mapa</b>: ~${mediaV}/dia (fez ${mediaP}/dia).`;
+    if(a.quebra_minimo >= a.quebra_un * 0.5) return `Quebra vem dos <b>mínimos</b>. Pedir revisão do mínimo ao DM (vende ~${mediaV}/dia).`;
+    if(a.quebra_sugestao >= a.quebra_un * 0.5) return `Sugestão acima das vendas. <b>Produzir por ciclos</b> e acompanhar ao fim do dia.`;
+    return `Vende ~${mediaV}/dia, produz ${mediaP}/dia.`;
+  };
+  const tabArt = (l, extra) => `<div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr><th style="text-align:left;">Artigo</th><th>Prod.</th><th>Vend.</th><th>Quebra</th><th>% quebra</th><th>Excesso</th></tr></thead><tbody>
+    ${l.map(a => `<tr><td style="text-align:left;">${rpEsc(a.artigo)}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(a.secao)}${a.semStock ? ' · sem stock ' + a.semStock + 'x' : ''}</div></td><td>${un(a.producao)}</td><td>${un(a.vendas_un)}</td><td>${un(a.quebra_un)} un<br><b style="color:var(--red);">${N(a.quebra_eur).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2})} €</b></td><td><b style="color:${corQ(pc(a.quebra_un, a.producao))};">${Math.round(pc(a.quebra_un, a.producao))}%</b></td><td>${un(a.quebra_excesso)}</td></tr>${extra ? `<tr><td colspan="6" style="text-align:left;font-size:11.5px;background:#FFF8E6;border-bottom:2px solid var(--line);">👉 ${conselho(a)}</td></tr>` : ''}`).join('')}
+    </tbody></table></div>`;
+  const prob = arts.filter(a => a.quebra_eur > 0).sort((a, b) => b.quebra_eur - a.quebra_eur).slice(0, 10);
+  h += `<div class="card"><h3 style="margin-bottom:6px;">🔥 Top 10 artigos problemáticos (mais quebra €)</h3>${prob.length ? tabArt(prob, true) : '<div style="font-size:13px;color:var(--ink-soft);">Sem quebra registada.</div>'}</div>`;
+  const exc = arts.filter(a => a.quebra_excesso > 0).sort((a, b) => b.quebra_excesso - a.quebra_excesso).slice(0, 10);
+  if(exc.length) h += `<div class="card"><h3 style="margin-bottom:6px;">📈 Excesso de produção — produziram mais do que o mapa pedia</h3>${tabArt(exc, false)}<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Excesso = quebra que só existe porque se produziu acima da sugestão. É a quebra mais fácil de evitar.</div></div>`;
+  const pct = arts.filter(a => a.producao >= 5 && a.quebra_un > 0).sort((a, b) => pc(b.quebra_un, b.producao) - pc(a.quebra_un, a.producao)).slice(0, 10);
+  if(pct.length) h += `<div class="card"><h3 style="margin-bottom:6px;">🗑️ Maior % da produção que vai para quebra</h3>${tabArt(pct, false)}</div>`;
+  const rut = arts.filter(a => a.semStock > 0 && a.quebra_un === 0).sort((a, b) => b.semStock - a.semStock);
+  if(rut.length) h += `<div class="card"><h3 style="margin-bottom:6px;">📭 Ficaram sem stock (sem quebra) — possível venda perdida</h3>${rut.map(a => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;"><span>${rpEsc(a.artigo)} <span style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(a.secao)}</span></span><b>${a.semStock} dia${a.semStock > 1 ? 's' : ''}</b></div>`).join('')}</div>`;
+  // dia a dia por secção
+  h += `<div class="card"><h3 style="margin-bottom:6px;">📅 % da produção para quebra — dia a dia</h3><div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr><th style="text-align:left;">Secção</th>${datas.map(d => `<th>${impDDMM(d)}</th>`).join('')}</tr></thead><tbody>
+    ${porSec.map(s => `<tr><td style="text-align:left;">${rpEsc(s.secao)}</td>${datas.map(d => { const x = soma(rows.filter(r => r.secao === s.secao && r.data === d)); const p = pc(x.quebra_un, x.producao); return `<td style="color:${corQ(p)};font-weight:700;">${x.producao ? Math.round(p) + '%' : '—'}</td>`; }).join('')}</tr>`).join('')}
+    </tbody></table></div></div>`;
+  // detalhe por secção
+  h += `<div class="card"><h3 style="margin-bottom:6px;">📋 Todos os artigos por secção</h3>${porSec.map(s => `<details style="border-top:1px solid var(--line);"><summary style="cursor:pointer;padding:8px 0;font-size:13px;font-weight:600;">${rpEsc(s.secao)} · ${pc(s.quebra_un, s.producao).toLocaleString('pt-PT')}% quebra · ${eur(s.quebra_eur)}</summary>${tabArt(arts.filter(a => a.secao === s.secao).sort((a, b) => b.quebra_eur - a.quebra_eur), true)}</details>`).join('')}</div>`;
+  return h;
+}
+
+async function ppRefrescar(){const el = document.getElementById('pp-wrap'); if(el) el.innerHTML = await blocoPlanoProducao(); }
 async function ppMarcar(id, feito){
   if(!paPodeMarcar()){ alert('🔒 Só responsáveis, gestores e a gestora podem marcar ações.'); return; }
   try{ await sb(`loja_plano_producao?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({feito, feito_por: feito ? (currentUser ? currentUser.name : null) : null, feito_em: feito ? new Date().toISOString() : null})}); showToast(); ppRefrescar(); }
@@ -15075,6 +15258,8 @@ async function renderControloQuebra(){
 
   try{ html += blocoRegrasQuebra(); }catch(e){ console.error('regras quebra', e); }
   try{ html += `<div id="pp-wrap">${await blocoPlanoProducao()}</div>`; }catch(e){ console.error('plano produção', e); }
+  try{ html += await blocoMapasProducao(); }catch(e){ console.error('mapas produção', e); }
+  try{ html += await blocoQuebraSemEtiqueta(); }catch(e){ console.error('sem etiqueta', e); }
   html += await blocoInventarioPorSecao();
   html += await blocoScoreValidades();
   html += await blocoAlertasQuebraArtigo(null);
@@ -15142,8 +15327,6 @@ async function renderControloQuebra(){
     html += `</div></div>`;
   }
 
-  html += `<div class="section-title">⚠️ Quebra Sem Etiqueta de Markdown</div>`;
-  html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda não tenho o cruzamento entre artigos com quebra e se tinham (ou não) markdown feito antes — preciso de um relatório que mostre isso especificamente. Assim que enviar, construo esta lista com dias e artigos.</div></div>`;
 
   html += `<div class="section-title">📅 % Execução — Rotina de Validades</div>`;
   html += `<div class="card">`;
@@ -15218,27 +15401,6 @@ async function renderControloQuebra(){
     html += `</tbody></table>`;
   }
   html += `</div>`;
-
-  const mapas = await sb('loja_mapas_producao?select=*&order=quebra_pct.desc');
-  if(mapas.length){
-    html += `<div class="section-title">🍞 Mapas de Produção — Cumprimento vs Quebra <span class="count">· ${mapas[0].semana}</span></div>`;
-    html += `<div class="card">`;
-    mapas.forEach(m=>{
-      const corQuebra = m.quebra_pct > 30 ? 'var(--red)' : (m.quebra_pct > 15 ? 'var(--amber)' : 'var(--green)');
-      html += `<div style="padding:9px 0;border-bottom:1px solid var(--line);">
-        <div style="display:flex;justify-content:space-between;">
-          <span style="font-size:13px;font-weight:600;color:var(--ink);">${m.categoria}</span>
-          <span style="font-size:12px;color:var(--ink-soft);">Cumprimento: ${m.cumprimento_pct}%</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:2px;">
-          <span style="font-size:12px;color:${corQuebra};font-weight:700;">Quebra: ${m.quebra_pct}%</span>
-          <span style="font-size:12px;color:var(--ink-soft);">${m.quebra_valor}€</span>
-        </div>
-      </div>`;
-    });
-    html += `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">Cumprimento >100% = produziu mais do que o sugerido no mapa. Quebras altas nos Salgados e Sandes indicam excesso de produção face às vendas reais.</div>`;
-    html += `</div>`;
-  }
 
   content.innerHTML = html;
 }
