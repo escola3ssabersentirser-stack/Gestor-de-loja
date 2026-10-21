@@ -2749,9 +2749,9 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   await impVerificarData('categorias', dataRef);
   // guarda as 10 que mais perdem em € e as 10 que mais perdem em % (sem repetir)
   const porEuro = [...lista].sort((a,b) => (b.venda_aa - b.venda_ac) - (a.venda_aa - a.venda_ac)).slice(0,10);
-  const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
+  const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro, ...lista.filter(x => x.venda_aa > x.venda_ac)].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
   await sb('loja_categorias_perda_vendas?id=gt.0', {method:'DELETE'});
-  await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top)});
+  for(let i = 0; i < top.length; i += 300) await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top.slice(i, i + 300))});
   await impGuardarData('categorias', dataRef);
   let painelOk = false; if(!estimada){ try{ painelOk = await impPainelDoVQ(wb, dataRef); }catch(e){} }
   return `dados até ${impDDMM(dataRef)}${estimada ? ' (data estimada)' : ''}${painelOk ? ' · painel atualizado' : ''} · 10 categorias que mais perdem vendas (pior: ${top[0].categoria} ${top[0].delta_pct.toLocaleString('pt-PT')}%)`;
@@ -12243,7 +12243,7 @@ async function renderPainelVendas(){
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_vendas_secao?select=*'),
     sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
-    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=40').catch(()=>[])
+    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=2000').catch(()=>[])
   ]);
   const r = resumoRows[0] || {};
   const calc = await calcularVendasPorPeriodo();
@@ -12288,7 +12288,30 @@ async function renderPainelVendas(){
   }
   html += `</div>`;
 
+  try{ html += vendasPerdaPorDivisao(categoriasPerda || []); }catch(e){ console.error('perda por divisão', e); }
+
   content.innerHTML = html;
+}
+
+// categorias que mais perdem vendas (€), agrupadas por divisão
+function vendasPerdaPorDivisao(cats){
+  const eur = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const l = cats.map(c => ({...c, perda: Number(c.venda_aa) - Number(c.venda_ac)})).filter(c => c.perda > 0);
+  let h = `<div class="section-title">🗂️ Categorias que mais perdem vendas — por divisão</div><div class="card">`;
+  if(!l.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados. Carregue o relatório "Vendas e Quebras".</div></div>`;
+  const div = {};
+  l.forEach(c => { const k = c.divisao || '—'; (div[k] = div[k] || {nome: k, perda: 0, cats: []}); div[k].perda += c.perda; div[k].cats.push(c); });
+  const lista = Object.values(div).sort((a, b) => b.perda - a.perda);
+  const max = lista[0].perda;
+  h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Mês até ${l[0].data_referencia ? new Date(l[0].data_referencia + 'T12:00:00').toLocaleDateString('pt-PT') : '—'} vs ano passado · só categorias que vendem menos · toque na divisão para ver todas</div>`;
+  h += lista.map((d, i) => { const cs = d.cats.sort((a, b) => b.perda - a.perda);
+    const linha = c => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0 4px 10px;border-top:1px dashed var(--line);font-size:12px;"><span style="min-width:0;">${rpEsc(c.categoria)}<span style="color:var(--ink-soft);font-size:10.5px;"> · ${eur(c.venda_ac)} vs ${eur(c.venda_aa)} (${Number(c.delta_pct).toLocaleString('pt-PT', {maximumFractionDigits:1})}%)</span></span><b style="color:var(--red);white-space:nowrap;">−${eur(c.perda)}</b></div>`;
+    return `<details ${i < 3 ? 'open' : ''} style="border-top:1px solid var(--line);padding:6px 0;"><summary style="cursor:pointer;list-style:none;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;"><b>${rpEsc(d.nome)}</b><b style="color:var(--red);">−${eur(d.perda)}</b></div>
+      <div style="height:6px;border-radius:4px;background:var(--line);margin-top:4px;overflow:hidden;"><div style="height:100%;width:${(d.perda / max * 100).toFixed(1)}%;background:var(--red);"></div></div>
+      <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;">${cs.length} categoria${cs.length > 1 ? 's' : ''} a perder · pior: ${rpEsc(cs[0].categoria)}</div></summary>
+      ${cs.slice(0, 5).map(linha).join('')}${cs.length > 5 ? `<details><summary style="cursor:pointer;font-size:11.5px;padding:4px 10px;color:var(--ink-soft);">mais ${cs.length - 5}</summary>${cs.slice(5).map(linha).join('')}</details>` : ''}</details>`; }).join('');
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Perda = venda do ano passado − venda deste ano. Atualiza ao carregar o relatório "Vendas e Quebras".</div></div>`;
 }
 
 // ===================== CUSTOS DA LOJA (luz, água, pessoal, economato) =====================
