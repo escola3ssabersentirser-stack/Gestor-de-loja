@@ -2313,6 +2313,47 @@ function renderPainelResumo(){
 // Reconhece sozinho: Resumo_Loja_Automatico, Bom Dia, Markdown da Loja, Vendas e Quebras Mensal,
 // Notas de Crédito e Venda Sugestiva. Cada um é gravado nas tabelas certas da app.
 const IMP_LOJA = '747';
+// ---------- SÓ A LOJA 747: em todos os Excel que entram na app, as linhas de outras lojas são retiradas ----------
+const IMP_COLS_LOJA = ['loja','cod retail','cod. retail','codigo retail','cod loja','cod. loja','codigo loja','codigo da loja','n loja','no loja','numero loja','num loja','loja (cod)','loja (txt)','loja (codigo)','nome loja','nome da loja','descricao loja','store','store code','id loja','loja cod'];
+const impNorm = t => String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[º°ª]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+const impEhNossaLoja = v => { const t = impNorm(v); return /(^|\D)0*747(\D|$)/.test(t) || /portuzelo/.test(t); };
+function impSoLojaFolha(ws){
+  if(!ws || !ws['!ref']) return {ws, tirou: 0};
+  const rg = XLSX.utils.decode_range(ws['!ref']);
+  const txt = (r, c) => { const cel = ws[XLSX.utils.encode_cell({r, c})]; return cel ? (cel.w != null ? cel.w : cel.v) : ''; };
+  let hRow = -1, cols = [];
+  for(let r = rg.s.r; r <= Math.min(rg.e.r, rg.s.r + 40) && hRow < 0; r++){
+    const cs = []; for(let c = rg.s.c; c <= rg.e.c; c++) if(IMP_COLS_LOJA.includes(impNorm(txt(r, c)))) cs.push(c);
+    if(cs.length){ hRow = r; cols = cs; }
+  }
+  if(hRow < 0) return {ws, tirou: 0};
+  const manter = [], tipo = [];
+  let nossas = 0, outras = 0;
+  for(let r = hRow + 1; r <= rg.e.r; r++){
+    const vals = cols.map(c => txt(r, c)).filter(v => impNorm(v) !== '');
+    if(!vals.length){ manter.push(r); continue; }        // linhas de títulos/totais sem loja ficam
+    if(vals.some(impEhNossaLoja)){ nossas++; manter.push(r); } else outras++;
+  }
+  if(!outras) return {ws, tirou: 0};
+  const novo = {};
+  Object.keys(ws).forEach(k => { if(k[0] === '!' && k !== '!ref' && k !== '!merges' && k !== '!rows') novo[k] = ws[k]; });
+  for(let r = rg.s.r; r <= hRow; r++) for(let c = rg.s.c; c <= rg.e.c; c++){ const a = XLSX.utils.encode_cell({r, c}); if(ws[a]) novo[a] = ws[a]; }
+  let destino = hRow + 1;
+  manter.forEach(r => { for(let c = rg.s.c; c <= rg.e.c; c++){ const cel = ws[XLSX.utils.encode_cell({r, c})]; if(cel) novo[XLSX.utils.encode_cell({r: destino, c})] = cel; } destino++; });
+  if(ws['!merges']) novo['!merges'] = ws['!merges'].filter(m => m.e.r <= hRow);
+  novo['!ref'] = XLSX.utils.encode_range({s: rg.s, e: {r: Math.max(hRow, destino - 1), c: rg.e.c}});
+  return {ws: novo, tirou: outras, nossas};
+}
+function impSoLoja(wb){
+  if(!wb || !wb.SheetNames || wb.__soLoja) return wb;
+  let tirou = 0;
+  wb.SheetNames.forEach(n => { try{ const x = impSoLojaFolha(wb.Sheets[n]); if(x.tirou){ wb.Sheets[n] = x.ws; tirou += x.tirou; } }catch(e){ console.warn('filtro loja', n, e); } });
+  wb.__soLoja = true; wb.__linhasOutrasLojas = tirou;
+  if(tirou) console.info(`Loja ${IMP_LOJA}: retiradas ${tirou} linhas de outras lojas`);
+  return wb;
+}
+// liga o filtro a todas as leituras de Excel da app (carregar relatórios e cada cartão)
+(function(){ if(typeof XLSX === 'undefined' || XLSX.__soLoja) return; const ler = XLSX.read; XLSX.read = function(){ return impSoLoja(ler.apply(this, arguments)); }; XLSX.__soLoja = true; })();
 const IMP_MESES = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 const IMP_SECAO_BOMDIA = {'TALHO':'Talho','PEIXARIA':'Peixaria','PADARIA/PASTELARIA':'Padaria/Pastelaria','FRUTAS E VEGETAIS':'Frutas/Vegetais','TAKE-AWAY':'Linha de atendimento'};
 const IMP_SECAO_MKD = {'TALHO':'Talho','PEIXARIA':'Peixaria','PADARIA/PASTELARIA':'Padaria/Pastelaria','FRUTAS E VEGETAIS':'Frutas/Vegetais','TAKE-AWAY':'Linha de atendimento','PRONTO A COMER':'Linha de atendimento'};
