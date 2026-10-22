@@ -2883,8 +2883,8 @@ function valLerRelatorio(wb, nomeFicheiro){
   }
   const itens = (n, cols) => { const R = L(n); const h = R.findIndex(r => (r||[]).map(impTxt).includes('Desc Artigo')); if(h < 0) return []; const row = R[h].map(impTxt); const res = [];
     for(let i = h+1; i < R.length; i++){ const r = R[i]||[]; const d = impTxt(r[row.indexOf('Desc Artigo')]); if(!d) continue; const o = {descricao: d, secao: impTxt(r[row.indexOf('Secção')])}; cols.forEach(([k,t]) => { const ci = row.indexOf(t); if(ci >= 0) o[k] = impTxt(r[ci]); }); res.push(o); } return res; };
-  out.naoTratados = itens('Ontem Nao Tratados', [['acao','Ação ontem'],['stock','Stock Dia Seguinte']]);
-  out.naoRegistadas = itens('Ontem Validades Não Registadas', [['qtd','Qtd Quebra']]);
+  out.naoTratados = itens('Ontem Nao Tratados', [['acao','Ação ontem'],['stock','Stock Dia Seguinte'],['cod','Cod Artigo']]);
+  out.naoRegistadas = itens('Ontem Validades Não Registadas', [['qtd','Qtd Quebra'],['cod','Cod Artigo']]);
   const m = String(nomeFicheiro||'').match(/(\d{4})-(\d{2})-(\d{2})/);
   out.data = m ? `${m[1]}-${m[2]}-${m[3]}` : impISO(new Date());
   return out;
@@ -15181,27 +15181,63 @@ async function blocoPlanoProducao(){
 }
 // ---------- QUEBRA SEM ETIQUETA DE MARKDOWN (mês em vigor) ----------
 async function blocoQuebraSemEtiqueta(){
-  let rows = [];
+  let rows = [], rels = [];
   try{ rows = await sb('loja_markdown_sem_etiqueta?select=*&order=valor_sem_etiqueta.desc&limit=500') || []; }catch(e){ rows = []; }
   const eur = v => Number(v || 0).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
   const qt = v => Number(v || 0).toLocaleString('pt-PT', {maximumFractionDigits:2});
-  let h = `<div class="section-title">⚠️ Quebra sem etiqueta de markdown${rows[0] ? ` <span class="count">· ${rpEsc(rows[0].mes_referencia || '')} até ${rows[0].data_referencia ? impDDMM(rows[0].data_referencia) : ''}</span>` : ''}</div><div class="card">`;
+  const ref = rows[0] && rows[0].data_referencia;
+  const ini = (ref || impISO(new Date())).slice(0, 8) + '01';
+  try{ rels = await sb(`loja_validades_relatorio?data=gte.${ini}&select=data,dados&order=data.desc`) || []; }catch(e){ rels = []; }
+  // cruzamento com o relatório de validades (todos os dias do mês já carregados)
+  const cod = v => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
+  const semValidade = {}, naoTratado = {};
+  rels.forEach(r => { const d = r.dados || {}; const dia = impDDMM(impMenosUmDia(r.data));
+    (d.naoRegistadas || []).forEach(x => { const k = cod(x.cod) || impNorm(x.descricao); (semValidade[k] = semValidade[k] || {descricao: x.descricao, secao: x.secao, dias: [], qtd: 0}); semValidade[k].dias.push(dia); semValidade[k].qtd += Math.abs(impNum(x.qtd) || 0); });
+    (d.naoTratados || []).forEach(x => { const k = cod(x.cod) || impNorm(x.descricao); (naoTratado[k] = naoTratado[k] || {descricao: x.descricao, secao: x.secao, dias: []}); naoTratado[k].dias.push(dia); }); });
+  const chave = x => cod(x.artigo_cod) || impNorm(x.artigo);
+  const cruz = x => { const k = chave(x), t = []; if(semValidade[k]) t.push(`<span style="color:#B4231A;">📅 quebra sem validade registada (${semValidade[k].dias.join(', ')})</span>`); if(naoTratado[k]) t.push(`<span style="color:#C77F12;">⏳ não tratado na rotina (${naoTratado[k].dias.join(', ')})</span>`); return t.length ? '<div style="font-size:10.5px;margin-top:2px;">' + t.join(' · ') + '</div>' : ''; };
+  const secTxt = x => rpEsc(x.secao_app ? labelSecaoPainel(x.secao_app) : impTitulo(x.divisao));
+
+  let h = `<div class="section-title">⚠️ Quebra sem etiqueta de markdown${ref ? ` <span class="count">· ${rpEsc(rows[0].mes_referencia || '')} até ${impDDMM(ref)}</span>` : ''}</div><div class="card">`;
   if(!rows.length) return h + `<div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o Relatório de Markdown da loja em "📥 Carregar relatórios".</div></div>`;
+  const nada = rows.filter(x => !Number(x.impressas)).sort((a, b) => b.quebra_valor - a.quebra_valor);
+  const parcial = rows.filter(x => Number(x.impressas) > 0).sort((a, b) => b.valor_sem_etiqueta - a.valor_sem_etiqueta);
   const totSem = rows.reduce((s, x) => s + Number(x.valor_sem_etiqueta || 0), 0), totQ = rows.reduce((s, x) => s + Number(x.quebra_valor || 0), 0);
-  const totUn = rows.reduce((s, x) => s + Number(x.qtd_sem_etiqueta || 0), 0), zero = rows.filter(x => !Number(x.impressas));
   const tile = (v, t, cor) => `<div style="flex:1;min-width:120px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:18px;font-weight:800;color:${cor};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
   h += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-    ${tile(rows.length, 'artigos foram para quebra sem etiqueta', 'var(--ink)')}
-    ${tile(qt(totUn), 'un/kg sem etiqueta impressa', 'var(--amber)')}
-    ${tile(eur(totSem), 'perdido por não marcar', 'var(--red)')}
+    ${tile(nada.length, 'foram para quebra sem nenhuma etiqueta', '#B4231A')}
+    ${tile(parcial.length, 'imprimiram, mas não a totalidade', '#C77F12')}
+    ${tile(eur(totSem), 'perdido por falta de etiqueta', 'var(--red)')}
     ${tile(eur(totQ), 'quebra destes artigos', 'var(--red)')}</div>`;
-  if(zero.length) h += `<div style="background:#FBE3DE;border:1.5px solid #B4231A;border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;">🚫 <b>${zero.length} artigo${zero.length > 1 ? 's' : ''} sem nenhuma etiqueta impressa</b> e foram para quebra: ${zero.map(x => rpEsc(impTitulo(x.artigo))).join(', ')}.</div>`;
-  const linha = x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao_app ? labelSecaoPainel(x.secao_app) : impTitulo(x.divisao))}${!Number(x.impressas) ? ' · <b style="color:#B4231A;">0 etiquetas</b>' : ' · ' + qt(x.impressas) + ' etiq.'}</div></td>
-    <td><b style="color:var(--amber);">${qt(x.qtd_sem_etiqueta)}</b></td><td>${qt(x.quebra_qtd)}</td><td>${eur(x.quebra_valor)}</td><td><b style="color:var(--red);">${eur(x.valor_sem_etiqueta)}</b></td></tr>`;
-  const tabela = l => `<div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr><th style="text-align:left;">Artigo</th><th>Sem etiqueta (un/kg)</th><th>Quebra (un/kg)</th><th>Quebra €</th><th>€ sem etiqueta</th></tr></thead><tbody>${l.map(linha).join('')}</tbody></table></div>`;
-  h += `<div style="font-size:12.5px;font-weight:700;margin:4px 0;">Top 10 — maior valor perdido sem etiqueta</div>` + tabela(rows.slice(0, 10));
-  if(rows.length > 10) h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;">Ver todos os ${rows.length} artigos</summary>${tabela(rows.slice(10))}</details>`;
-  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Sem etiqueta = (vendido em markdown + quebra) − etiquetado. É o que podia ter sido vendido com desconto e foi para o lixo. Mês em vigor; atualiza ao carregar o Relatório de Markdown.</div></div>`;
+  const tab = (cab, linhas) => `<div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr>${cab.map((c, i) => `<th${i ? '' : ' style="text-align:left;"'}>${c}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>`;
+  const lista = (cab, l, fn, n) => tab(cab, l.slice(0, n).map(fn).join('')) + (l.length > n ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;">Ver mais ${l.length - n}</summary>${tab(cab, l.slice(n).map(fn).join(''))}</details>` : '');
+
+  // 1. sem nenhuma etiqueta
+  h += `<div style="font-size:13px;font-weight:800;color:#B4231A;margin:6px 0 2px;">🚫 Foram para quebra sem nenhuma etiqueta impressa</div>`;
+  h += nada.length ? lista(['Artigo', 'Quebra (un/kg)', 'Quebra €'], nada, x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${secTxt(x)} · 0 etiquetas</div>${cruz(x)}</td><td>${qt(x.quebra_qtd)}</td><td><b style="color:var(--red);">${eur(x.quebra_valor)}</b></td></tr>`, 10)
+    : `<div style="font-size:12.5px;color:var(--green);">✓ Nenhum artigo foi para quebra sem etiqueta impressa.</div>`;
+
+  // 2. imprimiram mas não a totalidade
+  h += `<div style="font-size:13px;font-weight:800;color:#C77F12;margin:14px 0 2px;">🟠 Imprimiram etiquetas, mas não a totalidade</div>`;
+  h += parcial.length ? lista(['Artigo', 'Etiquetado', 'Faltou etiquetar', 'Quebra', '€ sem etiqueta'], parcial, x => { const pot = Number(x.qtd_potencial || 0), falta = Number(x.qtd_sem_etiqueta || 0), feito = Math.max(0, pot - falta), p = pot ? Math.round(feito / pot * 100) : 0;
+      return `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${secTxt(x)} · ${qt(x.impressas)} etiquetas impressas</div>${cruz(x)}</td><td>${qt(feito)} de ${qt(pot)}<div style="font-size:10.5px;color:${p >= 85 ? 'var(--green)' : p >= 60 ? 'var(--amber)' : 'var(--red)'};font-weight:700;">${p}%</div></td><td><b style="color:var(--amber);">${qt(falta)}</b></td><td>${qt(x.quebra_qtd)}<div style="font-size:10.5px;">${eur(x.quebra_valor)}</div></td><td><b style="color:var(--red);">${eur(x.valor_sem_etiqueta)}</b></td></tr>`; }, 10)
+    : `<div style="font-size:12.5px;color:var(--green);">✓ Sem artigos com etiquetagem incompleta.</div>`;
+
+  // 3. relatório de validades
+  const ult = rels[0] && rels[0].dados;
+  const listaSV = Object.entries(semValidade).map(([k, v]) => ({k, ...v})).sort((a, b) => b.qtd - a.qtd);
+  if(rels.length){
+    h += `<div style="font-size:13px;font-weight:800;color:var(--navy);margin:14px 0 2px;">📄 Do relatório de validades${rels.length > 1 ? ` (${rels.length} dias deste mês)` : ''}</div>`;
+    const dif = ((ult && ult.hoje) || []).filter(x => !/total/i.test(x.secao) && Number(x.dif_stock_md) > 0);
+    if(dif.length) h += `<div style="background:#FFF4D6;border:1.5px solid #E0A82E;border-radius:10px;padding:8px 12px;font-size:12.5px;margin:4px 0;">🏷️ <b>Hoje (${rpEsc(ult.periodoHoje || '')}): stock dado como todo em markdown, mas imprimiram menos etiquetas do que o stock</b> — ${dif.map(x => `${rpEsc(x.secao)} <b>${x.dif_stock_md}</b>`).join(' · ')} artigo(s).</div>`;
+    if(listaSV.length){
+      const naMkd = new Set(rows.map(chave));
+      h += `<div style="font-size:12px;margin:6px 0 2px;"><b>Foram para quebra fora de validade sem validade registada</b> — sem validade registada não há etiqueta de markdown:</div>`;
+      h += tab(['Artigo', 'Quebra', 'Dias'], listaSV.map(x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.descricao))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao || '')}${naMkd.has(x.k) ? ' · <b style="color:#B4231A;">também na lista sem etiqueta</b>' : ''}</div></td><td>${qt(x.qtd)}</td><td>${x.dias.join(', ')}</td></tr>`).join(''));
+    } else h += `<div style="font-size:12.5px;color:var(--green);">✓ Sem quebras por validade em artigos sem validade registada.</div>`;
+  } else h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:10px;">Carregue também o Relatório de Gestão de Validades para cruzar com as validades não registadas.</div>`;
+
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Faltou etiquetar = (vendido em markdown + quebra) − etiquetado. É o que podia ter sido vendido com desconto e foi para quebra. Markdown: mês em vigor. Validades: todos os relatórios carregados este mês.</div></div>`;
 }
 
 // ---------- MAPAS DE PRODUÇÃO: leitura (excesso de produção, % para quebra, artigos problemáticos) ----------
