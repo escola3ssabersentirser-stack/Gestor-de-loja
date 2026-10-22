@@ -677,15 +677,25 @@
       <p class="login-tag">Gestão e comunicação da equipa</p>
     </div>
 
+    <!-- REGRESSO RÁPIDO (número já guardado neste aparelho) -->
+    <div id="regresso-rapido" class="hidden" style="text-align:center;">
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:4px;">Bem-vindo(a) de volta</p>
+      <p id="regresso-nome" style="font-size:17px;font-weight:600;color:var(--navy);margin-bottom:18px;">—</p>
+      <div class="field">
+        <label for="input-pin">PIN</label>
+        <input type="password" id="input-pin" inputmode="numeric" maxlength="4" placeholder="••••">
+        <div id="pin-erro" style="font-size:13px;margin-top:8px;color:var(--red);"></div>
+      </div>
+      <button class="btn-primary" onclick="entrarComPin()">Entrar</button>
+      <p class="login-note" style="cursor:pointer;text-decoration:underline;" onclick="esquecerAparelho()">Não é você? Trocar utilizador</p>
+    </div>
+
     <!-- LOGIN NORMAL -->
     <div id="login-normal">
       <div class="field" id="numero-field">
         <label for="input-numero">Número de colaborador</label>
-        <input type="text" id="input-numero" inputmode="numeric" autocomplete="username" placeholder="Ex: 01084055">
-        <label for="input-codigo" style="margin-top:12px;">Código pessoal</label>
-        <input type="password" id="input-codigo" autocomplete="current-password" placeholder="O seu código" onkeydown="if(event.key==='Enter') login()">
+        <input type="text" id="input-numero" inputmode="numeric" placeholder="Ex: 01084055" oninput="lookupColaborador()">
         <div id="lookup-result" style="font-size:13px;margin-top:8px;color:var(--ink-soft);"></div>
-        <p class="login-note" style="margin-top:6px;">Não tem código ou esqueceu-se? Peça à gestora da loja.</p>
       </div>
 
       <div class="field hidden" id="role-field">
@@ -1666,11 +1676,7 @@
   </div>
   <div class="drawer-list" id="drawer-list"></div>
   <div class="drawer-footer hidden" id="drawer-footer-gestora">
-    <button onclick="abrirCodigosEquipa()">🔑 Códigos de acesso da equipa</button>
-    <button onclick="definirCodigoDemo()">🎟️ Código de demonstração</button>
-  </div>
-  <div class="drawer-footer hidden" id="drawer-footer-codigo">
-    <button onclick="mudarMeuCodigo()">🔒 Mudar o meu código</button>
+    <button onclick="definirSenhaConvidado()">🔑 Definir password de convidado</button>
   </div>
 </div>
 
@@ -1684,33 +1690,6 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 let modoDemo = false;
 
-/* ---------- SESSÃO SEGURA (número + código pessoal) ---------- */
-const CHAVE_SESSAO = 'gl_token';
-function tokenSessao(){ try{ return localStorage.getItem(CHAVE_SESSAO) || ''; }catch(e){ return ''; } }
-function guardarToken(t){ try{ t ? localStorage.setItem(CHAVE_SESSAO, t) : localStorage.removeItem(CHAVE_SESSAO); }catch(e){} }
-function cabecalhosBase(){
-  const h = {"apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`};
-  const t = tokenSessao(); if(t) h["x-loja-sessao"] = t;
-  return h;
-}
-async function rpc(nome, args){
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${nome}`, {
-    method: 'POST', cache: 'no-store',
-    headers: {...cabecalhosBase(), "Content-Type": "application/json"},
-    body: JSON.stringify(args || {})
-  });
-  if(!res.ok) throw new Error(`Erro (${res.status}): ${await res.text()}`);
-  const txt = await res.text();
-  return txt ? JSON.parse(txt) : null;
-}
-let avisoSessaoMostrado = false;
-function sessaoExpirou(){
-  if(avisoSessaoMostrado) return; avisoSessaoMostrado = true;
-  alert('A sua sessão terminou. Entre de novo com o seu número e código.');
-  guardarToken(null); try{ sessionStorage.clear(); }catch(e){}
-  location.reload();
-}
-
 async function sb(path, options={}){
   const metodo = (options.method || 'GET').toUpperCase();
   if(modoDemo && metodo !== 'GET'){
@@ -1721,7 +1700,8 @@ async function sb(path, options={}){
     cache: 'no-store',
     ...options,
     headers: {
-      ...cabecalhosBase(),
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
       "Prefer": options.prefer || "return=representation",
       ...(options.headers || {})
@@ -1729,9 +1709,6 @@ async function sb(path, options={}){
   });
   if(!res.ok){
     const err = await res.text();
-    if(currentUser && (res.status === 401 || res.status === 403 || /row-level security/i.test(err))){
-      rpc('loja_quem_sou').then(q => { if(!q) sessaoExpirou(); }).catch(()=>{});
-    }
     throw new Error(`Supabase error (${res.status}): ${err}`);
   }
   const text = await res.text();
@@ -1927,20 +1904,20 @@ function openMenu(){
   document.getElementById('drawer-user').textContent = currentUser ? `${currentUser.name} · ${ROLE_LABELS[currentUser.role]}` : '';
   buildDrawer();
   document.getElementById('drawer-footer-gestora').classList.toggle('hidden', !(currentUser && souDona()));
-  document.getElementById('drawer-footer-codigo').classList.toggle('hidden', !(currentUser && !['demo','convidado'].includes(currentUser.role)));
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-overlay').classList.add('open');
 }
 
-async function definirCodigoDemo(){
-  if(!soDona('mudar o código de demonstração')) return;
-  const novo = prompt('Novo código de demonstração (mínimo 6 caracteres).\nQuem tiver este código vê a app em modo só de leitura durante 12 horas.');
-  if(!novo || !novo.trim()) return;
+async function definirSenhaConvidado(){
+  const nova = prompt('Nova password de convidado:');
+  if(!nova || !nova.trim()) return;
   try{
-    const r = await rpc('loja_definir_codigo_demo', {p_codigo: novo.trim()});
-    if(r && r.erro){ alert(r.erro); return; }
-    showToast(); closeMenu();
-  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+    await sb('loja_config?id=eq.1', {method:"PATCH", body: JSON.stringify({senha_convidado: nova.trim()})});
+    showToast();
+    closeMenu();
+  }catch(e){
+    alert('Erro ao guardar a password. Tente novamente.');
+  }
 }
 
 function closeMenu(){
@@ -2787,6 +2764,8 @@ async function impPainelDoVQ(wb, dataRef){
 
 // ---------- VENDAS E QUEBRAS MENSAL (categorias que mais perdem vendas) ----------
 async function impCategorias(wb, nomeFicheiro, dataFicheiro){
+  { const S0 = impLinhas(wb.Sheets['Sumario por loja']).slice(0, 4).map(r => (r || []).map(impTxt).join(' ')).join(' ');
+    const m = S0.match(/loja:\s*([^\n]+)/i); if(m && !impEhNossaLoja(m[1])) throw new Error('este relatório não é da loja ' + IMP_LOJA + ' (' + m[1].slice(0, 40) + ')'); }
   const R = impLinhas(wb.Sheets['Detalhes por Categoria']);
   const h = impCabecalho(R, ['Divisao','Categoria','Venda AC','Venda AA']);
   if(!h) throw new Error('não encontrei o cabeçalho das categorias');
@@ -2904,8 +2883,8 @@ function valLerRelatorio(wb, nomeFicheiro){
   }
   const itens = (n, cols) => { const R = L(n); const h = R.findIndex(r => (r||[]).map(impTxt).includes('Desc Artigo')); if(h < 0) return []; const row = R[h].map(impTxt); const res = [];
     for(let i = h+1; i < R.length; i++){ const r = R[i]||[]; const d = impTxt(r[row.indexOf('Desc Artigo')]); if(!d) continue; const o = {descricao: d, secao: impTxt(r[row.indexOf('Secção')])}; cols.forEach(([k,t]) => { const ci = row.indexOf(t); if(ci >= 0) o[k] = impTxt(r[ci]); }); res.push(o); } return res; };
-  out.naoTratados = itens('Ontem Nao Tratados', [['acao','Ação ontem'],['stock','Stock Dia Seguinte']]);
-  out.naoRegistadas = itens('Ontem Validades Não Registadas', [['qtd','Qtd Quebra']]);
+  out.naoTratados = itens('Ontem Nao Tratados', [['acao','Ação ontem'],['stock','Stock Dia Seguinte'],['cod','Cod Artigo']]);
+  out.naoRegistadas = itens('Ontem Validades Não Registadas', [['qtd','Qtd Quebra'],['cod','Cod Artigo']]);
   const m = String(nomeFicheiro||'').match(/(\d{4})-(\d{2})-(\d{2})/);
   out.data = m ? `${m[1]}-${m[2]}-${m[3]}` : impISO(new Date());
   return out;
@@ -3120,6 +3099,8 @@ async function importarFicheirosDia(input){
         try{ texto = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); }catch(e){}
         const tt = impTipoTexto(texto, f.name);
         if(!tt){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Não percebi que relatório é. Carregue-o no cartão certo.'; continue; }
+        if(tt !== 'infoneg'){ const lojasTxt = [...String(texto).matchAll(/loja\s*(?:n\.?\s*[ºo°]?\s*)?[:\-]?\s*(\d{3,4})\b/gi)].map(m => Number(m[1]));
+          if(lojasTxt.length && !lojasTxt.includes(747) && !/portuzelo/i.test(texto)){ l.ok = false; l.tipo = IMP_NOMES[tt]; l.msg = `Este documento não é da loja ${IMP_LOJA} (fala da loja ${lojasTxt[0]}). Não foi gravado.`; continue; } }
         l.tipo = IMP_NOMES[tt]; lidos.push({l, extra: tt, f, tipo: tt, nome: f.name}); continue;
       }
       const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
@@ -3138,6 +3119,7 @@ async function importarFicheirosDia(input){
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
       const fn = {mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
+      if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
     mostrar(false);
   }
@@ -3847,7 +3829,7 @@ async function carregarRelatorioAuditoria(input, nome){
   const caminho = `auditorias/${nome.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9_-]+/g,'_')}/${Date.now()}_${limpo}`;
   try{
     if(est) est.textContent = 'A carregar…';
-    let res = {ok:false}; try{ res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false'}, body: f}); }catch(e){}
+    let res = {ok:false}; try{ res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false'}, body: f}); }catch(e){}
     const caminhoFinal = res.ok ? caminho : null;
     const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: (document.getElementById('rel-titulo')||{}).value || null, data_auditoria: (document.getElementById('rel-data')||{}).value || null, caminho: caminhoFinal, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
     const relId = novo && novo[0] && novo[0].id;
@@ -3869,7 +3851,7 @@ async function abrirRelatorioAuditoria(id){
   try{
     const rows = await sb(`loja_auditoria_relatorios?id=eq.${id}&select=caminho,tipo_ficheiro`); const r = rows && rows[0]; if(!r) throw new Error('não existe');
     if(!r.caminho){ if(janela) janela.close(); alert('Deste relatório só ficou guardada a nota (o ficheiro original não foi arquivado).'); return; }
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{...cabecalhosBase()}});
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
     if(!res.ok) throw new Error('erro');
     const url = URL.createObjectURL(await res.blob());
     if(janela) janela.location.href = url; else window.location.href = url;
@@ -3879,7 +3861,7 @@ async function apagarRelatorioAuditoria(id, nome){
   if(!confirm('Apagar este relatório?')) return;
   try{
     const rows = await sb(`loja_auditoria_relatorios?id=eq.${id}&select=caminho`); const r = rows && rows[0];
-    if(r) await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {method:'DELETE', headers:{...cabecalhosBase()}});
+    if(r) await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {method:'DELETE', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
     await sb(`loja_auditoria_relatorios?id=eq.${id}`, {method:'DELETE'});
     showToast(); renderRelatoriosAuditoria(nome);
   }catch(e){ alert('Não consegui apagar.'); }
@@ -4327,7 +4309,7 @@ const ROLE_LABELS = {
 let foundColaborador = null;
 let lookupTimer = null;
 let modoConvidado = false;
-restaurarSessaoAtiva();
+if(!restaurarSessaoAtiva()) verificarAparelhoGuardado();
 
 // ===== Convidados: só entram com autorização da gestora =====
 let pedidoTimer = null;
@@ -4338,24 +4320,22 @@ async function pedirAcessoConvidado(){
   erro.textContent = '';
   if(nome.length < 3){ erro.textContent = 'Escreva o seu nome.'; return; }
   try{
-    const r = await rpc('loja_pedir_acesso', {p_nome: nome, p_motivo: motivo || null});
-    if(!r || r.erro || !r.id){ erro.textContent = (r && r.erro) || 'Não consegui enviar o pedido. Tente novamente.'; return; }
-    try{ localStorage.setItem('gl_pedido', JSON.stringify({id: r.id, token: r.token})); }catch(e){}
+    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const r = await sb('loja_pedidos_acesso', {method:'POST', body: JSON.stringify({nome, motivo: motivo || null, token})});
+    const id = r && r[0] && r[0].id; if(!id) throw new Error();
+    try{ localStorage.setItem('gl_pedido', JSON.stringify({id, token})); }catch(e){}
     espera.innerHTML = `<div class="login-espera"><span class="pulso"></span><span>Pedido enviado. A aguardar autorização da gestora da loja…</span></div>`;
     clearInterval(pedidoTimer);
-    pedidoTimer = setInterval(() => verificarPedidoConvidado(r.id, r.token, nome), 5000);
+    pedidoTimer = setInterval(() => verificarPedidoConvidado(id, token, nome), 5000);
   }catch(e){ erro.textContent = 'Não consegui enviar o pedido. Tente novamente.'; }
 }
 async function verificarPedidoConvidado(id, token, nome){
   try{
-    const p = await rpc('loja_entrar_convidado', {p_id: id, p_token: token});
-    if(!p) return;
-    if(p.estado === 'recusado' || p.estado === 'desconhecido'){ clearInterval(pedidoTimer); document.getElementById('convidado-espera').innerHTML = `<div class="login-espera" style="background:#FBE7E4;">O pedido não foi autorizado.</div>`; return; }
-    if(p.estado === 'aprovado' && p.token){
+    const r = await sb(`loja_pedidos_acesso?id=eq.${id}&token=eq.${encodeURIComponent(token)}&select=estado,valido_ate`); const p = r && r[0]; if(!p) return;
+    if(p.estado === 'recusado'){ clearInterval(pedidoTimer); document.getElementById('convidado-espera').innerHTML = `<div class="login-espera" style="background:#FBE7E4;">O pedido não foi autorizado.</div>`; return; }
+    if(p.estado === 'aprovado' && (!p.valido_ate || new Date(p.valido_ate) > new Date())){
       clearInterval(pedidoTimer);
-      try{ localStorage.removeItem('gl_pedido'); }catch(e){}
-      guardarToken(p.token);
-      currentUser = {name: p.nome, role: 'convidado', valido_ate: p.valido_ate};
+      currentUser = {name: nome + ' (convidado)', role: 'convidado', valido_ate: p.valido_ate};
       modoDemo = true;
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('header-name').textContent = currentUser.name;
@@ -4378,105 +4358,168 @@ function toggleModoConvidado(){
   document.getElementById('toggle-convidado-link').textContent = modoConvidado ? 'Entrar com número de colaborador' : 'Entrar como convidado';
 }
 
-function lookupColaborador(){ /* já não se procura o nome ao escrever: protege os dados da equipa */ }
+function lookupColaborador(){
+  foundColaborador = null;
+  clearTimeout(lookupTimer);
+  const numero = document.getElementById('input-numero').value.trim();
+  const resultBox = document.getElementById('lookup-result');
+  if(!numero){ resultBox.textContent = ''; return; }
+  resultBox.textContent = 'A procurar...';
+  lookupTimer = setTimeout(async ()=>{
+    try{
+      const dig = numero.replace(/\D/g,''); const variantes = [...new Set([numero, dig, dig.replace(/^0+/,''), dig.padStart(8,'0')].filter(Boolean))];
+      const rows = await sb(`loja_colaboradores?numero_pessoal=in.(${variantes.map(v => '"' + encodeURIComponent(v) + '"').join(',')})&select=nome,perfil,numero_pessoal`);
+      if(rows && rows.length){
+        foundColaborador = rows[0];
+        resultBox.style.color = 'var(--teal)';
+        resultBox.textContent = `✓ ${rows[0].nome} · ${ROLE_LABELS[rows[0].perfil || 'colaborador'] || 'Colaborador'}`;
+        if(rows[0].perfil){
+          document.getElementById('input-role').value = rows[0].perfil;
+        }
+      } else {
+        resultBox.style.color = 'var(--red)';
+        resultBox.textContent = 'Número não encontrado.';
+      }
+    }catch(e){
+      resultBox.style.color = 'var(--red)';
+      resultBox.textContent = 'Erro ao procurar. Tente novamente.';
+    }
+  }, 400);
+}
 
 async function login(){
   if(modoConvidado){ await pedirAcessoConvidado(); return; }
-  const numero = document.getElementById('input-numero').value.trim();
-  const codigo = document.getElementById('input-codigo').value;
-  const resultBox = document.getElementById('lookup-result');
-  resultBox.style.color = 'var(--red)';
-  if(!numero || !codigo){ resultBox.textContent = 'Escreva o número de colaborador e o código.'; return; }
-  const btn = document.getElementById('btn-login');
-  btn.disabled = true; resultBox.style.color = 'var(--ink-soft)'; resultBox.textContent = 'A entrar…';
-  try{
-    const r = await rpc('loja_entrar', {p_numero: numero, p_codigo: codigo});
-    if(!r || r.erro || !r.token){ resultBox.style.color = 'var(--red)'; resultBox.textContent = (r && r.erro) || 'Não foi possível entrar.'; return; }
-    guardarToken(r.token);
-    foundColaborador = r.colaborador || {nome: r.nome, perfil: r.perfil, numero_pessoal: r.numero};
-    currentUser = {name: r.nome, role: r.perfil || 'colaborador', numero: r.numero};
-    modoDemo = false;
-    document.getElementById('input-codigo').value = '';
-    resultBox.textContent = '';
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('header-name').textContent = currentUser.name;
-    guardarSessaoAtiva();
-    entrarNaTelaInicial();
-    if(r.temporario) setTimeout(() => mudarMeuCodigo(true, codigo), 400);
-  }catch(e){
+  if(!foundColaborador){
+    const resultBox = document.getElementById('lookup-result');
     resultBox.style.color = 'var(--red)';
-    resultBox.textContent = 'Sem ligação. Verifique a internet e tente novamente.';
-  }finally{ btn.disabled = false; }
+    resultBox.textContent = 'Introduza um número de colaborador válido.';
+    return;
+  }
+  const role = foundColaborador.perfil || 'colaborador';
+  currentUser = {name: foundColaborador.nome, role, numero: foundColaborador.numero_pessoal || document.getElementById('input-numero').value.trim()};
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('header-name').textContent = currentUser.name;
+  entrarNaTelaInicial();
+  ofereceGuardarAparelho();
+  guardarSessaoAtiva();
 }
 
 function guardarSessaoAtiva(){
   try{
-    localStorage.setItem('gl_sessao', JSON.stringify(currentUser));
-    if(foundColaborador) localStorage.setItem('gl_colaborador', JSON.stringify(foundColaborador));
+    sessionStorage.setItem('gl_sessao', JSON.stringify(currentUser));
+    if(foundColaborador) sessionStorage.setItem('gl_colaborador', JSON.stringify(foundColaborador));
   }catch(e){}
 }
 
 function restaurarSessaoAtiva(){
   try{
-    // limpar dados do login antigo (número + PIN guardados no aparelho)
-    ['gl_numero','gl_pin','gl_role'].forEach(k => localStorage.removeItem(k));
-    try{ sessionStorage.removeItem('gl_sessao'); sessionStorage.removeItem('gl_colaborador'); }catch(e){}
-    if(!tokenSessao()) return false;
-    const guardada = localStorage.getItem('gl_sessao');
+    const guardada = sessionStorage.getItem('gl_sessao');
     if(!guardada) return false;
     currentUser = JSON.parse(guardada);
-    if(currentUser && currentUser.role === 'convidado' && (!currentUser.valido_ate || new Date(currentUser.valido_ate) < new Date())){ terminarSessaoLocal(); return false; }
-    const colabGuardado = localStorage.getItem('gl_colaborador');
+    if(currentUser && currentUser.role === 'convidado' && (!currentUser.valido_ate || new Date(currentUser.valido_ate) < new Date())){ sessionStorage.removeItem('gl_sessao'); currentUser = null; return false; }
+    const colabGuardado = sessionStorage.getItem('gl_colaborador');
     if(colabGuardado) foundColaborador = JSON.parse(colabGuardado);
     modoDemo = currentUser.role === 'demo' || currentUser.role === 'convidado';
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('header-name').textContent = currentUser.name;
     entrarNaTelaInicial();
-    // confirmar no servidor que a sessão continua válida
-    rpc('loja_quem_sou').then(q => { if(!q) sessaoExpirou(); }).catch(()=>{});
     return true;
   }catch(e){ return false; }
 }
 
-function terminarSessaoLocal(){
-  guardarToken(null);
-  ['gl_sessao','gl_colaborador'].forEach(k => { try{ localStorage.removeItem(k); }catch(e){} });
-  currentUser = null;
-}
+const CODIGO_ACESSO_DEMO = 'PORTUZELO747';
 
 function entrarComCodigoDemo(){
-  abrirFormularioGenerico('🔑 Código de Demonstração', [
-    {id:'codigo', label:'Introduza o código de demonstração', tipo:'password'}
+  abrirFormularioGenerico('🔑 Código de Acesso', [
+    {id:'codigo', label:'Introduza o código de acesso', tipo:'text'}
   ], async (valores)=>{
-    try{
-      const r = await rpc('loja_entrar_demo', {p_codigo: valores.codigo || ''});
-      if(!r || r.erro || !r.token){ alert((r && r.erro) || 'Código inválido.'); return; }
-      guardarToken(r.token);
-      modoDemo = true;
-      currentUser = {name: 'Acesso de Demonstração', role: 'demo'};
-      document.getElementById('login-screen').classList.add('hidden');
-      document.getElementById('header-name').textContent = currentUser.name;
-      selectMenu('dashboard', 'Dashboard');
-      guardarSessaoAtiva();
-    }catch(e){ alert('Sem ligação. Tente novamente.'); }
+    if(!valores.codigo || valores.codigo.toUpperCase() !== CODIGO_ACESSO_DEMO){
+      alert('Código inválido.');
+      return;
+    }
+    modoDemo = true;
+    currentUser = {name: 'Acesso de Demonstração', role: 'demo'};
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('header-name').textContent = currentUser.name;
+    selectMenu('dashboard', 'Dashboard');
+    guardarSessaoAtiva();
   });
 }
 
+/* ---------- REGRESSO RÁPIDO (PIN neste aparelho) ---------- */
+function ofereceGuardarAparelho(){
+  try{
+    if(localStorage.getItem('gl_numero')) return; // já guardado
+    const querGuardar = confirm('Quer guardar o seu número neste telemóvel para entrar mais depressa da próxima vez? Vai criar um PIN de 4 dígitos.');
+    if(!querGuardar) return;
+    let pin = prompt('Crie um PIN de 4 dígitos:');
+    if(!pin || !/^\d{4}$/.test(pin.trim())){
+      alert('PIN inválido. Tem de ter 4 números. Pode guardar mais tarde.');
+      return;
+    }
+    localStorage.setItem('gl_numero', currentUser.numero);
+    localStorage.setItem('gl_pin', pin.trim());
+    localStorage.setItem('gl_role', currentUser.role);
+  }catch(e){
+    console.error('Não foi possível guardar neste aparelho', e);
+  }
+}
 
+function verificarAparelhoGuardado(){
+  try{
+    const numero = localStorage.getItem('gl_numero');
+    if(!numero) return;
+    document.getElementById('login-normal').classList.add('hidden');
+    document.getElementById('regresso-rapido').classList.remove('hidden');
+    sb(`loja_colaboradores?numero_pessoal=eq.${encodeURIComponent(numero)}&select=nome`).then(rows=>{
+      document.getElementById('regresso-nome').textContent = rows && rows.length ? rows[0].nome : numero;
+    });
+  }catch(e){
+    console.error('Erro ao verificar aparelho', e);
+  }
+}
 
+async function entrarComPin(){
+  const pinDigitado = document.getElementById('input-pin').value.trim();
+  const erroBox = document.getElementById('pin-erro');
+  const pinGuardado = localStorage.getItem('gl_pin');
+  const numero = localStorage.getItem('gl_numero');
+  const role = localStorage.getItem('gl_role');
+  if(pinDigitado !== pinGuardado){
+    erroBox.textContent = 'PIN incorreto.';
+    return;
+  }
+  try{
+    const rows = await sb(`loja_colaboradores?numero_pessoal=eq.${encodeURIComponent(numero)}&select=*`);
+    if(!rows || !rows.length){
+      erroBox.textContent = 'Colaborador não encontrado. Troque de utilizador.';
+      return;
+    }
+    foundColaborador = rows[0];
+    currentUser = {name: rows[0].nome, role: rows[0].perfil || "colaborador", numero};
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('header-name').textContent = currentUser.name;
+    entrarNaTelaInicial();
+    guardarSessaoAtiva();
+  }catch(e){
+    erroBox.textContent = 'Erro ao entrar. Tente novamente.';
+  }
+}
 
-
-
-
-
+function esquecerAparelho(){
+  localStorage.removeItem('gl_numero');
+  localStorage.removeItem('gl_pin');
+  localStorage.removeItem('gl_role');
+  document.getElementById('regresso-rapido').classList.add('hidden');
+  document.getElementById('login-normal').classList.remove('hidden');
+}
 
 function logout(){
   currentUser = null;
   foundColaborador = null;
   avisoAniversarioMostrado = false;
   modoDemo = false;
-  if(tokenSessao()) rpc('loja_sair').catch(()=>{});
-  terminarSessaoLocal();
+  try{ sessionStorage.removeItem('gl_sessao'); }catch(e){}
   document.getElementById('dashboard-screen').classList.add('hidden');
   document.getElementById('comunicacao-screen').classList.add('hidden');
   document.getElementById('colaboradores-screen').classList.add('hidden');
@@ -4502,7 +4545,13 @@ function logout(){
   try{ document.getElementById('input-convidado-nome').value = ''; document.getElementById('input-convidado-motivo').value = ''; document.getElementById('convidado-espera').innerHTML = ''; clearInterval(pedidoTimer); }catch(e){}
   document.getElementById('convidado-erro').textContent = '';
   if(modoConvidado) toggleModoConvidado();
-  { const ic = document.getElementById('input-codigo'); if(ic) ic.value = ''; }
+  const inputPin = document.getElementById('input-pin');
+  if(inputPin) inputPin.value = '';
+  document.getElementById('pin-erro').textContent = '';
+  if(localStorage.getItem('gl_numero')){
+    document.getElementById('login-normal').classList.add('hidden');
+    document.getElementById('regresso-rapido').classList.remove('hidden');
+  }
 }
 
 let storeData = null;
@@ -8595,7 +8644,7 @@ async function caGuardar(){
       if(est) est.textContent = 'A carregar o ficheiro…';
       const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
       const caminho = `controlo-analitico/${Date.now()}_${limpo}`;
-      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
       if(res.ok){ dados.caminho = caminho; dados.nome_ficheiro = f.name; dados.tipo_ficheiro = f.type || null; }
     }
     if(dados.numero){ const ja = await sb(`loja_controlo_analitico?numero=eq.${encodeURIComponent(dados.numero)}&select=id`); if(ja && ja.length){ await sb(`loja_controlo_analitico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)}); showToast(); abrirDetalheAuditoria('HACCP'); return; } }
@@ -8613,7 +8662,7 @@ async function caResolver(id){
 }
 async function caAbrir(id){
   const janela = window.open('', '_blank');
-  try{ const x = caLista.find(r => r.id === id); const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${x.caminho}`, {headers:{...cabecalhosBase()}}); if(!res.ok) throw 0; const url = URL.createObjectURL(await res.blob()); if(janela) janela.location.href = url; else window.location.href = url; }
+  try{ const x = caLista.find(r => r.id === id); const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${x.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}}); if(!res.ok) throw 0; const url = URL.createObjectURL(await res.blob()); if(janela) janela.location.href = url; else window.location.href = url; }
   catch(e){ if(janela) janela.close(); alert('Não consegui abrir o relatório.'); }
 }
 
@@ -8716,7 +8765,7 @@ async function audCarregarAuto(input){
     // guardar o ficheiro (se falhar, continua na mesma: o importante é ler a nota)
     const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
     let caminho = `auditorias/${nome}/${Date.now()}_${limpo}`;
-    try{ const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f}); if(!res.ok) caminho = null; }catch(e){ caminho = null; }
+    try{ const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f}); if(!res.ok) caminho = null; }catch(e){ caminho = null; }
     const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: f.name.replace(/\.[^.]+$/,''), caminho, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
     const relId = novo && novo[0] && novo[0].id;
     let d = null;
@@ -9116,7 +9165,7 @@ async function infoNegCarregar(input){
     const caminho = `informacao-negocio/${Date.now()}_${limpo}`;
     let guardouFicheiro = false;
     try{
-      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
       guardouFicheiro = res.ok;
     }catch(e){}
     const dados = {semana, titulo: extra ? `Informação de Negócio Extra ${/2\.?\s*ª?\s*feira/i.test(texto.slice(0,300) + f.name) ? '2.ª feira ' : ''}· ${semana}` : 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
@@ -9132,7 +9181,7 @@ async function infoNegAbrir(id){
   const janela = window.open('', '_blank');
   try{
     const r = (infoNegRows||[]).find(x => x.id === id); if(!r || !r.caminho) throw new Error('sem ficheiro');
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{...cabecalhosBase()}});
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
     if(!res.ok) throw new Error('erro');
     const url = URL.createObjectURL(await res.blob());
     if(janela) janela.location.href = url; else window.location.href = url;
@@ -15132,27 +15181,63 @@ async function blocoPlanoProducao(){
 }
 // ---------- QUEBRA SEM ETIQUETA DE MARKDOWN (mês em vigor) ----------
 async function blocoQuebraSemEtiqueta(){
-  let rows = [];
+  let rows = [], rels = [];
   try{ rows = await sb('loja_markdown_sem_etiqueta?select=*&order=valor_sem_etiqueta.desc&limit=500') || []; }catch(e){ rows = []; }
   const eur = v => Number(v || 0).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
   const qt = v => Number(v || 0).toLocaleString('pt-PT', {maximumFractionDigits:2});
-  let h = `<div class="section-title">⚠️ Quebra sem etiqueta de markdown${rows[0] ? ` <span class="count">· ${rpEsc(rows[0].mes_referencia || '')} até ${rows[0].data_referencia ? impDDMM(rows[0].data_referencia) : ''}</span>` : ''}</div><div class="card">`;
+  const ref = rows[0] && rows[0].data_referencia;
+  const ini = (ref || impISO(new Date())).slice(0, 8) + '01';
+  try{ rels = await sb(`loja_validades_relatorio?data=gte.${ini}&select=data,dados&order=data.desc`) || []; }catch(e){ rels = []; }
+  // cruzamento com o relatório de validades (todos os dias do mês já carregados)
+  const cod = v => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
+  const semValidade = {}, naoTratado = {};
+  rels.forEach(r => { const d = r.dados || {}; const dia = impDDMM(impMenosUmDia(r.data));
+    (d.naoRegistadas || []).forEach(x => { const k = cod(x.cod) || impNorm(x.descricao); (semValidade[k] = semValidade[k] || {descricao: x.descricao, secao: x.secao, dias: [], qtd: 0}); semValidade[k].dias.push(dia); semValidade[k].qtd += Math.abs(impNum(x.qtd) || 0); });
+    (d.naoTratados || []).forEach(x => { const k = cod(x.cod) || impNorm(x.descricao); (naoTratado[k] = naoTratado[k] || {descricao: x.descricao, secao: x.secao, dias: []}); naoTratado[k].dias.push(dia); }); });
+  const chave = x => cod(x.artigo_cod) || impNorm(x.artigo);
+  const cruz = x => { const k = chave(x), t = []; if(semValidade[k]) t.push(`<span style="color:#B4231A;">📅 quebra sem validade registada (${semValidade[k].dias.join(', ')})</span>`); if(naoTratado[k]) t.push(`<span style="color:#C77F12;">⏳ não tratado na rotina (${naoTratado[k].dias.join(', ')})</span>`); return t.length ? '<div style="font-size:10.5px;margin-top:2px;">' + t.join(' · ') + '</div>' : ''; };
+  const secTxt = x => rpEsc(x.secao_app ? labelSecaoPainel(x.secao_app) : impTitulo(x.divisao));
+
+  let h = `<div class="section-title">⚠️ Quebra sem etiqueta de markdown${ref ? ` <span class="count">· ${rpEsc(rows[0].mes_referencia || '')} até ${impDDMM(ref)}</span>` : ''}</div><div class="card">`;
   if(!rows.length) return h + `<div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o Relatório de Markdown da loja em "📥 Carregar relatórios".</div></div>`;
+  const nada = rows.filter(x => !Number(x.impressas)).sort((a, b) => b.quebra_valor - a.quebra_valor);
+  const parcial = rows.filter(x => Number(x.impressas) > 0).sort((a, b) => b.valor_sem_etiqueta - a.valor_sem_etiqueta);
   const totSem = rows.reduce((s, x) => s + Number(x.valor_sem_etiqueta || 0), 0), totQ = rows.reduce((s, x) => s + Number(x.quebra_valor || 0), 0);
-  const totUn = rows.reduce((s, x) => s + Number(x.qtd_sem_etiqueta || 0), 0), zero = rows.filter(x => !Number(x.impressas));
   const tile = (v, t, cor) => `<div style="flex:1;min-width:120px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:18px;font-weight:800;color:${cor};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
   h += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-    ${tile(rows.length, 'artigos foram para quebra sem etiqueta', 'var(--ink)')}
-    ${tile(qt(totUn), 'un/kg sem etiqueta impressa', 'var(--amber)')}
-    ${tile(eur(totSem), 'perdido por não marcar', 'var(--red)')}
+    ${tile(nada.length, 'foram para quebra sem nenhuma etiqueta', '#B4231A')}
+    ${tile(parcial.length, 'imprimiram, mas não a totalidade', '#C77F12')}
+    ${tile(eur(totSem), 'perdido por falta de etiqueta', 'var(--red)')}
     ${tile(eur(totQ), 'quebra destes artigos', 'var(--red)')}</div>`;
-  if(zero.length) h += `<div style="background:#FBE3DE;border:1.5px solid #B4231A;border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:10px;">🚫 <b>${zero.length} artigo${zero.length > 1 ? 's' : ''} sem nenhuma etiqueta impressa</b> e foram para quebra: ${zero.map(x => rpEsc(impTitulo(x.artigo))).join(', ')}.</div>`;
-  const linha = x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao_app ? labelSecaoPainel(x.secao_app) : impTitulo(x.divisao))}${!Number(x.impressas) ? ' · <b style="color:#B4231A;">0 etiquetas</b>' : ' · ' + qt(x.impressas) + ' etiq.'}</div></td>
-    <td><b style="color:var(--amber);">${qt(x.qtd_sem_etiqueta)}</b></td><td>${qt(x.quebra_qtd)}</td><td>${eur(x.quebra_valor)}</td><td><b style="color:var(--red);">${eur(x.valor_sem_etiqueta)}</b></td></tr>`;
-  const tabela = l => `<div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr><th style="text-align:left;">Artigo</th><th>Sem etiqueta (un/kg)</th><th>Quebra (un/kg)</th><th>Quebra €</th><th>€ sem etiqueta</th></tr></thead><tbody>${l.map(linha).join('')}</tbody></table></div>`;
-  h += `<div style="font-size:12.5px;font-weight:700;margin:4px 0;">Top 10 — maior valor perdido sem etiqueta</div>` + tabela(rows.slice(0, 10));
-  if(rows.length > 10) h += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:600;">Ver todos os ${rows.length} artigos</summary>${tabela(rows.slice(10))}</details>`;
-  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Sem etiqueta = (vendido em markdown + quebra) − etiquetado. É o que podia ter sido vendido com desconto e foi para o lixo. Mês em vigor; atualiza ao carregar o Relatório de Markdown.</div></div>`;
+  const tab = (cab, linhas) => `<div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr>${cab.map((c, i) => `<th${i ? '' : ' style="text-align:left;"'}>${c}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>`;
+  const lista = (cab, l, fn, n) => tab(cab, l.slice(0, n).map(fn).join('')) + (l.length > n ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;">Ver mais ${l.length - n}</summary>${tab(cab, l.slice(n).map(fn).join(''))}</details>` : '');
+
+  // 1. sem nenhuma etiqueta
+  h += `<div style="font-size:13px;font-weight:800;color:#B4231A;margin:6px 0 2px;">🚫 Foram para quebra sem nenhuma etiqueta impressa</div>`;
+  h += nada.length ? lista(['Artigo', 'Quebra (un/kg)', 'Quebra €'], nada, x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${secTxt(x)} · 0 etiquetas</div>${cruz(x)}</td><td>${qt(x.quebra_qtd)}</td><td><b style="color:var(--red);">${eur(x.quebra_valor)}</b></td></tr>`, 10)
+    : `<div style="font-size:12.5px;color:var(--green);">✓ Nenhum artigo foi para quebra sem etiqueta impressa.</div>`;
+
+  // 2. imprimiram mas não a totalidade
+  h += `<div style="font-size:13px;font-weight:800;color:#C77F12;margin:14px 0 2px;">🟠 Imprimiram etiquetas, mas não a totalidade</div>`;
+  h += parcial.length ? lista(['Artigo', 'Etiquetado', 'Faltou etiquetar', 'Quebra', '€ sem etiqueta'], parcial, x => { const pot = Number(x.qtd_potencial || 0), falta = Number(x.qtd_sem_etiqueta || 0), feito = Math.max(0, pot - falta), p = pot ? Math.round(feito / pot * 100) : 0;
+      return `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${secTxt(x)} · ${qt(x.impressas)} etiquetas impressas</div>${cruz(x)}</td><td>${qt(feito)} de ${qt(pot)}<div style="font-size:10.5px;color:${p >= 85 ? 'var(--green)' : p >= 60 ? 'var(--amber)' : 'var(--red)'};font-weight:700;">${p}%</div></td><td><b style="color:var(--amber);">${qt(falta)}</b></td><td>${qt(x.quebra_qtd)}<div style="font-size:10.5px;">${eur(x.quebra_valor)}</div></td><td><b style="color:var(--red);">${eur(x.valor_sem_etiqueta)}</b></td></tr>`; }, 10)
+    : `<div style="font-size:12.5px;color:var(--green);">✓ Sem artigos com etiquetagem incompleta.</div>`;
+
+  // 3. relatório de validades
+  const ult = rels[0] && rels[0].dados;
+  const listaSV = Object.entries(semValidade).map(([k, v]) => ({k, ...v})).sort((a, b) => b.qtd - a.qtd);
+  if(rels.length){
+    h += `<div style="font-size:13px;font-weight:800;color:var(--navy);margin:14px 0 2px;">📄 Do relatório de validades${rels.length > 1 ? ` (${rels.length} dias deste mês)` : ''}</div>`;
+    const dif = ((ult && ult.hoje) || []).filter(x => !/total/i.test(x.secao) && Number(x.dif_stock_md) > 0);
+    if(dif.length) h += `<div style="background:#FFF4D6;border:1.5px solid #E0A82E;border-radius:10px;padding:8px 12px;font-size:12.5px;margin:4px 0;">🏷️ <b>Hoje (${rpEsc(ult.periodoHoje || '')}): stock dado como todo em markdown, mas imprimiram menos etiquetas do que o stock</b> — ${dif.map(x => `${rpEsc(x.secao)} <b>${x.dif_stock_md}</b>`).join(' · ')} artigo(s).</div>`;
+    if(listaSV.length){
+      const naMkd = new Set(rows.map(chave));
+      h += `<div style="font-size:12px;margin:6px 0 2px;"><b>Foram para quebra fora de validade sem validade registada</b> — sem validade registada não há etiqueta de markdown:</div>`;
+      h += tab(['Artigo', 'Quebra', 'Dias'], listaSV.map(x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.descricao))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao || '')}${naMkd.has(x.k) ? ' · <b style="color:#B4231A;">também na lista sem etiqueta</b>' : ''}</div></td><td>${qt(x.qtd)}</td><td>${x.dias.join(', ')}</td></tr>`).join(''));
+    } else h += `<div style="font-size:12.5px;color:var(--green);">✓ Sem quebras por validade em artigos sem validade registada.</div>`;
+  } else h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:10px;">Carregue também o Relatório de Gestão de Validades para cruzar com as validades não registadas.</div>`;
+
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Faltou etiquetar = (vendido em markdown + quebra) − etiquetado. É o que podia ter sido vendido com desconto e foi para quebra. Markdown: mês em vigor. Validades: todos os relatórios carregados este mês.</div></div>`;
 }
 
 // ---------- MAPAS DE PRODUÇÃO: leitura (excesso de produção, % para quebra, artigos problemáticos) ----------
@@ -15568,107 +15653,6 @@ function fmtNum(v){
   if(v === null || v === undefined) return '—';
   return Number(v).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1});
 }
-
-
-/* ---------- CÓDIGOS DE ACESSO ---------- */
-function mudarMeuCodigo(obrigatorio, codigoAtual){
-  closeMenu();
-  const campos = [];
-  if(!codigoAtual) campos.push({id:'atual', label:'Código atual', tipo:'password'});
-  campos.push({id:'novo', label:'Novo código (mínimo 6 caracteres)', tipo:'password'});
-  campos.push({id:'repetir', label:'Repetir o novo código', tipo:'password'});
-  abrirFormularioGenerico(obrigatorio ? '🔒 Escolha o seu código pessoal' : '🔒 Mudar o meu código', campos, async (v)=>{
-    if(!v.novo || v.novo.length < 6){ alert('O novo código tem de ter pelo menos 6 caracteres.'); mudarMeuCodigo(obrigatorio, codigoAtual); return; }
-    if(v.novo !== v.repetir){ alert('Os dois códigos não são iguais.'); mudarMeuCodigo(obrigatorio, codigoAtual); return; }
-    try{
-      const r = await rpc('loja_mudar_codigo', {p_atual: codigoAtual || v.atual, p_novo: v.novo});
-      if(r && r.erro){ alert(r.erro); mudarMeuCodigo(obrigatorio, codigoAtual); return; }
-      alert('✅ Código guardado. Use-o da próxima vez que entrar.');
-    }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
-  });
-}
-
-function escHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-async function abrirCodigosEquipa(){
-  if(!soDona('gerir os códigos de acesso')) return;
-  closeMenu();
-  let ov = document.getElementById('modal-codigos');
-  if(!ov){
-    ov = document.createElement('div');
-    ov.id = 'modal-codigos';
-    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:999;display:flex;align-items:flex-end;';
-    ov.onclick = (ev) => { if(ev.target === ov) ov.remove(); };
-    document.body.appendChild(ov);
-  }
-  ov.innerHTML = `<div style="background:var(--paper);width:100%;max-width:480px;margin:0 auto;border-radius:18px 18px 0 0;padding:18px 16px 24px;max-height:88vh;overflow:auto;">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-      <h3 style="margin:0;">🔑 Códigos de acesso</h3>
-      <button onclick="document.getElementById('modal-codigos').remove()" style="border:0;background:none;font-size:22px;cursor:pointer;" aria-label="Fechar">×</button>
-    </div>
-    <p style="font-size:12.5px;color:var(--ink-soft);margin:6px 0 12px;">Gere um código provisório e envie-o à pessoa. No primeiro acesso, ela escolhe o seu próprio código. Gerar de novo apaga o código anterior.</p>
-    <input id="codigos-filtro" placeholder="Procurar nome ou número" oninput="desenharCodigosEquipa()" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;margin-bottom:10px;">
-    <div id="codigos-lista" style="font-size:13px;">A carregar…</div>
-  </div>`;
-  try{
-    const [pessoas, estado] = await Promise.all([
-      sb('loja_colaboradores?select=id,nome,numero_pessoal,perfil,secao,telefone&order=nome.asc'),
-      rpc('loja_estado_acessos')
-    ]);
-    const mapa = {}; (estado || []).forEach(x => mapa[x.id] = x);
-    window._codigosEquipa = (pessoas || []).map(p => ({...p, acesso: mapa[p.id] || {}}));
-    desenharCodigosEquipa();
-  }catch(e){ document.getElementById('codigos-lista').textContent = 'Não consegui carregar a lista.'; }
-}
-
-function desenharCodigosEquipa(){
-  const el = document.getElementById('codigos-lista'); if(!el) return;
-  const f = (document.getElementById('codigos-filtro').value || '').toLowerCase();
-  const lista = (window._codigosEquipa || []).filter(p => !f || (p.nome||'').toLowerCase().includes(f) || String(p.numero_pessoal||'').includes(f));
-  const sem = lista.filter(p => !p.acesso.tem_codigo).length;
-  el.innerHTML = `<div style="color:var(--ink-soft);margin-bottom:8px;">${lista.length} pessoas · ${sem} ainda sem código</div>` + lista.map(p => {
-    const a = p.acesso;
-    const estado = !a.tem_codigo ? '<span style="color:var(--red);">Sem código</span>'
-      : a.temporario ? '<span style="color:var(--amber);">Código provisório</span>'
-      : '<span style="color:var(--green);">Ativo</span>';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line);">
-      <div style="flex:1;min-width:0;">
-        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.nome)}</div>
-        <div style="font-size:12px;color:var(--ink-soft);">Nº ${escHtml(p.numero_pessoal)} · ${escHtml(ROLE_LABELS[p.perfil||'colaborador']||'')} · ${estado}</div>
-      </div>
-      <button onclick="gerarCodigoPara(${Number(p.id)})" style="border:1px solid var(--navy);background:var(--paper);color:var(--navy);border-radius:8px;padding:7px 10px;font-size:12.5px;cursor:pointer;white-space:nowrap;">${a.tem_codigo ? 'Novo código' : 'Gerar código'}</button>
-    </div>`;
-  }).join('');
-}
-
-async function gerarCodigoPara(id){
-  const p = (window._codigosEquipa || []).find(x => x.id === id); if(!p) return;
-  if(p.acesso.tem_codigo && !confirm(`Gerar um código novo para ${p.nome}? O código atual deixa de funcionar.`)) return;
-  try{
-    const r = await rpc('loja_gerar_codigo', {p_colaborador_id: id});
-    if(!r || r.erro || !r.codigo){ alert((r && r.erro) || 'Não consegui gerar o código.'); return; }
-    p.acesso = {tem_codigo: true, temporario: true};
-    desenharCodigosEquipa();
-    const link = location.href.split('#')[0].split('?')[0];
-    const msg = `Olá ${String(p.nome||'').split(' ')[0]}! O teu acesso à app da Loja 747:\n${link}\n\nNúmero: ${p.numero_pessoal}\nCódigo provisório: ${r.codigo}\n\nNo primeiro acesso vais escolher o teu próprio código. Não partilhes o código com ninguém.`;
-    let tel = String(p.telefone || '').replace(/\D/g,'');
-    if(tel.length === 9) tel = '351' + tel;
-    const wa = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-    const ov = document.getElementById('modal-codigos');
-    const caixa = document.createElement('div');
-    caixa.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
-    caixa.innerHTML = `<div style="background:var(--paper);border-radius:16px;padding:20px;max-width:360px;width:100%;text-align:center;">
-      <div style="font-size:13px;color:var(--ink-soft);">Código provisório de</div>
-      <div style="font-weight:700;margin:4px 0 10px;">${escHtml(p.nome)}</div>
-      <div style="font-size:34px;letter-spacing:6px;font-weight:800;color:var(--navy);margin-bottom:14px;">${escHtml(r.codigo)}</div>
-      <a href="${wa}" target="_blank" rel="noopener" style="display:block;background:#25D366;color:#fff;text-decoration:none;border-radius:10px;padding:12px;font-weight:600;margin-bottom:8px;">Enviar por WhatsApp</a>
-      <button onclick="this.closest('div[style*=fixed]').remove()" style="width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px;cursor:pointer;">Fechar</button>
-      <p style="font-size:11.5px;color:var(--ink-soft);margin:10px 0 0;">Este código só aparece agora. Se o perder, gere outro.</p>
-    </div>`;
-    (ov || document.body).appendChild(caixa);
-  }catch(e){ alert('Sem ligação. Tente novamente.'); }
-}
-
 </script>
 </body>
 </html>
