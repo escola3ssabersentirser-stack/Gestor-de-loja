@@ -677,25 +677,15 @@
       <p class="login-tag">Gestão e comunicação da equipa</p>
     </div>
 
-    <!-- REGRESSO RÁPIDO (número já guardado neste aparelho) -->
-    <div id="regresso-rapido" class="hidden" style="text-align:center;">
-      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:4px;">Bem-vindo(a) de volta</p>
-      <p id="regresso-nome" style="font-size:17px;font-weight:600;color:var(--navy);margin-bottom:18px;">—</p>
-      <div class="field">
-        <label for="input-pin">PIN</label>
-        <input type="password" id="input-pin" inputmode="numeric" maxlength="4" placeholder="••••">
-        <div id="pin-erro" style="font-size:13px;margin-top:8px;color:var(--red);"></div>
-      </div>
-      <button class="btn-primary" onclick="entrarComPin()">Entrar</button>
-      <p class="login-note" style="cursor:pointer;text-decoration:underline;" onclick="esquecerAparelho()">Não é você? Trocar utilizador</p>
-    </div>
-
     <!-- LOGIN NORMAL -->
     <div id="login-normal">
       <div class="field" id="numero-field">
         <label for="input-numero">Número de colaborador</label>
-        <input type="text" id="input-numero" inputmode="numeric" placeholder="Ex: 01084055" oninput="lookupColaborador()">
+        <input type="text" id="input-numero" inputmode="numeric" autocomplete="username" placeholder="Ex: 01084055">
+        <label for="input-codigo" style="margin-top:12px;">Código pessoal</label>
+        <input type="password" id="input-codigo" autocomplete="current-password" placeholder="O seu código" onkeydown="if(event.key==='Enter') login()">
         <div id="lookup-result" style="font-size:13px;margin-top:8px;color:var(--ink-soft);"></div>
+        <p class="login-note" style="margin-top:6px;">Não tem código ou esqueceu-se? Peça à gestora da loja.</p>
       </div>
 
       <div class="field hidden" id="role-field">
@@ -1676,7 +1666,11 @@
   </div>
   <div class="drawer-list" id="drawer-list"></div>
   <div class="drawer-footer hidden" id="drawer-footer-gestora">
-    <button onclick="definirSenhaConvidado()">🔑 Definir password de convidado</button>
+    <button onclick="abrirCodigosEquipa()">🔑 Códigos de acesso da equipa</button>
+    <button onclick="definirCodigoDemo()">🎟️ Código de demonstração</button>
+  </div>
+  <div class="drawer-footer hidden" id="drawer-footer-codigo">
+    <button onclick="mudarMeuCodigo()">🔒 Mudar o meu código</button>
   </div>
 </div>
 
@@ -1690,6 +1684,33 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 let modoDemo = false;
 
+/* ---------- SESSÃO SEGURA (número + código pessoal) ---------- */
+const CHAVE_SESSAO = 'gl_token';
+function tokenSessao(){ try{ return localStorage.getItem(CHAVE_SESSAO) || ''; }catch(e){ return ''; } }
+function guardarToken(t){ try{ t ? localStorage.setItem(CHAVE_SESSAO, t) : localStorage.removeItem(CHAVE_SESSAO); }catch(e){} }
+function cabecalhosBase(){
+  const h = {"apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`};
+  const t = tokenSessao(); if(t) h["x-loja-sessao"] = t;
+  return h;
+}
+async function rpc(nome, args){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${nome}`, {
+    method: 'POST', cache: 'no-store',
+    headers: {...cabecalhosBase(), "Content-Type": "application/json"},
+    body: JSON.stringify(args || {})
+  });
+  if(!res.ok) throw new Error(`Erro (${res.status}): ${await res.text()}`);
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+let avisoSessaoMostrado = false;
+function sessaoExpirou(){
+  if(avisoSessaoMostrado) return; avisoSessaoMostrado = true;
+  alert('A sua sessão terminou. Entre de novo com o seu número e código.');
+  guardarToken(null); try{ sessionStorage.clear(); }catch(e){}
+  location.reload();
+}
+
 async function sb(path, options={}){
   const metodo = (options.method || 'GET').toUpperCase();
   if(modoDemo && metodo !== 'GET'){
@@ -1700,8 +1721,7 @@ async function sb(path, options={}){
     cache: 'no-store',
     ...options,
     headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      ...cabecalhosBase(),
       "Content-Type": "application/json",
       "Prefer": options.prefer || "return=representation",
       ...(options.headers || {})
@@ -1709,6 +1729,9 @@ async function sb(path, options={}){
   });
   if(!res.ok){
     const err = await res.text();
+    if(currentUser && (res.status === 401 || res.status === 403 || /row-level security/i.test(err))){
+      rpc('loja_quem_sou').then(q => { if(!q) sessaoExpirou(); }).catch(()=>{});
+    }
     throw new Error(`Supabase error (${res.status}): ${err}`);
   }
   const text = await res.text();
@@ -1904,20 +1927,20 @@ function openMenu(){
   document.getElementById('drawer-user').textContent = currentUser ? `${currentUser.name} · ${ROLE_LABELS[currentUser.role]}` : '';
   buildDrawer();
   document.getElementById('drawer-footer-gestora').classList.toggle('hidden', !(currentUser && souDona()));
+  document.getElementById('drawer-footer-codigo').classList.toggle('hidden', !(currentUser && !['demo','convidado'].includes(currentUser.role)));
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-overlay').classList.add('open');
 }
 
-async function definirSenhaConvidado(){
-  const nova = prompt('Nova password de convidado:');
-  if(!nova || !nova.trim()) return;
+async function definirCodigoDemo(){
+  if(!soDona('mudar o código de demonstração')) return;
+  const novo = prompt('Novo código de demonstração (mínimo 6 caracteres).\nQuem tiver este código vê a app em modo só de leitura durante 12 horas.');
+  if(!novo || !novo.trim()) return;
   try{
-    await sb('loja_config?id=eq.1', {method:"PATCH", body: JSON.stringify({senha_convidado: nova.trim()})});
-    showToast();
-    closeMenu();
-  }catch(e){
-    alert('Erro ao guardar a password. Tente novamente.');
-  }
+    const r = await rpc('loja_definir_codigo_demo', {p_codigo: novo.trim()});
+    if(r && r.erro){ alert(r.erro); return; }
+    showToast(); closeMenu();
+  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
 }
 
 function closeMenu(){
@@ -3824,7 +3847,7 @@ async function carregarRelatorioAuditoria(input, nome){
   const caminho = `auditorias/${nome.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9_-]+/g,'_')}/${Date.now()}_${limpo}`;
   try{
     if(est) est.textContent = 'A carregar…';
-    let res = {ok:false}; try{ res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false'}, body: f}); }catch(e){}
+    let res = {ok:false}; try{ res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false'}, body: f}); }catch(e){}
     const caminhoFinal = res.ok ? caminho : null;
     const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: (document.getElementById('rel-titulo')||{}).value || null, data_auditoria: (document.getElementById('rel-data')||{}).value || null, caminho: caminhoFinal, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
     const relId = novo && novo[0] && novo[0].id;
@@ -3846,7 +3869,7 @@ async function abrirRelatorioAuditoria(id){
   try{
     const rows = await sb(`loja_auditoria_relatorios?id=eq.${id}&select=caminho,tipo_ficheiro`); const r = rows && rows[0]; if(!r) throw new Error('não existe');
     if(!r.caminho){ if(janela) janela.close(); alert('Deste relatório só ficou guardada a nota (o ficheiro original não foi arquivado).'); return; }
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{...cabecalhosBase()}});
     if(!res.ok) throw new Error('erro');
     const url = URL.createObjectURL(await res.blob());
     if(janela) janela.location.href = url; else window.location.href = url;
@@ -3856,7 +3879,7 @@ async function apagarRelatorioAuditoria(id, nome){
   if(!confirm('Apagar este relatório?')) return;
   try{
     const rows = await sb(`loja_auditoria_relatorios?id=eq.${id}&select=caminho`); const r = rows && rows[0];
-    if(r) await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {method:'DELETE', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
+    if(r) await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {method:'DELETE', headers:{...cabecalhosBase()}});
     await sb(`loja_auditoria_relatorios?id=eq.${id}`, {method:'DELETE'});
     showToast(); renderRelatoriosAuditoria(nome);
   }catch(e){ alert('Não consegui apagar.'); }
@@ -4304,7 +4327,7 @@ const ROLE_LABELS = {
 let foundColaborador = null;
 let lookupTimer = null;
 let modoConvidado = false;
-if(!restaurarSessaoAtiva()) verificarAparelhoGuardado();
+restaurarSessaoAtiva();
 
 // ===== Convidados: só entram com autorização da gestora =====
 let pedidoTimer = null;
@@ -4315,22 +4338,24 @@ async function pedirAcessoConvidado(){
   erro.textContent = '';
   if(nome.length < 3){ erro.textContent = 'Escreva o seu nome.'; return; }
   try{
-    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const r = await sb('loja_pedidos_acesso', {method:'POST', body: JSON.stringify({nome, motivo: motivo || null, token})});
-    const id = r && r[0] && r[0].id; if(!id) throw new Error();
-    try{ localStorage.setItem('gl_pedido', JSON.stringify({id, token})); }catch(e){}
+    const r = await rpc('loja_pedir_acesso', {p_nome: nome, p_motivo: motivo || null});
+    if(!r || r.erro || !r.id){ erro.textContent = (r && r.erro) || 'Não consegui enviar o pedido. Tente novamente.'; return; }
+    try{ localStorage.setItem('gl_pedido', JSON.stringify({id: r.id, token: r.token})); }catch(e){}
     espera.innerHTML = `<div class="login-espera"><span class="pulso"></span><span>Pedido enviado. A aguardar autorização da gestora da loja…</span></div>`;
     clearInterval(pedidoTimer);
-    pedidoTimer = setInterval(() => verificarPedidoConvidado(id, token, nome), 5000);
+    pedidoTimer = setInterval(() => verificarPedidoConvidado(r.id, r.token, nome), 5000);
   }catch(e){ erro.textContent = 'Não consegui enviar o pedido. Tente novamente.'; }
 }
 async function verificarPedidoConvidado(id, token, nome){
   try{
-    const r = await sb(`loja_pedidos_acesso?id=eq.${id}&token=eq.${encodeURIComponent(token)}&select=estado,valido_ate`); const p = r && r[0]; if(!p) return;
-    if(p.estado === 'recusado'){ clearInterval(pedidoTimer); document.getElementById('convidado-espera').innerHTML = `<div class="login-espera" style="background:#FBE7E4;">O pedido não foi autorizado.</div>`; return; }
-    if(p.estado === 'aprovado' && (!p.valido_ate || new Date(p.valido_ate) > new Date())){
+    const p = await rpc('loja_entrar_convidado', {p_id: id, p_token: token});
+    if(!p) return;
+    if(p.estado === 'recusado' || p.estado === 'desconhecido'){ clearInterval(pedidoTimer); document.getElementById('convidado-espera').innerHTML = `<div class="login-espera" style="background:#FBE7E4;">O pedido não foi autorizado.</div>`; return; }
+    if(p.estado === 'aprovado' && p.token){
       clearInterval(pedidoTimer);
-      currentUser = {name: nome + ' (convidado)', role: 'convidado', valido_ate: p.valido_ate};
+      try{ localStorage.removeItem('gl_pedido'); }catch(e){}
+      guardarToken(p.token);
+      currentUser = {name: p.nome, role: 'convidado', valido_ate: p.valido_ate};
       modoDemo = true;
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('header-name').textContent = currentUser.name;
@@ -4353,168 +4378,105 @@ function toggleModoConvidado(){
   document.getElementById('toggle-convidado-link').textContent = modoConvidado ? 'Entrar com número de colaborador' : 'Entrar como convidado';
 }
 
-function lookupColaborador(){
-  foundColaborador = null;
-  clearTimeout(lookupTimer);
-  const numero = document.getElementById('input-numero').value.trim();
-  const resultBox = document.getElementById('lookup-result');
-  if(!numero){ resultBox.textContent = ''; return; }
-  resultBox.textContent = 'A procurar...';
-  lookupTimer = setTimeout(async ()=>{
-    try{
-      const dig = numero.replace(/\D/g,''); const variantes = [...new Set([numero, dig, dig.replace(/^0+/,''), dig.padStart(8,'0')].filter(Boolean))];
-      const rows = await sb(`loja_colaboradores?numero_pessoal=in.(${variantes.map(v => '"' + encodeURIComponent(v) + '"').join(',')})&select=nome,perfil,numero_pessoal`);
-      if(rows && rows.length){
-        foundColaborador = rows[0];
-        resultBox.style.color = 'var(--teal)';
-        resultBox.textContent = `✓ ${rows[0].nome} · ${ROLE_LABELS[rows[0].perfil || 'colaborador'] || 'Colaborador'}`;
-        if(rows[0].perfil){
-          document.getElementById('input-role').value = rows[0].perfil;
-        }
-      } else {
-        resultBox.style.color = 'var(--red)';
-        resultBox.textContent = 'Número não encontrado.';
-      }
-    }catch(e){
-      resultBox.style.color = 'var(--red)';
-      resultBox.textContent = 'Erro ao procurar. Tente novamente.';
-    }
-  }, 400);
-}
+function lookupColaborador(){ /* já não se procura o nome ao escrever: protege os dados da equipa */ }
 
 async function login(){
   if(modoConvidado){ await pedirAcessoConvidado(); return; }
-  if(!foundColaborador){
-    const resultBox = document.getElementById('lookup-result');
+  const numero = document.getElementById('input-numero').value.trim();
+  const codigo = document.getElementById('input-codigo').value;
+  const resultBox = document.getElementById('lookup-result');
+  resultBox.style.color = 'var(--red)';
+  if(!numero || !codigo){ resultBox.textContent = 'Escreva o número de colaborador e o código.'; return; }
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true; resultBox.style.color = 'var(--ink-soft)'; resultBox.textContent = 'A entrar…';
+  try{
+    const r = await rpc('loja_entrar', {p_numero: numero, p_codigo: codigo});
+    if(!r || r.erro || !r.token){ resultBox.style.color = 'var(--red)'; resultBox.textContent = (r && r.erro) || 'Não foi possível entrar.'; return; }
+    guardarToken(r.token);
+    foundColaborador = r.colaborador || {nome: r.nome, perfil: r.perfil, numero_pessoal: r.numero};
+    currentUser = {name: r.nome, role: r.perfil || 'colaborador', numero: r.numero};
+    modoDemo = false;
+    document.getElementById('input-codigo').value = '';
+    resultBox.textContent = '';
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('header-name').textContent = currentUser.name;
+    guardarSessaoAtiva();
+    entrarNaTelaInicial();
+    if(r.temporario) setTimeout(() => mudarMeuCodigo(true, codigo), 400);
+  }catch(e){
     resultBox.style.color = 'var(--red)';
-    resultBox.textContent = 'Introduza um número de colaborador válido.';
-    return;
-  }
-  const role = foundColaborador.perfil || 'colaborador';
-  currentUser = {name: foundColaborador.nome, role, numero: foundColaborador.numero_pessoal || document.getElementById('input-numero').value.trim()};
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('header-name').textContent = currentUser.name;
-  entrarNaTelaInicial();
-  ofereceGuardarAparelho();
-  guardarSessaoAtiva();
+    resultBox.textContent = 'Sem ligação. Verifique a internet e tente novamente.';
+  }finally{ btn.disabled = false; }
 }
 
 function guardarSessaoAtiva(){
   try{
-    sessionStorage.setItem('gl_sessao', JSON.stringify(currentUser));
-    if(foundColaborador) sessionStorage.setItem('gl_colaborador', JSON.stringify(foundColaborador));
+    localStorage.setItem('gl_sessao', JSON.stringify(currentUser));
+    if(foundColaborador) localStorage.setItem('gl_colaborador', JSON.stringify(foundColaborador));
   }catch(e){}
 }
 
 function restaurarSessaoAtiva(){
   try{
-    const guardada = sessionStorage.getItem('gl_sessao');
+    // limpar dados do login antigo (número + PIN guardados no aparelho)
+    ['gl_numero','gl_pin','gl_role'].forEach(k => localStorage.removeItem(k));
+    try{ sessionStorage.removeItem('gl_sessao'); sessionStorage.removeItem('gl_colaborador'); }catch(e){}
+    if(!tokenSessao()) return false;
+    const guardada = localStorage.getItem('gl_sessao');
     if(!guardada) return false;
     currentUser = JSON.parse(guardada);
-    if(currentUser && currentUser.role === 'convidado' && (!currentUser.valido_ate || new Date(currentUser.valido_ate) < new Date())){ sessionStorage.removeItem('gl_sessao'); currentUser = null; return false; }
-    const colabGuardado = sessionStorage.getItem('gl_colaborador');
+    if(currentUser && currentUser.role === 'convidado' && (!currentUser.valido_ate || new Date(currentUser.valido_ate) < new Date())){ terminarSessaoLocal(); return false; }
+    const colabGuardado = localStorage.getItem('gl_colaborador');
     if(colabGuardado) foundColaborador = JSON.parse(colabGuardado);
     modoDemo = currentUser.role === 'demo' || currentUser.role === 'convidado';
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('header-name').textContent = currentUser.name;
     entrarNaTelaInicial();
+    // confirmar no servidor que a sessão continua válida
+    rpc('loja_quem_sou').then(q => { if(!q) sessaoExpirou(); }).catch(()=>{});
     return true;
   }catch(e){ return false; }
 }
 
-const CODIGO_ACESSO_DEMO = 'PORTUZELO747';
+function terminarSessaoLocal(){
+  guardarToken(null);
+  ['gl_sessao','gl_colaborador'].forEach(k => { try{ localStorage.removeItem(k); }catch(e){} });
+  currentUser = null;
+}
 
 function entrarComCodigoDemo(){
-  abrirFormularioGenerico('🔑 Código de Acesso', [
-    {id:'codigo', label:'Introduza o código de acesso', tipo:'text'}
+  abrirFormularioGenerico('🔑 Código de Demonstração', [
+    {id:'codigo', label:'Introduza o código de demonstração', tipo:'password'}
   ], async (valores)=>{
-    if(!valores.codigo || valores.codigo.toUpperCase() !== CODIGO_ACESSO_DEMO){
-      alert('Código inválido.');
-      return;
-    }
-    modoDemo = true;
-    currentUser = {name: 'Acesso de Demonstração', role: 'demo'};
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('header-name').textContent = currentUser.name;
-    selectMenu('dashboard', 'Dashboard');
-    guardarSessaoAtiva();
+    try{
+      const r = await rpc('loja_entrar_demo', {p_codigo: valores.codigo || ''});
+      if(!r || r.erro || !r.token){ alert((r && r.erro) || 'Código inválido.'); return; }
+      guardarToken(r.token);
+      modoDemo = true;
+      currentUser = {name: 'Acesso de Demonstração', role: 'demo'};
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('header-name').textContent = currentUser.name;
+      selectMenu('dashboard', 'Dashboard');
+      guardarSessaoAtiva();
+    }catch(e){ alert('Sem ligação. Tente novamente.'); }
   });
 }
 
-/* ---------- REGRESSO RÁPIDO (PIN neste aparelho) ---------- */
-function ofereceGuardarAparelho(){
-  try{
-    if(localStorage.getItem('gl_numero')) return; // já guardado
-    const querGuardar = confirm('Quer guardar o seu número neste telemóvel para entrar mais depressa da próxima vez? Vai criar um PIN de 4 dígitos.');
-    if(!querGuardar) return;
-    let pin = prompt('Crie um PIN de 4 dígitos:');
-    if(!pin || !/^\d{4}$/.test(pin.trim())){
-      alert('PIN inválido. Tem de ter 4 números. Pode guardar mais tarde.');
-      return;
-    }
-    localStorage.setItem('gl_numero', currentUser.numero);
-    localStorage.setItem('gl_pin', pin.trim());
-    localStorage.setItem('gl_role', currentUser.role);
-  }catch(e){
-    console.error('Não foi possível guardar neste aparelho', e);
-  }
-}
 
-function verificarAparelhoGuardado(){
-  try{
-    const numero = localStorage.getItem('gl_numero');
-    if(!numero) return;
-    document.getElementById('login-normal').classList.add('hidden');
-    document.getElementById('regresso-rapido').classList.remove('hidden');
-    sb(`loja_colaboradores?numero_pessoal=eq.${encodeURIComponent(numero)}&select=nome`).then(rows=>{
-      document.getElementById('regresso-nome').textContent = rows && rows.length ? rows[0].nome : numero;
-    });
-  }catch(e){
-    console.error('Erro ao verificar aparelho', e);
-  }
-}
 
-async function entrarComPin(){
-  const pinDigitado = document.getElementById('input-pin').value.trim();
-  const erroBox = document.getElementById('pin-erro');
-  const pinGuardado = localStorage.getItem('gl_pin');
-  const numero = localStorage.getItem('gl_numero');
-  const role = localStorage.getItem('gl_role');
-  if(pinDigitado !== pinGuardado){
-    erroBox.textContent = 'PIN incorreto.';
-    return;
-  }
-  try{
-    const rows = await sb(`loja_colaboradores?numero_pessoal=eq.${encodeURIComponent(numero)}&select=*`);
-    if(!rows || !rows.length){
-      erroBox.textContent = 'Colaborador não encontrado. Troque de utilizador.';
-      return;
-    }
-    foundColaborador = rows[0];
-    currentUser = {name: rows[0].nome, role: rows[0].perfil || "colaborador", numero};
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('header-name').textContent = currentUser.name;
-    entrarNaTelaInicial();
-    guardarSessaoAtiva();
-  }catch(e){
-    erroBox.textContent = 'Erro ao entrar. Tente novamente.';
-  }
-}
 
-function esquecerAparelho(){
-  localStorage.removeItem('gl_numero');
-  localStorage.removeItem('gl_pin');
-  localStorage.removeItem('gl_role');
-  document.getElementById('regresso-rapido').classList.add('hidden');
-  document.getElementById('login-normal').classList.remove('hidden');
-}
+
+
+
+
 
 function logout(){
   currentUser = null;
   foundColaborador = null;
   avisoAniversarioMostrado = false;
   modoDemo = false;
-  try{ sessionStorage.removeItem('gl_sessao'); }catch(e){}
+  if(tokenSessao()) rpc('loja_sair').catch(()=>{});
+  terminarSessaoLocal();
   document.getElementById('dashboard-screen').classList.add('hidden');
   document.getElementById('comunicacao-screen').classList.add('hidden');
   document.getElementById('colaboradores-screen').classList.add('hidden');
@@ -4540,13 +4502,7 @@ function logout(){
   try{ document.getElementById('input-convidado-nome').value = ''; document.getElementById('input-convidado-motivo').value = ''; document.getElementById('convidado-espera').innerHTML = ''; clearInterval(pedidoTimer); }catch(e){}
   document.getElementById('convidado-erro').textContent = '';
   if(modoConvidado) toggleModoConvidado();
-  const inputPin = document.getElementById('input-pin');
-  if(inputPin) inputPin.value = '';
-  document.getElementById('pin-erro').textContent = '';
-  if(localStorage.getItem('gl_numero')){
-    document.getElementById('login-normal').classList.add('hidden');
-    document.getElementById('regresso-rapido').classList.remove('hidden');
-  }
+  { const ic = document.getElementById('input-codigo'); if(ic) ic.value = ''; }
 }
 
 let storeData = null;
@@ -8639,7 +8595,7 @@ async function caGuardar(){
       if(est) est.textContent = 'A carregar o ficheiro…';
       const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
       const caminho = `controlo-analitico/${Date.now()}_${limpo}`;
-      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
       if(res.ok){ dados.caminho = caminho; dados.nome_ficheiro = f.name; dados.tipo_ficheiro = f.type || null; }
     }
     if(dados.numero){ const ja = await sb(`loja_controlo_analitico?numero=eq.${encodeURIComponent(dados.numero)}&select=id`); if(ja && ja.length){ await sb(`loja_controlo_analitico?id=eq.${ja[0].id}`, {method:'PATCH', body: JSON.stringify(dados)}); showToast(); abrirDetalheAuditoria('HACCP'); return; } }
@@ -8657,7 +8613,7 @@ async function caResolver(id){
 }
 async function caAbrir(id){
   const janela = window.open('', '_blank');
-  try{ const x = caLista.find(r => r.id === id); const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${x.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}}); if(!res.ok) throw 0; const url = URL.createObjectURL(await res.blob()); if(janela) janela.location.href = url; else window.location.href = url; }
+  try{ const x = caLista.find(r => r.id === id); const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${x.caminho}`, {headers:{...cabecalhosBase()}}); if(!res.ok) throw 0; const url = URL.createObjectURL(await res.blob()); if(janela) janela.location.href = url; else window.location.href = url; }
   catch(e){ if(janela) janela.close(); alert('Não consegui abrir o relatório.'); }
 }
 
@@ -8760,7 +8716,7 @@ async function audCarregarAuto(input){
     // guardar o ficheiro (se falhar, continua na mesma: o importante é ler a nota)
     const limpo = f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
     let caminho = `auditorias/${nome}/${Date.now()}_${limpo}`;
-    try{ const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f}); if(!res.ok) caminho = null; }catch(e){ caminho = null; }
+    try{ const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f}); if(!res.ok) caminho = null; }catch(e){ caminho = null; }
     const novo = await sb('loja_auditoria_relatorios', {method:'POST', body: JSON.stringify({auditoria: nome, titulo: f.name.replace(/\.[^.]+$/,''), caminho, nome_ficheiro: f.name, tipo_ficheiro: f.type || null, tamanho: f.size, carregado_por: currentUser ? currentUser.name : null})});
     const relId = novo && novo[0] && novo[0].id;
     let d = null;
@@ -9160,7 +9116,7 @@ async function infoNegCarregar(input){
     const caminho = `informacao-negocio/${Date.now()}_${limpo}`;
     let guardouFicheiro = false;
     try{
-      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${caminho}`, {method:'POST', headers:{...cabecalhosBase(), 'Content-Type': f.type || 'application/octet-stream', 'x-upsert':'false'}, body: f});
       guardouFicheiro = res.ok;
     }catch(e){}
     const dados = {semana, titulo: extra ? `Informação de Negócio Extra ${/2\.?\s*ª?\s*feira/i.test(texto.slice(0,300) + f.name) ? '2.ª feira ' : ''}· ${semana}` : 'Informação de Negócio ' + semana, data_documento: dataDoc, resumo: texto.slice(0, 20000), caminho: guardouFicheiro ? caminho : null, nome_ficheiro: f.name, tipo_ficheiro: f.type || null};
@@ -9176,7 +9132,7 @@ async function infoNegAbrir(id){
   const janela = window.open('', '_blank');
   try{
     const r = (infoNegRows||[]).find(x => x.id === id); if(!r || !r.caminho) throw new Error('sem ficheiro');
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`}});
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${REL_BUCKET}/${r.caminho}`, {headers:{...cabecalhosBase()}});
     if(!res.ok) throw new Error('erro');
     const url = URL.createObjectURL(await res.blob());
     if(janela) janela.location.href = url; else window.location.href = url;
@@ -15612,6 +15568,107 @@ function fmtNum(v){
   if(v === null || v === undefined) return '—';
   return Number(v).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1});
 }
+
+
+/* ---------- CÓDIGOS DE ACESSO ---------- */
+function mudarMeuCodigo(obrigatorio, codigoAtual){
+  closeMenu();
+  const campos = [];
+  if(!codigoAtual) campos.push({id:'atual', label:'Código atual', tipo:'password'});
+  campos.push({id:'novo', label:'Novo código (mínimo 6 caracteres)', tipo:'password'});
+  campos.push({id:'repetir', label:'Repetir o novo código', tipo:'password'});
+  abrirFormularioGenerico(obrigatorio ? '🔒 Escolha o seu código pessoal' : '🔒 Mudar o meu código', campos, async (v)=>{
+    if(!v.novo || v.novo.length < 6){ alert('O novo código tem de ter pelo menos 6 caracteres.'); mudarMeuCodigo(obrigatorio, codigoAtual); return; }
+    if(v.novo !== v.repetir){ alert('Os dois códigos não são iguais.'); mudarMeuCodigo(obrigatorio, codigoAtual); return; }
+    try{
+      const r = await rpc('loja_mudar_codigo', {p_atual: codigoAtual || v.atual, p_novo: v.novo});
+      if(r && r.erro){ alert(r.erro); mudarMeuCodigo(obrigatorio, codigoAtual); return; }
+      alert('✅ Código guardado. Use-o da próxima vez que entrar.');
+    }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+  });
+}
+
+function escHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function abrirCodigosEquipa(){
+  if(!soDona('gerir os códigos de acesso')) return;
+  closeMenu();
+  let ov = document.getElementById('modal-codigos');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'modal-codigos';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:999;display:flex;align-items:flex-end;';
+    ov.onclick = (ev) => { if(ev.target === ov) ov.remove(); };
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<div style="background:var(--paper);width:100%;max-width:480px;margin:0 auto;border-radius:18px 18px 0 0;padding:18px 16px 24px;max-height:88vh;overflow:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <h3 style="margin:0;">🔑 Códigos de acesso</h3>
+      <button onclick="document.getElementById('modal-codigos').remove()" style="border:0;background:none;font-size:22px;cursor:pointer;" aria-label="Fechar">×</button>
+    </div>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin:6px 0 12px;">Gere um código provisório e envie-o à pessoa. No primeiro acesso, ela escolhe o seu próprio código. Gerar de novo apaga o código anterior.</p>
+    <input id="codigos-filtro" placeholder="Procurar nome ou número" oninput="desenharCodigosEquipa()" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-size:14px;box-sizing:border-box;margin-bottom:10px;">
+    <div id="codigos-lista" style="font-size:13px;">A carregar…</div>
+  </div>`;
+  try{
+    const [pessoas, estado] = await Promise.all([
+      sb('loja_colaboradores?select=id,nome,numero_pessoal,perfil,secao,telefone&order=nome.asc'),
+      rpc('loja_estado_acessos')
+    ]);
+    const mapa = {}; (estado || []).forEach(x => mapa[x.id] = x);
+    window._codigosEquipa = (pessoas || []).map(p => ({...p, acesso: mapa[p.id] || {}}));
+    desenharCodigosEquipa();
+  }catch(e){ document.getElementById('codigos-lista').textContent = 'Não consegui carregar a lista.'; }
+}
+
+function desenharCodigosEquipa(){
+  const el = document.getElementById('codigos-lista'); if(!el) return;
+  const f = (document.getElementById('codigos-filtro').value || '').toLowerCase();
+  const lista = (window._codigosEquipa || []).filter(p => !f || (p.nome||'').toLowerCase().includes(f) || String(p.numero_pessoal||'').includes(f));
+  const sem = lista.filter(p => !p.acesso.tem_codigo).length;
+  el.innerHTML = `<div style="color:var(--ink-soft);margin-bottom:8px;">${lista.length} pessoas · ${sem} ainda sem código</div>` + lista.map(p => {
+    const a = p.acesso;
+    const estado = !a.tem_codigo ? '<span style="color:var(--red);">Sem código</span>'
+      : a.temporario ? '<span style="color:var(--amber);">Código provisório</span>'
+      : '<span style="color:var(--green);">Ativo</span>';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.nome)}</div>
+        <div style="font-size:12px;color:var(--ink-soft);">Nº ${escHtml(p.numero_pessoal)} · ${escHtml(ROLE_LABELS[p.perfil||'colaborador']||'')} · ${estado}</div>
+      </div>
+      <button onclick="gerarCodigoPara(${Number(p.id)})" style="border:1px solid var(--navy);background:var(--paper);color:var(--navy);border-radius:8px;padding:7px 10px;font-size:12.5px;cursor:pointer;white-space:nowrap;">${a.tem_codigo ? 'Novo código' : 'Gerar código'}</button>
+    </div>`;
+  }).join('');
+}
+
+async function gerarCodigoPara(id){
+  const p = (window._codigosEquipa || []).find(x => x.id === id); if(!p) return;
+  if(p.acesso.tem_codigo && !confirm(`Gerar um código novo para ${p.nome}? O código atual deixa de funcionar.`)) return;
+  try{
+    const r = await rpc('loja_gerar_codigo', {p_colaborador_id: id});
+    if(!r || r.erro || !r.codigo){ alert((r && r.erro) || 'Não consegui gerar o código.'); return; }
+    p.acesso = {tem_codigo: true, temporario: true};
+    desenharCodigosEquipa();
+    const link = location.href.split('#')[0].split('?')[0];
+    const msg = `Olá ${String(p.nome||'').split(' ')[0]}! O teu acesso à app da Loja 747:\n${link}\n\nNúmero: ${p.numero_pessoal}\nCódigo provisório: ${r.codigo}\n\nNo primeiro acesso vais escolher o teu próprio código. Não partilhes o código com ninguém.`;
+    let tel = String(p.telefone || '').replace(/\D/g,'');
+    if(tel.length === 9) tel = '351' + tel;
+    const wa = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    const ov = document.getElementById('modal-codigos');
+    const caixa = document.createElement('div');
+    caixa.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    caixa.innerHTML = `<div style="background:var(--paper);border-radius:16px;padding:20px;max-width:360px;width:100%;text-align:center;">
+      <div style="font-size:13px;color:var(--ink-soft);">Código provisório de</div>
+      <div style="font-weight:700;margin:4px 0 10px;">${escHtml(p.nome)}</div>
+      <div style="font-size:34px;letter-spacing:6px;font-weight:800;color:var(--navy);margin-bottom:14px;">${escHtml(r.codigo)}</div>
+      <a href="${wa}" target="_blank" rel="noopener" style="display:block;background:#25D366;color:#fff;text-decoration:none;border-radius:10px;padding:12px;font-weight:600;margin-bottom:8px;">Enviar por WhatsApp</a>
+      <button onclick="this.closest('div[style*=fixed]').remove()" style="width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px;cursor:pointer;">Fechar</button>
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:10px 0 0;">Este código só aparece agora. Se o perder, gere outro.</p>
+    </div>`;
+    (ov || document.body).appendChild(caixa);
+  }catch(e){ alert('Sem ligação. Tente novamente.'); }
+}
+
 </script>
 </body>
 </html>
