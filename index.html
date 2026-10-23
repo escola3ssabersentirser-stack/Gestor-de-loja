@@ -8994,7 +8994,7 @@ async function renderPodioComunicacao(){
   const camp = []; ops.forEach(o => { const k = o.artigo || '—'; let c = camp.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; camp.push(c); } c.ops.push(o); });
   if(!camp.length){ wrap.innerHTML = `<div class="card" style="font-size:13px;color:var(--ink-soft);">Sem dados da venda sugestiva.</div>`; return; }
   const a = camp[0].ops.sort((x,y) => y.vendas_un - x.vendas_un), b = camp[1] ? camp[1].ops.sort((x,y) => y.vendas_un - x.vendas_un) : null;
-  wrap.innerHTML = `<div class="card" style="padding:6px 12px;"><div style="font-size:12px;color:var(--ink-soft);">${rpEsc(camp[0].k)}${camp[0].data ? ' · até ' + camp[0].data.slice(8,10) + '/' + camp[0].data.slice(5,7) : ''} — parabéns a todos! 👏</div>${podioVendaSugestivaHtml(a, b)}</div>`;
+  wrap.innerHTML = `<div class="card" style="padding:6px 12px;"><div style="font-size:12px;color:var(--ink-soft);">${rpEsc(camp[0].k)}${camp[0].data ? ' · até ' + camp[0].data.slice(8,10) + '/' + camp[0].data.slice(5,7) : ''} — parabéns a todos! 👏</div>${podioVendaSugestivaHtml(a, b)}${souDona() ? `<button class="econ-btn" style="margin:4px 0 8px;" onclick="vsEnviarPodio()">📧 Enviar pódio por email</button>` : ''}</div>`;
 }
 
 // informação de negócio da semana de uma data (por omissão, hoje); se não houver, a mais recente que não seja futura
@@ -9888,6 +9888,102 @@ async function blocoIndicadoresFrenteLoja(){
 }
 
 // Histórico: as últimas 4 campanhas semanais (o último dia carregado de cada artigo)
+// ---------- VENDA SUGESTIVA: vencedores das últimas 4 semanas + imagem do pódio para enviar por email ----------
+async function vsCampanhas(){
+  let ops = [];
+  try{ ops = await sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=400') || []; }catch(e){}
+  const camp = [];
+  ops.forEach(o => { const k = o.artigo || '—'; let c = camp.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; camp.push(c); } c.ops.push(o); });
+  camp.forEach(c => c.ops.sort((a, b) => (Number(b.vendas_un) || 0) - (Number(a.vendas_un) || 0)));
+  return camp;
+}
+const vsNomeCurto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? impTitulo(p[0] + ' ' + p[p.length - 1]) : impTitulo(p[0] || ''); };
+function vsResumo4(camp){
+  const ult = camp.slice(0, 4);
+  const tot = {};
+  ult.forEach(c => c.ops.forEach(o => { const k = o.numero_pessoal || o.nome; (tot[k] = tot[k] || {nome: o.nome, un: 0, vitorias: 0}); tot[k].un += Number(o.vendas_un) || 0; }));
+  ult.forEach(c => { const w = c.ops[0]; if(w){ const k = w.numero_pessoal || w.nome; if(tot[k]) tot[k].vitorias++; } });
+  const rank = Object.values(tot).sort((a, b) => b.un - a.un);
+  return {ult, rank};
+}
+function vsVencedores4Html(camp){
+  const {ult, rank} = vsResumo4(camp);
+  if(!ult.length) return '';
+  const dm = d => d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '';
+  let h = `<div class="card" style="padding:8px 12px;margin-bottom:12px;"><h3 style="margin:6px 0 6px;">🏆 Vencedores das últimas ${ult.length} semanas</h3>`;
+  h += ult.map((c, i) => { const w = c.ops[0]; return `<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;">
+      <span style="min-width:0;"><b>🥇 ${rpEsc(w ? vsNomeCurto(w.nome) : '—')}</b><div style="font-size:10.5px;color:var(--ink-soft);">${i === 0 ? 'Esta semana' : 'Há ' + i + ' semana' + (i > 1 ? 's' : '')} · ${rpEsc(c.k)}${c.data ? ' · até ' + dm(c.data) : ''}</div></span>
+      <b style="white-space:nowrap;color:var(--navy);">${w ? w.vendas_un : 0} un</b></div>`; }).join('');
+  if(rank.length){ const c = rank[0];
+    h += `<div style="background:#FFF4D6;border:1.5px solid #E0A82E;border-radius:10px;padding:8px 12px;margin-top:8px;font-size:12.5px;">👑 <b>Campeã(o) das ${ult.length} semanas: ${rpEsc(vsNomeCurto(c.nome))}</b> — ${c.un} unidades${c.vitorias ? ' · ' + c.vitorias + ' vitória' + (c.vitorias > 1 ? 's' : '') : ''}</div>`;
+    h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Total das ${ult.length} semanas: ${rank.slice(0, 6).map((r, i) => `${i + 1}.º ${rpEsc(vsNomeCurto(r.nome))} ${r.un}`).join(' · ')}</div>`; }
+  return h + `</div>`;
+}
+// desenha a imagem (1080 × 1350) com o pódio da semana e os vencedores das últimas 4 semanas
+function vsDesenharPodio(camp){
+  const c0 = camp[0]; const {ult, rank} = vsResumo4(camp);
+  const W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  const VERDE = '#1F5C2E', OURO = '#E0A82E', PRATA = '#A9B2B9', BRONZE = '#C27C4A', TINTA = '#1d2a22';
+  const F = (p, w) => `${w || 700} ${p}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`;
+  const txt = (t, x, y, f, cor, al) => { g.font = f; g.fillStyle = cor; g.textAlign = al || 'center'; g.fillText(t, x, y); };
+  const caber = (t, max, f) => { g.font = f; let s = String(t); while(g.measureText(s).width > max && s.length > 3) s = s.slice(0, -2); return s === String(t) ? s : s + '…'; };
+  const rr = (x, y, w, h, r, cor) => { g.fillStyle = cor; g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); };
+  g.fillStyle = '#F6F3EC'; g.fillRect(0, 0, W, H);
+  const grd = g.createLinearGradient(0, 0, W, 260); grd.addColorStop(0, '#2E7D3E'); grd.addColorStop(1, '#14301E'); g.fillStyle = grd; g.fillRect(0, 0, W, 250);
+  txt('🏆 VENDA SUGESTIVA', W / 2, 92, F(60, 800), '#fff');
+  txt(caber(c0.k, W - 120, F(38, 600)), W / 2, 150, F(38, 600), '#E8F3E9');
+  txt(`Loja 747 · Portuzelo${c0.data ? ' · até ' + c0.data.slice(8, 10) + '/' + c0.data.slice(5, 7) : ''}`, W / 2, 205, F(28, 500), '#BFD9C3');
+  // pódio
+  const top = c0.ops.slice(0, 3), base = 715, larg = 270, gap = 30, x0 = (W - (larg * 3 + gap * 2)) / 2;
+  const pos = [{i: 1, x: x0, h: 200, cor: PRATA}, {i: 0, x: x0 + larg + gap, h: 280, cor: OURO}, {i: 2, x: x0 + 2 * (larg + gap), h: 150, cor: BRONZE}];
+  const med = ['🥇', '🥈', '🥉'];
+  pos.forEach(p => { const o = top[p.i]; if(!o) return;
+    rr(p.x, base - p.h, larg, p.h + 20, 18, p.cor);
+    txt(`${p.i + 1}.º`, p.x + larg / 2, base - p.h + 90, F(72, 800), '#fff');
+    txt(`${o.vendas_un} un`, p.x + larg / 2, base - p.h + 150, F(36, 700), '#fff');
+    txt(med[p.i], p.x + larg / 2, base - p.h - 110, F(78, 400), TINTA);
+    let fs = 36; g.font = F(fs, 800); while(fs > 24 && g.measureText(vsNomeCurto(o.nome)).width > larg + 24){ fs -= 2; g.font = F(fs, 800); }
+    txt(caber(vsNomeCurto(o.nome), larg + 24, F(fs, 800)), p.x + larg / 2, base - p.h - 30, F(fs, 800), TINTA); });
+  g.fillStyle = '#D9D2C3'; g.fillRect(60, base + 20, W - 120, 6);
+  // restantes
+  const resto = c0.ops.slice(3, 6);
+  if(resto.length) txt(caber(resto.map((o, k) => `${k + 4}.º ${vsNomeCurto(o.nome)} ${o.vendas_un} un`).join('   ·   '), W - 120, F(28, 600)), W / 2, base + 72, F(28, 600), '#5b665e');
+  // últimas 4 semanas
+  let y = base + 120;
+  rr(60, y, W - 120, H - y - 60, 24, '#fff');
+  txt(`Vencedores das últimas ${ult.length} semanas`, W / 2, y + 58, F(36, 800), VERDE);
+  ult.forEach((c, k) => { const w = c.ops[0]; const yy = y + 108 + k * 68;
+    txt(`🥇 ${w ? vsNomeCurto(w.nome) : '—'}`, 110, yy, F(31, 700), TINTA, 'left');
+    txt(`${w ? w.vendas_un : 0} un`, W - 110, yy, F(31, 800), VERDE, 'right');
+    txt(caber(`${k === 0 ? 'Esta semana' : 'Há ' + k + ' semana' + (k > 1 ? 's' : '')} · ${c.k}`, W - 280, F(22, 500)), 158, yy + 27, F(22, 500), '#6b746e', 'left'); });
+  if(rank[0]){ const yy = y + 108 + ult.length * 68 + 22; rr(100, yy - 42, W - 200, 64, 16, '#FFF4D6');
+    txt(caber(`👑 Campeã(o) das ${ult.length} semanas: ${vsNomeCurto(rank[0].nome)} — ${rank[0].un} un`, W - 240, F(30, 800)), W / 2, yy, F(30, 800), '#8A5A00'); }
+  txt('Parabéns a todos! 👏', W / 2, H - 20, F(26, 600), '#5b665e');
+  return cv;
+}
+async function vsEnviarPodio(){
+  if(!soDona('enviar mensagens')) return;
+  try{
+    const camp = await vsCampanhas(); if(!camp.length){ alert('Ainda não há dados da venda sugestiva.'); return; }
+    const cv = vsDesenharPodio(camp);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    const dm = camp[0].data ? camp[0].data.slice(8, 10) + '-' + camp[0].data.slice(5, 7) : 'hoje';
+    const nome = `podio-venda-sugestiva-${dm}.png`, file = new File([blob], nome, {type: 'image/png'});
+    const {ult, rank} = vsResumo4(camp); const w = camp[0].ops;
+    const assunto = `Venda Sugestiva — Pódio ${camp[0].k}${camp[0].data ? ' (até ' + dm.replace('-', '/') + ')' : ''}`;
+    const corpo = `Bom dia equipa,\n\nAqui fica o pódio da venda sugestiva — ${camp[0].k}:\n` + w.slice(0, 3).map((o, i) => `${['🥇','🥈','🥉'][i]} ${vsNomeCurto(o.nome)} — ${o.vendas_un} un`).join('\n') +
+      `\n\nVencedores das últimas ${ult.length} semanas:\n` + ult.map((c, k) => `• ${k === 0 ? 'Esta semana' : 'Há ' + k + ' semana' + (k > 1 ? 's' : '')}: ${c.ops[0] ? vsNomeCurto(c.ops[0].nome) + ' (' + c.ops[0].vendas_un + ' un)' : '—'} — ${c.k}`).join('\n') +
+      (rank[0] ? `\n\n👑 Campeã(o) das ${ult.length} semanas: ${vsNomeCurto(rank[0].nome)} com ${rank[0].un} unidades.` : '') + `\n\nParabéns a todos e vamos continuar! 💪\n\nConceição`;
+    if(navigator.canShare && navigator.canShare({files: [file]})){
+      try{ await navigator.share({files: [file], title: assunto, text: corpo}); return; }catch(e){ if(e && e.name === 'AbortError') return; }
+    }
+    // computador: guarda a imagem e abre o email com o texto (anexar a imagem guardada)
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => { location.href = `mailto:?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo + '\n\n(Imagem do pódio em anexo)')}`; }, 400);
+    alert('A imagem do pódio foi guardada (' + nome + '). Anexe-a ao email que vai abrir.');
+  }catch(e){ console.error(e); alert('Não consegui criar a imagem do pódio.'); }
+}
+
 async function historicoVendaSugestiva(){
   let rows = [];
   try{ rows = await sb('loja_venda_sugestiva?data_referencia=not.is.null&select=id,semana,artigo,data_referencia,vendas_un,objetivo,vs_objetivo_pct&order=data_referencia.desc&limit=60') || []; }catch(e){ return ''; }
@@ -9948,7 +10044,7 @@ function podioVendaSugestivaHtml(ops, anterior){
 async function blocoVendaSugestiva(){
   const [rows, operadores] = await Promise.all([
     sb('loja_venda_sugestiva?select=*&order=data_referencia.desc.nullslast,id.desc&limit=1'),
-    sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=200')
+    sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=400')
   ]);
   const v = rows && rows.length ? rows[0] : null;
   let html = `<div class="section-title">🛍️ Venda Sugestiva</div>`;
@@ -9969,6 +10065,9 @@ async function blocoVendaSugestiva(){
   // ranking por campanha: esta semana e a semana anterior
   const campanhas = [];
   (operadores||[]).forEach(o => { const k = o.artigo || '—'; let c = campanhas.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; campanhas.push(c); } c.ops.push(o); });
+  if(souDona() && campanhas.length) html += `<button class="btn-primary" style="margin:0 0 12px;background:#1F7A33;" onclick="vsEnviarPodio()">📧 Enviar imagem do pódio por email</button>`;
+  campanhas.forEach(c => c.ops.sort((a, b) => (Number(b.vendas_un) || 0) - (Number(a.vendas_un) || 0)));
+  html += vsVencedores4Html(campanhas);
   campanhas.slice(0, 2).forEach((c, ci) => {
     const ops = c.ops.sort((a,b) => b.vendas_un - a.vendas_un);
     const total = ops.reduce((a,o) => a + (Number(o.vendas_un)||0), 0);
