@@ -8623,7 +8623,42 @@ async function caAbrir(id){
 }
 
 // ===== Ler o relatório de auditoria (PDF/Word) e ligar à auditoria =====
+// Guião de Visita do District Manager (questionário Sim/Não/Não Aplicável)
+function audLerDM(texto){
+  const t = String(texto||'').replace(/\r/g,'');
+  const L = t.split('\n').map(x => x.replace(/[ \t]+/g,' ').trim()).filter(Boolean);
+  let m, data = null, tecnico = null, res = null, resumo = null;
+  if((m = t.match(/Submetido a\s*(\d{4})[\/-](\d{2})[\/-](\d{2})/i))) data = `${m[1]}-${m[2]}-${m[3]}`;
+  if((m = t.match(/Colaborador\s+([^\n]+)/))) tecnico = m[1].trim();
+  if((m = t.match(/Pontua[çc][ãa]o\s*:?\s*([\d]+[.,]?\d*)\s*%/i))) res = Number(m[1].replace(',','.'));
+  const iObs = L.findIndex(l => /^Observa[çc][ãa]o\s+\S/.test(l));
+  if(iObs >= 0){ const p = []; for(let k = iObs; k < L.length && !/^Pontua[çc][ãa]o|Resposta Observa[çc][ãa]o$/i.test(L[k]); k++) p.push(L[k]); resumo = p.join(' ').replace(/^Observa[çc][ãa]o\s+/i,'').trim(); }
+  const ncs = []; let sec = '', buf = [], ult = null;
+  const iIni = L.findIndex(l => /Resposta Observa[çc][ãa]o$/i.test(l));
+  for(let k = Math.max(iIni,0); k < L.length; k++){
+    const l = L[k];
+    if(/Resposta Observa[çc][ãa]o$/i.test(l)){ if(ult && buf.length) ult.obs.push(...buf); buf = []; ult = null; sec = l.replace(/\s*Resposta Observa[çc][ãa]o$/i,'').trim(); continue; }
+    const a = l.match(/^(N[ãa]o Aplic[áa]vel|N[ãa]o|Sim)\b\s*(.*)$/i);
+    if(a){
+      // separar o fim da observação anterior do início da nova pergunta
+      let k0 = buf.length - 1; while(k0 > 0 && !/[.;!]$/.test(buf[k0-1])) k0--;
+      if(ult) ult.obs.push(...buf.slice(0, k0));
+      const pergunta = buf.slice(k0).join(' ').trim();
+      ult = {sec, pergunta, resp: a[1], obs: a[2] ? [a[2]] : []}; buf = [];
+      ncs.push(ult); continue;
+    }
+    buf.push(l);
+  }
+  if(ult && buf.length) ult.obs.push(...buf);
+  const pontos = ncs.filter(x => /^n[ãa]o$/i.test(x.resp) || (/^sim$/i.test(x.resp) && x.obs.length))
+    .map(x => { const o = x.obs.join(' ').trim(); const nao = /^n[ãa]o$/i.test(x.resp);
+      return {secao: (nao ? '' : 'Atenção · ') + (x.sec || 'Geral'), descricao: (nao ? 'NÃO — ' : '') + x.pergunta + (o ? ' → ' + o : '')}; });
+  // os "Não" primeiro
+  pontos.sort((a,b) => (a.secao.startsWith('Atenção') ? 1 : 0) - (b.secao.startsWith('Atenção') ? 1 : 0));
+  return {data, tecnico: tecnico ? tecnico + ' (District Manager)' : null, resultado: res, anterior: null, ncs: pontos, resumo};
+}
 function audLerRelatorio(texto){
+  if(/Gui[ãa]o de Visita do District Manager|District Manager/i.test(String(texto||''))) return audLerDM(texto);
   const t = String(texto||'').replace(/\r/g,'').replace(/[ \t]+/g,' ');
   const L = t.split('\n').map(x => x.trim());
   const num = s => s == null ? null : Number(String(s).replace(',', '.'));
@@ -8696,6 +8731,7 @@ const AUD_TIPOS = [
 ];
 const AUD_NOMES = {HACCP:'HACCP', Ambiental:'Ambiente', SHT:'SHT', RH:'RH', Controlo:'Controlo Operacional', Marketing:'Marketing', Distrito:'Distrito / Melhoria Contínua'};
 function audDetetarTipo(texto, nomeFicheiro){
+  if(/District Manager|Gui[ãa]o de Visita/i.test(String(texto||'').slice(0, 4000))) return 'Distrito';
   const nf = String(nomeFicheiro||'');
   for(const [n, re] of AUD_TIPOS){ re.lastIndex = 0; if(re.test(nf)) return n; }
   const t = String(texto||'').slice(0, 4000); let melhor = null, max = 0;
