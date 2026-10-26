@@ -3047,7 +3047,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3069,6 +3069,8 @@ function impTipoExtra(wb, nome){
 }
 function impTipoTexto(texto, nome){
   const tx = String(texto || '');
+  const tv = (typeof vocLimparEmail === 'function') ? vocLimparEmail(tx) : tx;
+  if(/correu\s+(bem|mal)|muito\s+bem[\s\S]{0,200}muito\s+mal/i.test(tv) || (/voz do cliente/i.test(nome + ' ' + tx.slice(0, 1500)) && /avalia/i.test(tx))) return 'vozcliente';
   if(/score mensal/i.test(tx) && /validades/i.test(tx)) return 'scorevalidades';
   if(/informa[çc][ãa]o de neg[óo]cio/i.test(nome + ' ' + tx.slice(0, 800))) return 'infoneg';
   try{ if(audDetetarTipo(tx, nome)) return 'auditoria'; }catch(e){}
@@ -3091,6 +3093,7 @@ async function impExtraCorrer(tipo, f){
     auditoria: ['aud-auto-estado', () => audCarregarAuto(falso)],
     scorevalidades: ['val-score-estado', () => valCarregarFicheiro(falso)],
     infoneg: ['info-neg-estado', () => infoNegCarregar(falso)],
+    vozcliente: ['voc-email-estado', () => vocCarregarFicheiro(falso)],
     dadospessoais: ['dp-estado', async () => { const wb = XLSX.read(await f.arrayBuffer(), {type:'array'}); fim = await dpGuardar(dpLerExcel(wb)); }]
   }[tipo];
   if(!cfg) throw new Error('tipo desconhecido');
@@ -3127,7 +3130,7 @@ async function importarFicheirosDia(input){
         try{ texto = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); }catch(e){}
         const tt = impTipoTexto(texto, f.name);
         if(!tt){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Não percebi que relatório é. Carregue-o no cartão certo.'; continue; }
-        if(tt !== 'infoneg'){ const lojasTxt = [...String(texto).matchAll(/loja\s*(?:n\.?\s*[ºo°]?\s*)?[:\-]?\s*(\d{3,4})\b/gi)].map(m => Number(m[1]));
+        if(tt !== 'infoneg' && tt !== 'vozcliente'){ const lojasTxt = [...String(texto).matchAll(/loja\s*(?:n\.?\s*[ºo°]?\s*)?[:\-]?\s*(\d{3,4})\b/gi)].map(m => Number(m[1]));
           if(lojasTxt.length && !lojasTxt.includes(747) && !/portuzelo/i.test(texto)){ l.ok = false; l.tipo = IMP_NOMES[tt]; l.msg = `Este documento não é da loja ${IMP_LOJA} (fala da loja ${lojasTxt[0]}). Não foi gravado.`; continue; } }
         l.tipo = IMP_NOMES[tt]; lidos.push({l, extra: tt, f, tipo: tt, nome: f.name}); continue;
       }
@@ -11830,7 +11833,14 @@ async function blocoVozCliente(){
   } else {
     h += `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem resultados. O questionário arranca a 19/10 em todas as lojas e o primeiro relatório semanal chega por email a 26/10.</div>`;
   }
-  if(dona) h += `<details class="lem-novo" style="margin-top:10px;"><summary>➕ Registar resultados da semana (relatório por email)</summary>
+  if(dona) h += `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
+    <div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:4px;">📋 Colar o email da semana</div>
+    <textarea id="voc-email" rows="5" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;" placeholder="Abra o email do resultado do atendimento, copie o texto todo e cole aqui"></textarea>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"><button class="btn-primary" style="margin:0;flex:1;background:#1F7A33;" onclick="vocLerEmailColado()">Ler e guardar</button>
+    <input type="file" id="voc-fich" class="hidden" accept=".eml,.txt,.pdf,.docx,.htm,.html" onchange="vocCarregarFicheiro(this)"><button class="econ-btn" style="margin:0;" onclick="document.getElementById('voc-fich').click()">📎 Ficheiro do email</button></div>
+    <div id="voc-email-estado" style="font-size:12px;margin-top:6px;"></div>
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">A app lê a semana, correu bem/mal, nº de avaliações, notas da loja/cluster/região/país, o que influenciou e os comentários.</div></div>`;
+  if(dona) h += `<details class="lem-novo" style="margin-top:10px;"><summary>✏️ Registar ou corrigir à mão</summary>
     <div class="com-duo"><div><label class="com-lbl" for="voc-sem">Semana (qualquer dia)</label><input id="voc-sem" type="date" value="${dataLocalISO(new Date(Date.now() - 7*864e5))}"></div><div><label class="com-lbl" for="voc-n">Nº avaliações</label><input id="voc-n" type="number" inputmode="numeric"></div></div>
     <div class="com-duo"><div><label class="com-lbl" for="voc-bem">Correu bem %</label><input id="voc-bem" inputmode="decimal" placeholder="80,8"></div><div><label class="com-lbl" for="voc-mal">Correu mal %</label><input id="voc-mal" inputmode="decimal" placeholder="5,2"></div></div>
     <div class="com-duo"><div><label class="com-lbl" for="voc-loja">Avaliação loja /100</label><input id="voc-loja" inputmode="decimal"></div><div><label class="com-lbl" for="voc-cl">Cluster /100</label><input id="voc-cl" inputmode="decimal"></div></div>
@@ -11928,6 +11938,107 @@ async function blocoVozCliente(){
   h += `</div>`;
   return h;
 }
+// ===== Voz do Cliente: ler o texto do email semanal (colado ou ficheiro .eml/.txt/.pdf) =====
+function vocLimparEmail(txt){
+  let t = String(txt || '').replace(/\r/g, '');
+  if(/content-transfer-encoding:\s*quoted-printable/i.test(t) || /=\n/.test(t) && /=[0-9A-F]{2}/.test(t)){
+    t = t.replace(/=\n/g, '');
+    try{ t = t.replace(/(=[0-9A-F]{2})+/g, s => { try{ return decodeURIComponent(s.replace(/=/g, '%')); }catch(e){ return s; } }); }catch(e){}
+  }
+  if(/<(html|body|table|div|p|br)\b/i.test(t)){
+    t = t.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<(br|\/p|\/div|\/tr|\/h\d|\/li)[^>]*>/gi, '\n').replace(/<\/t[dh]>/gi, '\t').replace(/<[^>]+>/g, '')
+         .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n));
+  }
+  return t.split('\n').map(l => l.replace(/[ \t ]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n');
+}
+function vocLerTexto(bruto){
+  const t = vocLimparEmail(bruto);
+  const L = t.split('\n');
+  const num = s => { const n = parseFloat(String(s).replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? null : n; };
+  // primeiro valor em % depois de um rótulo (na mesma linha ou na seguinte)
+  const pctApos = re => { const m = re.exec(t); if(!m) return null; const resto = t.slice(m.index + m[0].length, m.index + m[0].length + 90); const p = resto.match(/(\d{1,3}(?:[.,]\d+)?)\s*%/); return p ? num(p[1]) : null; };
+  const valApos = re => { const m = re.exec(t); if(!m) return null; const resto = t.slice(m.index + m[0].length, m.index + m[0].length + 50); const p = resto.match(/^[^\d\n]{0,25}(\d{1,3}(?:[.,]\d+)?)(?!\s*%)(?![\d\/])/); if(!p) return null; const v = num(p[1]); return v != null && v <= 100 ? v : null; };
+  const out = {};
+  // correu bem / mal
+  out.bem = pctApos(/(?<!quando\s)correu\s+bem|bem\s*\+\s*muito\s+bem|muito\s+bem\s*\+\s*bem|(?:clientes\s+)?satisfeitos|avalia[çc][õo]es\s+positivas/i);
+  if(out.bem == null){ const a = pctApos(/muito\s+bem/i), b = pctApos(/(?:^|[^o]\s|\n)bem\b(?!\s*\+)/i); if(a != null || b != null) out.bem = Math.round(((a || 0) + (b || 0)) * 10) / 10; }
+  out.mal = pctApos(/(?<!quando\s)correu\s+mal|mal\s*\+\s*muito\s+mal|muito\s+mal\s*\+\s*mal|(?:clientes\s+)?insatisfeitos|avalia[çc][õo]es\s+negativas/i);
+  if(out.mal == null){ const a = pctApos(/muito\s+mal/i), b = pctApos(/(?:^|[^o]\s|\n)mal\b(?!\s*\+)/i); if(a != null || b != null) out.mal = Math.round(((a || 0) + (b || 0)) * 10) / 10; }
+  // nº de avaliações
+  let m = t.match(/(\d[\d.\s]{0,6})\s*(?:avalia[çc][õo]es|respostas|question[áa]rios\s+respondidos|participa[çc][õo]es)/i) || t.match(/(?:n\.?º|total|n[úu]mero)\s*(?:de\s*)?(?:avalia[çc][õo]es|respostas)\s*:?\s*(\d[\d.\s]{0,6})/i);
+  if(m){ const n = parseInt(String(m[1]).replace(/[.\s]/g, ''), 10); if(!isNaN(n)) out.avaliacoes = n; }
+  // avaliação loja / cluster / região / país (/100) — em linha ou em tabela
+  const iCab = L.findIndex(l => /\bcluster\b/i.test(l) && /regi[ãa]o|pa[íi]s|nacional/i.test(l));
+  if(iCab >= 0){
+    const cab = L[iCab].split(/[\s|;\/]+/).filter(w => /^(loja|portuzelo|cluster|regi[ãa]o|pa[íi]s|nacional|companhia)$/i.test(w));
+    const linhaNums = L.slice(iCab + 1, iCab + 4).find(l => (l.match(/\d{1,3}(?:[.,]\d+)?/g) || []).length >= 2);
+    if(linhaNums){
+      const nums = (linhaNums.match(/\d{1,3}(?:[.,]\d+)?/g) || []).map(num).filter(v => v != null && v <= 100 && v !== 747);
+      const ordem = (cab.length >= nums.length ? cab.slice(-nums.length) : cab).map(c => /cluster/i.test(c) ? 'cluster' : /regi/i.test(c) ? 'regiao' : /pa[íi]s|nacional|companhia/i.test(c) ? 'pais' : /loja|portuzelo/i.test(c) ? 'loja_score' : null);
+      nums.forEach((v, i) => { if(ordem[i] && out[ordem[i]] == null) out[ordem[i]] = v; });
+    }
+  }
+  if(out.cluster == null) out.cluster = valApos(/\bcluster\b\s*:?/i);
+  if(out.regiao == null) out.regiao = valApos(/\bregi[ãa]o\b(?:\s+norte)?\s*:?/i);
+  if(out.pais == null) out.pais = valApos(/\b(?:pa[íi]s|nacional|total\s+companhia)\b\s*:?/i);
+  if(out.loja_score == null) out.loja_score = valApos(/(?:a\s+sua\s+loja|nota\s+da\s+loja|avalia[çc][ãa]o\s+(?:da\s+)?loja|(?:loja\s+)?(?:747\s*[-–]?\s*)?(?:viana\s+do\s+castelo\s*[-–]\s*)?portuzelo)\s*:?/i);
+  // semana
+  const hoje = new Date();
+  if((m = t.match(/semana\s*(?:n\.?\s*º\s*)?(\d{1,2})\b/i))){
+    const s = Number(m[1]); let ano = hoje.getFullYear(); if(s > numeroSemanaISO(hoje) + 1) ano--;
+    const jan4 = new Date(ano, 0, 4); const seg = new Date(jan4); seg.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (s - 1) * 7);
+    out.semana_inicio = dataLocalISO(seg);
+  } else if((m = t.match(/(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?\s*(?:a|-|–|até)\s*\d{1,2}[\/.-]\d{1,2}/))){
+    const ano = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : hoje.getFullYear();
+    out.semana_inicio = vocSegunda(`${ano}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+  } else {
+    out.semana_inicio = vocSegunda(dataLocalISO(new Date(Date.now() - 7*864e5)));
+  }
+  // blocos de texto
+  const bloco = (reIni, reFim, max) => { const i = L.findIndex(l => reIni.test(l)); if(i < 0) return null; const r = []; const resto = L[i].replace(reIni, '').replace(/^[\s:–-]+/, '').trim(); if(resto && /\d/.test(resto)) r.push(resto);
+    for(let k = i + 1; k < L.length && r.length < max; k++){ const l = L[k]; if(!l){ if(r.length) break; else continue; } if(reFim.test(l)) break; r.push(l); } return r.length ? r.join('\n') : null; };
+  out.fatores = bloco(/(?:o\s+que\s+mais\s+)?influenci|fatores|motivos(?:\s+de\s+insatisfa[çc][ãa]o)?/i, /coment[áa]rio|cumprimentos|obrigad/i, 10);
+  out.comentarios = bloco(/coment[áa]rios?(?:\s+dos\s+clientes)?/i, /^(cumprimentos|melhores cumprimentos|obrigad|atentamente|--)/i, 25);
+  return out;
+}
+async function vocGuardarLido(d){
+  const dados = {semana_inicio: d.semana_inicio, avaliacoes: d.avaliacoes ?? null, bem: d.bem ?? null, mal: d.mal ?? null, loja_score: d.loja_score ?? null, cluster: d.cluster ?? null, regiao: d.regiao ?? null, pais: d.pais ?? null, fatores: d.fatores || null, comentarios: d.comentarios || null, registado_por: currentUser ? currentUser.name : null};
+  // não apagar o que já estava preenchido nessa semana
+  try{ const ja = await sb(`loja_voz_cliente?semana_inicio=eq.${dados.semana_inicio}&select=*`); const a = ja && ja[0]; if(a) Object.keys(dados).forEach(k => { if(dados[k] == null && a[k] != null) dados[k] = a[k]; }); }catch(e){}
+  await sb('loja_voz_cliente?on_conflict=semana_inicio', {method:'POST', body: JSON.stringify(dados), prefer:'resolution=merge-duplicates,return=minimal'});
+  return dados;
+}
+function vocResumoLido(d){
+  const p = [];
+  if(d.bem != null) p.push('correu bem ' + vocPct(d.bem)); if(d.mal != null) p.push('correu mal ' + vocPct(d.mal));
+  const nf = v => Number(v).toLocaleString('pt-PT',{maximumFractionDigits:1}); if(d.avaliacoes != null) p.push(d.avaliacoes + ' avaliações'); if(d.loja_score != null) p.push('loja ' + nf(d.loja_score) + '/100');
+  if(d.cluster != null) p.push('cluster ' + nf(d.cluster)); if(d.regiao != null) p.push('região ' + nf(d.regiao)); if(d.pais != null) p.push('país ' + nf(d.pais));
+  if(d.fatores) p.push('fatores'); if(d.comentarios) p.push('comentários');
+  return `semana ${numeroSemanaISO(new Date(d.semana_inicio + 'T12:00:00'))} · ` + (p.join(' · ') || 'sem valores');
+}
+async function vocLerEmailColado(){
+  if(!soDona('registar os resultados da Voz do Cliente')) return;
+  const ta = document.getElementById('voc-email'); const est = document.getElementById('voc-email-estado');
+  const txt = ta ? ta.value : '';
+  if(!txt.trim()){ alert('Cole primeiro o texto do email.'); return; }
+  const d = vocLerTexto(txt);
+  if(d.bem == null && d.mal == null){ if(est) est.innerHTML = '<span style="color:var(--red);">✕ Não encontrei "correu bem" nem "correu mal" no texto. Envie o texto ao Claude para a app aprender este formato, ou preencha à mão em baixo.</span>'; return; }
+  try{ const g = await vocGuardarLido(d); if(est) est.innerHTML = `<span style="color:var(--green);">✓ Guardado: ${rpEsc(vocResumoLido(g))}</span>`; showToast(); setTimeout(vocRefrescar, 900); }
+  catch(e){ if(est) est.innerHTML = '<span style="color:var(--red);">✕ Não consegui guardar.</span>'; }
+}
+async function vocCarregarFicheiro(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f) return;
+  const est = estadoDe(input, 'voc-email-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    const txt = /\.(txt|eml|htm|html)$/i.test(f.name) ? await f.text() : await infoLerTexto(f);
+    const d = vocLerTexto(txt);
+    if(d.bem == null && d.mal == null) throw new Error('não encontrei "correu bem" nem "correu mal"');
+    const g = await vocGuardarLido(d);
+    msg(`<span style="color:var(--green);">✓ Voz do Cliente: ${rpEsc(vocResumoLido(g))}</span>`);
+    try{ vocRefrescar(); }catch(e){}
+  }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(String(e && e.message || e)) + '</span>'); }
+}
+
 function vocNum(id){ const el = document.getElementById(id); if(!el || el.value.trim() === '') return null; const n = parseFloat(el.value.replace('%','').replace(',', '.')); return isNaN(n) ? null : n; }
 async function vocGuardarSemana(){
   if(!soDona('registar os resultados da Voz do Cliente')) return;
