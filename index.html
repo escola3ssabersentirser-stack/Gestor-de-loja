@@ -2247,6 +2247,10 @@ function renderPainelResumo(){
     </div>
     <div class="rp-acoes">
       ${souDona() ? `<button class="h3s-pill" onclick="escolherFicheirosDia()">📥 Carregar relatórios</button>
+      <button class="h3s-pill" onclick="colarAbrir()">📋 Colar texto</button>
+      <div id="colar-caixa" style="display:none;width:100%;margin-top:8px;"><textarea id="colar-texto" rows="6" style="width:100%;box-sizing:border-box;padding:8px;border-radius:10px;border:1px solid #D5DDD2;font-size:13px;" placeholder="Copie o texto do email (ex.: resultado do atendimento — Voz do Cliente) e cole aqui"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px;"><button class="btn-primary" style="margin:0;flex:1;background:#1F7A33;" onclick="colarLer()">Ler e guardar</button><button class="econ-btn" style="margin:0;" onclick="colarAbrir(false)">Fechar</button></div>
+        <div id="colar-estado" style="font-size:12.5px;margin-top:6px;"></div></div>
       <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls,.csv,.pdf,.docx,.txt,.eml" multiple class="hidden" onchange="importarFicheirosDia(this)">
       <div id="rp-estado" class="rp-estado">Escolha os ficheiros de uma vez (Excel, PDF ou Word): a app descobre o que é cada um e envia para o cartão certo.</div>` : ''}
     </div>
@@ -3105,6 +3109,21 @@ async function impExtraCorrer(tipo, f){
 }
 
 let impResHTML = '';
+function colarAbrir(abrir){ const c = document.getElementById('colar-caixa'); if(!c) return; const ver = abrir === false ? false : c.style.display === 'none'; c.style.display = ver ? 'block' : 'none'; if(ver){ const t = document.getElementById('colar-texto'); if(t) t.focus(); } }
+async function colarLer(){
+  if(!soDona('carregar resultados')) return;
+  const ta = document.getElementById('colar-texto'), est = document.getElementById('colar-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  const txt = ta ? ta.value : ''; if(!txt.trim()){ msg('Cole primeiro o texto.'); return; }
+  const tipo = impTipoTexto(txt, '');
+  if(tipo === 'vozcliente'){
+    const d = vocLerTexto(txt);
+    if(d.bem == null && d.mal == null){ msg('<span style="color:var(--red);">✕ Percebi que é da Voz do Cliente, mas não encontrei as percentagens. Envie o texto ao Claude para a app aprender este formato.</span>'); return; }
+    try{ const g = await vocGuardarLido(d); msg(`<span style="color:var(--green);">✓ Voz do Cliente guardada: ${rpEsc(vocResumoLido(g))}</span>`); if(ta) ta.value = ''; try{ vocRefrescar(); }catch(e){} }
+    catch(e){ msg('<span style="color:var(--red);">✕ Não consegui guardar.</span>'); }
+    return;
+  }
+  msg('<span style="color:var(--red);">✕ Não reconheci este texto. Para já, o "Colar texto" lê o email do resultado do atendimento (Voz do Cliente). Envie o texto ao Claude para a app aprender outros.</span>');
+}
 function escolherFicheirosDia(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
 
 async function importarFicheirosDia(input){
