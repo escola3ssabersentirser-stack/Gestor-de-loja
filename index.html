@@ -768,6 +768,7 @@
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:Distrito','Auditoria Distrito')">🗺️ Distrito</button>
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:Marketing','Auditoria Marketing')">📢 Marketing</button>
         </div>
+          <button class="rp-nav-btn" onclick="selectMenu('area:lflarea','Loja vs Área')"><span class="rp-nav-ic">🏁</span><span><b>Loja vs Área</b><small>ranking das lojas da área, LFL e quebra por secção</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')"><span class="rp-nav-ic">👥</span><span><b>Recursos Humanos</b><small>horários, banco de horas, formação</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('melhoria','Melhoria Contínua')"><span class="rp-nav-ic">📈</span><span><b>Melhoria Contínua</b><small>score semanal e evolução</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('dash:gestao:planos-acao','Planos de Ação')"><span class="rp-nav-ic">🎯</span><span><b>Planos de Ação</b><small>ações por secção e responsável</small></span></button>
@@ -820,6 +821,10 @@
             <button class="h3s-tile" onclick="selectMenu('painel-vendas','Vendas')">
               <span class="h3s-ic">💶</span><span class="h3s-tile-tit">Vendas</span>
               <span class="h3s-tile-num" id="h3s-t-vendas">—</span><span class="h3s-tile-sub" id="h3s-t-vendas-sub">mês</span>
+            </button>
+            <button class="h3s-tile" onclick="selectMenu('area:lflarea','Loja vs Área')">
+              <span class="h3s-ic">🏁</span><span class="h3s-tile-tit">Loja vs Área</span>
+              <span class="h3s-tile-num h3s-abrir">Abrir ›</span><span class="h3s-tile-sub">ranking e secções</span>
             </button>
             <button class="h3s-tile" onclick="selectMenu('controlo-quebra','Controlo de Quebra')">
               <span class="h3s-ic">📉</span><span class="h3s-tile-tit">Quebras</span>
@@ -2376,7 +2381,7 @@ function impSoLoja(wb){
   return wb;
 }
 // liga o filtro a todas as leituras de Excel da app (carregar relatórios e cada cartão)
-(function(){ if(typeof XLSX === 'undefined' || XLSX.__soLoja) return; const ler = XLSX.read; XLSX.read = function(){ return impSoLoja(ler.apply(this, arguments)); }; XLSX.__soLoja = true; })();
+(function(){ if(typeof XLSX === 'undefined' || XLSX.__soLoja) return; const ler = XLSX.read; XLSX.__lerOriginal = ler; XLSX.read = function(){ return impSoLoja(ler.apply(this, arguments)); }; XLSX.__soLoja = true; })();
 const IMP_MESES = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 const IMP_SECAO_BOMDIA = {'TALHO':'Talho','PEIXARIA':'Peixaria','PADARIA/PASTELARIA':'Padaria/Pastelaria','FRUTAS E VEGETAIS':'Frutas/Vegetais','TAKE-AWAY':'Linha de atendimento'};
 const IMP_SECAO_MKD = {'TALHO':'Talho','PEIXARIA':'Peixaria','PADARIA/PASTELARIA':'Padaria/Pastelaria','FRUTAS E VEGETAIS':'Frutas/Vegetais','TAKE-AWAY':'Linha de atendimento','PRONTO A COMER':'Linha de atendimento'};
@@ -3042,7 +3047,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3071,7 +3076,7 @@ function impTipoTexto(texto, nome){
 }
 // corre o carregamento próprio de cada cartão com o ficheiro e guarda logo
 async function impExtraCorrer(tipo, f){
-  const falso = {files: [f], value: ''};
+  const falso = {files: [f], value: '', __auto: true};
   const caixa = id => { let el = document.getElementById(id); if(!el){ el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); } el.innerHTML = ''; return el; };
   const cfg = {
     indrh: ['ind-estado', () => indCarregar(falso)],
@@ -3126,7 +3131,9 @@ async function importarFicheirosDia(input){
           if(lojasTxt.length && !lojasTxt.includes(747) && !/portuzelo/i.test(texto)){ l.ok = false; l.tipo = IMP_NOMES[tt]; l.msg = `Este documento não é da loja ${IMP_LOJA} (fala da loja ${lojasTxt[0]}). Não foi gravado.`; continue; } }
         l.tipo = IMP_NOMES[tt]; lidos.push({l, extra: tt, f, tipo: tt, nome: f.name}); continue;
       }
-      const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+      const bufX = await f.arrayBuffer();
+      try{ if(lflEhMapa(lflLerOriginal(bufX, true).SheetNames)){ l.tipo = IMP_NOMES.lflarea; lidos.push({l, wb: lflLerOriginal(bufX), tipo: 'lflarea', nome: f.name}); continue; } }catch(e){}
+      const wb = XLSX.read(bufX, {type:'array'});
       let tipo = impTipo(wb);
       if(!tipo){ const te = impTipoExtra(wb, f.name); if(te){ l.tipo = IMP_NOMES[te]; lidos.push({l, extra: te, f, tipo: te, nome: f.name}); continue; } }
       if(tipo === 'naousado'){ l.ok = 'skip'; l.tipo = 'Não é preciso'; l.msg = 'A app agora só usa vendas e quebras — este ficheiro foi ignorado.'; continue; }
@@ -3140,7 +3147,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo}[x.tipo];
+      const fn = {mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -3494,15 +3501,193 @@ async function comDesenharHistorico(p){
 
 
 // ===================== ÁREAS: VALIDADES, NOTAS DE CRÉDITO, VENDA SUGESTIVA =====================
-const AREA_TITULOS = {validades:'Gestão de Validades', notas:'Notas de Crédito', vendasugestiva:'Venda Sugestiva', relatorios:'Relatórios das auditorias'};
+const AREA_TITULOS = {lflarea:'Loja vs Área', validades:'Gestão de Validades', notas:'Notas de Crédito', vendasugestiva:'Venda Sugestiva', relatorios:'Relatórios das auditorias'};
 let areaAtual = null;
+// ===== Loja vs Área — mapa "Vendas LFL e Quebra Dia" (todas as lojas PD) =====
+const LFL_ID = 10;   // linha em loja_resumo_painel
+const LFL_SECOES = ['Talho','F & V','Flores','Peixaria','Bacalhau','Padaria','MEAL Solutions','Charcutaria','Lacteos','Leite','Congelados','MERCEARIA + PET FOOD','BEBIDAS','Dt Prod Limp','Prod Pess','BAZAR','PARAFARMACIA'];
+const LFL_SEC_NOME = {'F & V':'Frutas & Vegetais','MEAL Solutions':'Meal Solutions (Take Away)','Lacteos':'Lácteos','MERCEARIA + PET FOOD':'Mercearia + Pet Food','BEBIDAS':'Bebidas','Dt Prod Limp':'Detergentes e Limpeza','Prod Pess':'Produtos Pessoais','BAZAR':'Bazar','PARAFARMACIA':'Parafarmácia'};
+const LFL_PER = {
+  dia:    {nome:'Dia',    v:'VD', q:'QD', vendas:['Vendas Dia'], lfl:['% LFL Dia'], bdg:['Budget Op Ontem'], dbdg:['Dif Bdg Op'], qp:['% Quebra Dia'], qe:['Quebras Dia'], qpAnt:[]},
+  semana: {nome:'Semana', v:'VS', q:'QS', vendas:['Vendas Semana'], lfl:['% LFL Sem'], bdg:[], dbdg:[], qp:['% Quebra Semana'], qe:['Quebras Semana'], qpAnt:[]},
+  mes:    {nome:'Mês',    v:'VM', q:'QM', vendas:['Vendas'], lfl:['% LFL Mês Físico'], bdg:['Bdg Op MTD'], dbdg:['Desvio Bdg Op MTD'], qp:['% Quebra Mês 2.026','% Quebra MTD 2.026','% Quebra Mês'], qe:['Quebras'], qpAnt:['% Quebra Mês 2.025','% Quebra MTD 2.025']},
+  ano:    {nome:'Ano',    v:'VA', q:'QA', vendas:['Vendas'], lfl:['% LFL Ano Físico'], bdg:[], dbdg:[], qp:['% Quebra YTD Ano 2.026'], qe:['Quebras'], qpAnt:['% Quebra YTD Ano 2.025']}
+};
+let lflDados = null, lflPeriodo = 'mes';
+
+function lflEhMapa(nomes){ nomes = nomes || []; return ['VD','QD','VM','QM','VA','QA'].every(n => nomes.includes(n)); }
+function lflLerOriginal(buf, so){ const ler = XLSX.__lerOriginal || XLSX.read; return ler(buf, so ? {type:'array', bookSheets:true} : {type:'array'}); }
+function lflNumOuNada(v){ return (typeof v === 'number' && isFinite(v)) ? v : null; }
+
+function lflLer(wb){
+  const loja = String(IMP_LOJA);
+  const out = {loja, folhas:{}, data:null, semana:null, mes:null, area:null};
+  ['VD','QD','VS','QS','VM','QM','VA','QA'].forEach(fn => {
+    const ws = wb.Sheets[fn]; if(!ws) return;
+    const rg = XLSX.utils.decode_range(ws['!ref']);
+    const R = [];
+    for(let r = 0; r <= rg.e.r; r++){ const lin = []; for(let c = 0; c <= rg.e.c; c++){ const cel = ws[XLSX.utils.encode_cell({r, c})]; lin.push(cel ? cel.v : null); } R.push(lin); }
+    const tit = R.slice(0, 3).flat().filter(x => typeof x === 'string').join(' ');
+    let m;
+    if(fn === 'VD' && (m = tit.match(/(\d{4})\/(\d{2})\/(\d{2})/))) out.data = `${m[1]}-${m[2]}-${m[3]}`;
+    if(fn === 'VS' && (m = tit.match(/Semana\s*:?\s*(\d+)/i))) out.semana = Number(m[1]);
+    if(fn === 'QM' && (m = tit.match(/de\s*:\s*([A-Za-zçÇ]+)/))) out.mes = m[1];
+    const iLoja = R.findIndex(r => String(r[2] == null ? '' : r[2]).trim() === loja);
+    if(iLoja < 0) return;
+    let iIni = iLoja; while(iIni > 0 && R[iIni-1][2] != null && R[iIni-1][2] !== 'Loja' && !R[iIni][1]) iIni--;
+    const area = String(R[iIni][1] || '').trim(); if(area) out.area = area;
+    let iCab = iIni; while(iCab > 0 && R[iCab][2] !== 'Loja') iCab--;
+    const cab = R[iCab];
+    const linha = r => { const o = {}; cab.forEach((h, c) => { if(c >= 4 && h != null && String(h).trim()){ const v = lflNumOuNada(r[c]); if(v != null) o[String(h).trim()] = v; } }); return o; };
+    const lojas = {};
+    let k = iIni;
+    for(; k < R.length && R[k][2] != null && String(R[k][2]).trim() !== ''; k++){
+      const o = linha(R[k]); if(Object.keys(o).length) lojas[String(R[k][2]).trim()] = {nome: String(R[k][3] || '').trim(), ...o};
+    }
+    let tot = null;
+    for(let j = k; j < Math.min(k + 3, R.length); j++){ const nm = String(R[j][0] || R[j][1] || '').trim(); if(nm && nm === area && (R[j][2] == null || R[j][2] === '')){ tot = linha(R[j]); break; } }
+    out.folhas[fn] = {lojas, area: tot};
+  });
+  if(!out.folhas.VD || !out.folhas.VD.lojas[loja]) throw new Error(`Não encontrei a loja ${loja} no mapa.`);
+  return out;
+}
+function lflG(o, nomes){ if(!o) return null; for(const n of nomes) if(o[n] != null) return o[n]; return null; }
+function lflResumoDia(d){
+  const f = d.folhas, L = d.loja; const r = {};
+  for(const [p, c] of Object.entries(LFL_PER)){
+    const lv = f[c.v] && f[c.v].lojas[L], av = f[c.v] && f[c.v].area, lq = f[c.q] && f[c.q].lojas[L];
+    r[p] = {lfl: lflG(lv, c.lfl), area: lflG(av, c.lfl), qp: lq ? Math.abs(lflG(lq, c.qp) || 0) : null, pos: lflPosicao(d, p).pos};
+  }
+  return r;
+}
+function lflPosicao(d, p){
+  const c = LFL_PER[p]; const f = d.folhas[c.v]; if(!f) return {pos:null, n:0};
+  const lst = Object.entries(f.lojas).map(([k, o]) => ({k, v: lflG(o, c.lfl)})).filter(x => x.v != null).sort((a,b) => b.v - a.v);
+  return {pos: lst.findIndex(x => x.k === d.loja) + 1 || null, n: lst.length};
+}
+
+async function impLflArea(wb, nome){
+  const d = lflLer(wb);
+  d.ficheiro = nome || null; d.carregado_em = new Date().toISOString();
+  let atual = null;
+  try{ const rows = await sb(`loja_resumo_painel?id=eq.${LFL_ID}&select=dados`); atual = rows && rows[0] && rows[0].dados; }catch(e){}
+  const hist = Object.assign({}, (atual && atual.hist) || {});
+  if(d.data) hist[d.data] = lflResumoDia(d);
+  Object.keys(hist).sort().slice(0, -120).forEach(k => delete hist[k]);
+  let gravar = d;
+  if(atual && atual.data && d.data && atual.data > d.data){ gravar = atual; }   // nunca voltar atrás: só junta ao histórico
+  gravar.hist = hist;
+  await sb('loja_resumo_painel?on_conflict=id', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({id: LFL_ID, dados: gravar, atualizado_em: new Date().toISOString()})});
+  lflDados = gravar;
+  const pm = lflPosicao(d, 'mes');
+  return `Loja vs Área atualizado · dados de ${d.data ? impDDMM(d.data) : '?'} · ${d.area || 'área'}: ${pm.pos}.ª de ${pm.n} lojas no LFL do mês`;
+}
+async function lflCarregar(input){
+  const f = input.files && input.files[0]; input.value = '';
+  if(!f || !soDona('carregar ficheiros')) return;
+  const est = document.getElementById('lfl-estado'); const msg = t => { if(est) est.innerHTML = t; };
+  try{
+    msg('A ler o mapa…');
+    const buf = await f.arrayBuffer();
+    const nomes = lflLerOriginal(buf, true).SheetNames;
+    if(!lflEhMapa(nomes)){ msg('<span style="color:var(--red);">✕ Este ficheiro não é o mapa "Vendas LFL e Quebra Dia".</span>'); return; }
+    const t = await impLflArea(lflLerOriginal(buf), f.name);
+    msg(`<span style="color:var(--green);">✓ ${rpEsc(t)}</span>`);
+    setTimeout(() => renderArea('lflarea'), 500);
+  }catch(e){ console.error(e); msg(`<span style="color:var(--red);">✕ ${rpEsc(String(e && e.message || e))}</span>`); }
+}
+
+// ---------- ecrã ----------
+function lflPct(v, casas){ if(v == null) return '—'; return (v*100).toLocaleString('pt-PT', {minimumFractionDigits: casas == null ? 1 : casas, maximumFractionDigits: casas == null ? 1 : casas}) + '%'; }
+function lflSinal(v){ if(v == null) return '—'; return (v > 0 ? '+' : '') + lflPct(v); }
+function lflEur(v){ if(v == null) return '—'; const a = Math.abs(v); const s = a >= 1e6 ? (a/1e6).toLocaleString('pt-PT',{maximumFractionDigits:2}) + ' M€' : a >= 1e4 ? Math.round(a/1000).toLocaleString('pt-PT') + ' mil €' : Math.round(a).toLocaleString('pt-PT') + ' €'; return (v < 0 ? '-' : '') + s; }
+function lflPp(v){ if(v == null) return '—'; const x = v*100; return (x > 0 ? '+' : '') + x.toLocaleString('pt-PT',{maximumFractionDigits:2}) + ' p.p.'; }
+function lflCor(bom){ return bom == null ? 'var(--ink)' : bom ? '#1F7A33' : '#B4231A'; }
+function lflMudarPeriodo(p){ lflPeriodo = p; const b = document.getElementById('area-wrap'); if(b && lflDados) b.innerHTML = lflHtml(lflDados); }
+
+async function areaLflHtml(){
+  try{ const rows = await sb(`loja_resumo_painel?id=eq.${LFL_ID}&select=dados`); lflDados = (rows && rows[0] && rows[0].dados) || null; }catch(e){ lflDados = null; }
+  return lflHtml(lflDados);
+}
+function lflBotao(){
+  if(!souDona()) return '';
+  return `<div class="card" style="margin-bottom:10px;"><input type="file" id="lfl-fich" class="hidden" accept=".xlsx,.xls" onchange="lflCarregar(this)">
+    <button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#lfl-fich')).click()">📎 Carregar mapa "Vendas LFL e Quebra Dia"</button>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Também entra sozinho quando o junta aos ficheiros do dia.</div>
+    <div id="lfl-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+}
+function lflHtml(d){
+  let h = `<style>.lfl-tab{min-width:0!important;width:100%;font-size:12px;}.lfl-tab th,.lfl-tab td{padding:6px 4px!important;}.lfl-tab td:first-child{white-space:normal!important;text-align:left;}</style>` + lflBotao();
+  if(!d || !d.folhas){ return h + `<div class="card" style="font-size:13px;color:var(--ink-soft);">Ainda não há dados. Carregue o mapa "Vendas LFL e Quebra Dia".</div>`; }
+  const L = d.loja, p = lflPeriodo, c = LFL_PER[p];
+  const fv = d.folhas[c.v] || {lojas:{}}, fq = d.folhas[c.q] || {lojas:{}};
+  const lv = fv.lojas[L] || {}, av = fv.area || {}, lq = fq.lojas[L] || {}, aq = fq.area || {};
+  const nomeLoja = (lv.nome || ('Loja ' + L));
+  const ddmm = d.data ? d.data.split('-').reverse().join('/') : '—';
+  h += `<div class="card" style="padding:12px 14px;"><div style="font-size:12px;color:var(--ink-soft);">Dados de ${ddmm}${d.semana ? ' · semana ' + d.semana : ''}${d.mes ? ' · ' + rpEsc(d.mes) : ''}</div>
+    <div style="font-size:15px;font-weight:800;color:var(--navy);margin-top:2px;">${rpEsc(L + ' ' + nomeLoja)} vs ${rpEsc(d.area ? 'Área ' + d.area : 'Área')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${Object.entries(LFL_PER).map(([k, x]) => `<button onclick="lflMudarPeriodo('${k}')" style="border:1px solid ${k === p ? '#1F4E3D' : '#D5DDD2'};background:${k === p ? '#1F4E3D' : '#fff'};color:${k === p ? '#fff' : '#1F4E3D'};border-radius:999px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;">${x.nome}</button>`).join('')}</div></div>`;
+
+  // cartões
+  const pos = lflPosicao(d, p);
+  const lfl = lflG(lv, c.lfl), lflA = lflG(av, c.lfl);
+  const qp = lflG(lq, c.qp), qpA = lflG(aq, c.qp), qpAnt = lflG(lq, c.qpAnt);
+  const dbdg = lflG(lv, c.dbdg), bdg = lflG(lv, c.bdg);
+  const cart = (tit, num, sub, cor) => `<div class="card" style="flex:1 1 140px;margin:0;padding:10px 12px;"><div style="font-size:11.5px;color:var(--ink-soft);">${tit}</div><div style="font-size:22px;font-weight:800;color:${cor || 'var(--navy)'};">${num}</div><div style="font-size:11.5px;color:var(--ink-soft);">${sub}</div></div>`;
+  h += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;">`
+    + cart('Vendas', lflEur(lflG(lv, c.vendas)), bdg != null ? `budget ${lflEur(bdg)}` : `área ${lflEur(lflG(av, c.vendas))}`)
+    + cart('LFL vs ano passado', lflSinal(lfl), `área ${lflSinal(lflA)}`, lflCor(lfl == null || lflA == null ? null : lfl >= lflA))
+    + (dbdg != null ? cart('Desvio ao budget', lflEur(dbdg), bdg ? lflSinal(dbdg / bdg) : '', lflCor(dbdg >= 0)) : '')
+    + cart('Quebra % vendas', lflPct(qp == null ? null : Math.abs(qp), 2), `área ${lflPct(qpA == null ? null : Math.abs(qpA), 2)}${qpAnt != null ? ' · ' + (new Date().getFullYear()-1) + ': ' + lflPct(Math.abs(qpAnt), 2) : ''}`, lflCor(qp == null || qpA == null ? null : Math.abs(qp) <= Math.abs(qpA)))
+    + cart('Posição na área', pos.pos ? `${pos.pos}.ª / ${pos.n}` : '—', 'LFL ' + c.nome.toLowerCase(), lflCor(pos.pos ? pos.pos <= Math.ceil(pos.n/2) : null))
+    + `</div>`;
+  const tk = lflG(lv, ['% Var Ticket LFL']), vm = lflG(lv, ['Venda Média']), vvm = lflG(lv, ['%Var Vnd Média']);
+  if(tk != null || vm != null) h += `<div class="card" style="font-size:12.5px;">🧾 <b>Clientes</b> (tickets) ${lflSinal(tk)} <span style="color:var(--ink-soft);">(área ${lflSinal(lflG(av, ['% Var Ticket LFL']))})</span> · <b>Ticket médio</b> ${vm != null ? vm.toLocaleString('pt-PT',{minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '—'} ${vvm != null ? '(' + lflSinal(vvm) + ')' : ''} · <b>Margem</b> ${lflPct(lflG(lv, ['% Mrg']))} <span style="color:var(--ink-soft);">(área ${lflPct(lflG(av, ['% Mrg']))})</span></div>`;
+
+  // ranking
+  const lojas = Object.keys(fv.lojas).map(k => ({k, nome: fv.lojas[k].nome, v: lflG(fv.lojas[k], c.vendas), lfl: lflG(fv.lojas[k], c.lfl), mrg: lflG(fv.lojas[k], ['% Mrg']), q: fq.lojas[k] ? lflG(fq.lojas[k], c.qp) : null}))
+    .filter(x => x.v != null && x.v !== 0).sort((a,b) => (b.lfl == null ? -9 : b.lfl) - (a.lfl == null ? -9 : a.lfl));
+  h += `<div class="section-title">🏁 Ranking da área · LFL ${c.nome.toLowerCase()}</div><div class="card" style="padding:8px;"><table class="rp-tab lfl-tab"><thead><tr><th style="text-align:left;">Loja</th><th>Vendas</th><th>LFL</th><th>Quebra</th></tr></thead><tbody>`;
+  lojas.forEach((x, i) => { const eu = x.k === L; h += `<tr style="${eu ? 'background:#FFF6D6;font-weight:800;' : ''}"><td style="text-align:left;">${i+1}. ${rpEsc(x.nome.replace(/^Viana Do Castelo - /,'Viana - '))}</td><td>${lflEur(x.v)}</td><td style="color:${lflCor(x.lfl == null ? null : x.lfl >= 0)}">${lflSinal(x.lfl)}</td><td>${lflPct(x.q == null ? null : Math.abs(x.q), 2)}</td></tr>`; });
+  if(lflA != null) h += `<tr style="font-weight:700;"><td style="text-align:left;">Área (média)</td><td>${lflEur(lflG(av, c.vendas))}</td><td>${lflSinal(lflA)}</td><td>${lflPct(qpA == null ? null : Math.abs(qpA), 2)}</td></tr>`;
+  h += `</tbody></table></div>`;
+
+  // secções
+  const sec = LFL_SECOES.map(s => ({s, lfl: lflG(lv, [s]), lflA: lflG(av, [s]), q: lflG(lq, [s]), qA: lflG(aq, [s])})).filter(x => x.lfl != null || x.q != null);
+  sec.forEach(x => { x.difL = (x.lfl != null && x.lflA != null) ? x.lfl - x.lflA : null; x.difQ = (x.q != null && x.qA != null) ? Math.abs(x.q) - Math.abs(x.qA) : null; });
+  const piores = sec.filter(x => x.difL != null && x.difL < 0).sort((a,b) => a.difL - b.difL).slice(0, 3);
+  const pioresQ = sec.filter(x => x.difQ != null && x.difQ > 0.001).sort((a,b) => b.difQ - a.difQ).slice(0, 3);
+  const melhores = sec.filter(x => x.difL != null && x.difL > 0).sort((a,b) => b.difL - a.difL).slice(0, 3);
+  const nm = s => rpEsc(LFL_SEC_NOME[s] || s);
+  if(piores.length || pioresQ.length || melhores.length){
+    h += `<div class="section-title">🎯 Onde atuar (${c.nome.toLowerCase()})</div><div class="card" style="font-size:12.5px;line-height:1.6;">`;
+    if(piores.length) h += `<div>📉 <b>Vendas abaixo da área:</b> ${piores.map(x => `${nm(x.s)} (${lflSinal(x.lfl)} vs ${lflSinal(x.lflA)})`).join(' · ')}</div>`;
+    if(pioresQ.length) h += `<div>🗑️ <b>Quebra acima da área:</b> ${pioresQ.map(x => `${nm(x.s)} (${lflPct(Math.abs(x.q),2)} vs ${lflPct(Math.abs(x.qA),2)})`).join(' · ')}</div>`;
+    if(melhores.length) h += `<div>🌟 <b>Acima da área:</b> ${melhores.map(x => `${nm(x.s)} (${lflSinal(x.lfl)} vs ${lflSinal(x.lflA)})`).join(' · ')}</div>`;
+    h += `</div>`;
+  }
+  h += `<div class="section-title">🧺 Secções · loja vs área (${c.nome.toLowerCase()})</div><div class="card" style="padding:8px;"><table class="rp-tab lfl-tab"><thead><tr><th></th><th colspan="2" style="text-align:center;">Vendas LFL</th><th colspan="2" style="text-align:center;">Quebra</th></tr><tr><th style="text-align:left;">Secção</th><th>Loja</th><th>Área</th><th>Loja</th><th>Área</th></tr></thead><tbody>`;
+  sec.forEach(x => { h += `<tr><td style="text-align:left;">${nm(x.s)}</td><td style="color:${lflCor(x.difL == null ? null : x.difL >= 0)};font-weight:700;">${lflSinal(x.lfl)}</td><td>${lflSinal(x.lflA)}</td><td style="color:${lflCor(x.difQ == null ? null : x.difQ <= 0)};font-weight:700;">${lflPct(x.q == null ? null : Math.abs(x.q), 2)}</td><td>${lflPct(x.qA == null ? null : Math.abs(x.qA), 2)}</td></tr>`; });
+  h += `</tbody></table><div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">LFL = vendas vs mesmo período do ano passado. Verde = melhor que a média da área · vermelho = pior.</div></div>`;
+
+  // evolução
+  const hist = Object.entries(d.hist || {}).sort((a,b) => a[0] < b[0] ? 1 : -1).slice(0, 10);
+  if(hist.length > 1){
+    h += `<div class="section-title">📅 Evolução (últimos dias carregados)</div><div class="card" style="padding:8px;"><table class="rp-tab lfl-tab"><thead><tr><th style="text-align:left;">Dia</th><th>LFL dia</th><th>LFL sem.</th><th>LFL mês</th><th>Quebra mês</th><th>Pos.</th></tr></thead><tbody>`;
+    hist.forEach(([dt, r]) => { h += `<tr><td style="text-align:left;">${dt.slice(8,10)}/${dt.slice(5,7)}</td><td>${lflSinal(r.dia && r.dia.lfl)}</td><td>${lflSinal(r.semana && r.semana.lfl)}</td><td>${lflSinal(r.mes && r.mes.lfl)}</td><td>${lflPct(r.mes && r.mes.qp, 2)}</td><td>${r.mes && r.mes.pos ? r.mes.pos + '.ª' : '—'}</td></tr>`; });
+    h += `</tbody></table></div>`;
+  }
+  return h;
+}
+
 async function renderArea(qual){
   areaAtual = qual;
   const t = document.getElementById('area-titulo'); if(t) t.textContent = AREA_TITULOS[qual] || '—';
   const box = document.getElementById('area-wrap'); if(!box) return;
   box.innerHTML = `<div class="card" style="color:var(--ink-soft);font-size:13px;">A carregar…</div>`;
   try{
-    if(qual === 'validades') box.innerHTML = await areaValidadesHtml();
+    if(qual === 'lflarea') box.innerHTML = await areaLflHtml();
+    else if(qual === 'validades') box.innerHTML = await areaValidadesHtml();
     else if(qual === 'notas') box.innerHTML = (souDona() ? `<div class="card" style="margin-bottom:10px;"><input type="file" id="nc-fich" class="hidden" accept=".xlsx,.xls" onchange="ncCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#nc-fich')||document.getElementById('nc-fich')).click()">📎 Carregar ficheiro Notas de Crédito (Excel)</button><div id="nc-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '') + `<p class="com-ajuda" style="margin:0 4px 10px;">A app fica só com as notas da loja 747. Valide cada uma aqui.</p><div class="card">${await blocoNotasCredito('area', true)}</div>`;
     else if(qual === 'relatorios') box.innerHTML = await areaRelatoriosHtml();
     else if(qual === 'vendasugestiva') box.innerHTML = `<p class="com-ajuda" style="margin:0 4px 10px;">Atualiza ao carregar o relatório "Venda Sugestiva" nos ficheiros do dia.</p>` + await blocoVendaSugestiva();
@@ -3925,7 +4110,7 @@ async function carregarLembretes(){
   const hoje = lemHojeISO();
   const em14 = dataLocalISO(new Date(Date.now() + 14*864e5));
   const [colabs, alteracoes, compliance, percursos, pedidos, ausencias, logs] = await Promise.all([
-    sb('loja_colaboradores?select=numero_pessoal,nome,secao,telefone,bh_positivo,bh_negativo,data_prevista_gozar_horas,dia_aniversario,mes_aniversario&order=nome.asc').catch(()=>[]),
+    sb('loja_colaboradores?select=numero_pessoal,nome,secao,telefone,bh_positivo,bh_negativo,data_prevista_gozar_horas,bh_gozo,dia_aniversario,mes_aniversario&order=nome.asc').catch(()=>[]),
     sb('loja_alteracoes_horario?assinado=not.is.true&select=*&order=data_alteracao.asc').catch(()=>[]),
     sb('loja_formacao_compliance?select=*').catch(()=>[]),
     sb(`loja_formacoes_percurso?data_prevista=lte.${em14}&select=*&order=data_prevista.asc`).catch(()=>[]),
@@ -4045,25 +4230,46 @@ async function renderLembretes(){
 function lemTelDe(numero, nome){ return (lemDados && (lemDados.tel[numero] || lemDados.tel['n:' + nome])) || ''; }
 function lemMsgBH(i){
   const c = lemDados.bh[i]; const pos = Number(c.bh_positivo)||0, neg = Number(c.bh_negativo)||0;
-  const txt = neg < 0
-    ? `Olá ${lemPrimeiroNome(c.nome)} 😊 Lembrete do banco de horas: tens ${Math.abs(neg).toLocaleString('pt-PT')}h a compensar. Vamos combinar quando? Obrigada!`
-    : `Olá ${lemPrimeiroNome(c.nome)} 😊 Lembrete do banco de horas: tens ${pos.toLocaleString('pt-PT')}h para gozar${c.data_prevista_gozar_horas ? ' (data prevista ' + lemFmtData(c.data_prevista_gozar_horas) + ')' : ''}. Diz-me que dia te dá mais jeito para as marcarmos. Obrigada!`;
+  const n = lemPrimeiroNome(c.nome); const hN = v => Number(v).toLocaleString('pt-PT', {maximumFractionDigits:2}) + 'h';
+  let txt;
+  if(neg < 0){
+    txt = `Olá ${n} 😊 Lembrete do banco de horas: tem ${hN(Math.abs(neg))} a compensar. Podemos combinar quando? Obrigada!`;
+  } else {
+    // dia marcado: o de hoje ou o próximo marcado no Hello
+    const hoje = lemHojeISO(); const g = Array.isArray(c.bh_gozo) ? c.bh_gozo.slice().sort((a,b) => String(a.data).localeCompare(String(b.data))) : [];
+    const marc = g.find(x => x.data === c.data_prevista_gozar_horas) || g.find(x => x.data >= hoje) || (c.data_prevista_gozar_horas ? {data: c.data_prevista_gozar_horas} : null);
+    if(marc){
+      let hi = marc.hora_inicio || null, hf = marc.hora_fim || null;
+      if(!hi){
+        const v = prompt(`A que horas ${n} vai tirar as horas no dia ${lemFmtData(marc.data)}?\n\nEx.: 14:00  ou  14:00-17:00\n(deixe em branco se não souber)`, '');
+        if(v === null) return;
+        const m = String(v).match(/(\d{1,2})[:h.]?(\d{2})?\s*(?:-|a|às|até)?\s*(?:(\d{1,2})[:h.]?(\d{2})?)?/i);
+        if(v.trim() && m){ hi = m[1].padStart(2,'0') + ':' + (m[2] || '00'); if(m[3]) hf = m[3].padStart(2,'0') + ':' + (m[4] || '00'); }
+      }
+      const dia = new Date(marc.data + 'T12:00:00'); const diaTxt = dia.toLocaleDateString('pt-PT', {weekday:'long'}) + ', ' + lemFmtData(marc.data).slice(0,5);
+      const horaTxt = hi && hf ? `, das ${hi} às ${hf}` : hi ? `, a partir das ${hi}` : '';
+      const qt = marc.horas ? ` (${hN(marc.horas)})` : '';
+      txt = `Olá ${n} 😊 Lembrete do banco de horas: tem as horas marcadas para ${diaTxt}${horaTxt}${qt}.${pos ? ` O seu saldo atual é de ${hN(pos)}.` : ''} Se precisar de alterar, diga-me. Obrigada!`;
+    } else {
+      txt = `Olá ${n} 😊 Lembrete do banco de horas: tem ${hN(pos)} para gozar. Diga-me que dia e a que horas lhe dá mais jeito para as marcarmos. Obrigada!`;
+    }
+  }
   lemWhats(c.telefone, txt); lemRegistar('banco-horas', c.numero_pessoal);
 }
 function lemMsgAlteracao(id){
   const a = lemDados.alteracoes.find(x => x.id === id); if(!a) return;
-  lemWhats(lemTelDe(a.colaborador_numero, a.colaborador_nome), `Olá ${lemPrimeiroNome(a.colaborador_nome)} 😊 Tens uma alteração de horário para assinar na app da loja (${lemFmtData(a.data_alteracao)}${a.descricao ? ' — ' + a.descricao : ''}). Quando puderes, entra em "A Minha Área" e assina. Obrigada!`);
+  lemWhats(lemTelDe(a.colaborador_numero, a.colaborador_nome), `Olá ${lemPrimeiroNome(a.colaborador_nome)} 😊 Tem uma alteração de horário para assinar na app da loja (${lemFmtData(a.data_alteracao)}${a.descricao ? ' — ' + a.descricao : ''}). Quando puder, entre em "A Minha Área" e assine. Obrigada!`);
   lemRegistar('alteracao-horario', String(id));
 }
 function lemMsgFormacao(i){
   const f = lemDados.formacao[i];
-  lemWhats(lemTelDe(f.numero, f.nome), `Olá ${lemPrimeiroNome(f.nome)} 😊 Lembrete de formação: "${f.curso}" está ${f.estado}${f.data ? ' (prevista para ' + lemFmtData(f.data) + ')' : ''}. Precisas de ajuda para marcar ou concluir? Obrigada!`);
+  lemWhats(lemTelDe(f.numero, f.nome), `Olá ${lemPrimeiroNome(f.nome)} 😊 Lembrete de formação: "${f.curso}" está ${f.estado}${f.data ? ' (prevista para ' + lemFmtData(f.data) + ')' : ''}. Precisa de ajuda para marcar ou concluir? Obrigada!`);
   lemRegistar('formacao', (f.numero||'') + ':' + f.curso);
 }
 async function lemMsgAusencia(id){
   const a = lemDados.ausencias.find(x => x.id === id); if(!a) return;
   const n = lemPrimeiroNome(a.colaborador_nome);
-  const txt = `Olá ${n} 💙 Só para saber como estás. Esperamos que estejas a recuperar bem. Se precisares de alguma coisa da nossa parte, diz. Um abraço de toda a equipa!`;
+  const txt = `Olá ${n} 💙 Só para saber como está. Esperamos que esteja a recuperar bem. Se precisar de alguma coisa da nossa parte, diga. Um abraço de toda a equipa!`;
   lemWhats(lemTelDe(a.colaborador_numero, a.colaborador_nome), txt);
   try{ await sb(`loja_ausencias?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({ultimo_contacto: lemHojeISO()})}); }catch(e){}
   lemRegistar('ausencia', String(id)); setTimeout(renderLembretes, 800);
@@ -4086,8 +4292,8 @@ function lemMsgAnos(numero){
   const a = lemDados.anos.find(x => x.numero_pessoal === numero); if(!a) return;
   const n = lemPrimeiroNome(a.nome);
   const txt = a.faltam === 0
-    ? `Parabéns, ${n}! 🎂🎉 Muitas felicidades neste dia especial. Que este novo ano te traga muita saúde, alegria e tudo de bom. Um grande abraço de toda a equipa da loja!`
-    : `Olá ${n} 😊 Sabemos que o teu aniversário está a chegar (${String(a.dia_aniversario).padStart(2,'0')}/${String(a.mes_aniversario).padStart(2,'0')}) — desde já, muitos parabéns de toda a equipa! 🎉`;
+    ? `Parabéns, ${n}! 🎂🎉 Muitas felicidades neste dia especial. Que este novo ano lhe traga muita saúde, alegria e tudo de bom. Um grande abraço de toda a equipa da loja!`
+    : `Olá ${n} 😊 Sabemos que o seu aniversário está a chegar (${String(a.dia_aniversario).padStart(2,'0')}/${String(a.mes_aniversario).padStart(2,'0')}) — desde já, muitos parabéns de toda a equipa! 🎉`;
   lemWhats(a.telefone, txt);
   lemRegistar('aniversario', `${numero}:${a.dataAnos.getFullYear()}`); setTimeout(() => { renderLembretes(); renderFaixaLembretes(); }, 800);
 }
@@ -8184,7 +8390,7 @@ function paResponsaveisDe(area){ const a = paNorm(area); return planoResponsavei
 function paEnviar(area, idx){
   const r = paResponsaveisDe(area)[idx]; const itens = (planoAcaoGestoresData||[]).filter(p => p.area === area);
   const n = r ? lemPrimeiroNome(r.nome) : '';
-  const txt = `Olá${n ? ' ' + n : ''} 😊 Plano de ação da secção *${area}*:\n\n` + itens.map((p,i) => `${i+1}. *${p.ponto}*\n   Ação: ${p.acao}\n   Estado: ${p.estado}`).join('\n\n') + `\n\nConto contigo para pôr isto em prática esta semana. Qualquer dúvida, diz. Obrigada!`;
+  const txt = `Olá${n ? ' ' + n : ''} 😊 Plano de ação da secção *${area}*:\n\n` + itens.map((p,i) => `${i+1}. *${p.ponto}*\n   Ação: ${p.acao}\n   Estado: ${p.estado}`).join('\n\n') + `\n\nConto consigo para pôr isto em prática esta semana. Qualquer dúvida, diga. Obrigada!`;
   lemWhats(r ? r.telefone : '', txt);
 }
 async function renderPlanoAcaoGestores(){
@@ -8748,7 +8954,7 @@ async function audCarregarAuto(input){
     if(/\.(pdf|docx|txt)$/i.test(f.name)){ msg('A ler o relatório…'); texto = await infoLerTexto(f); }
     let nome = audDetetarTipo(texto, f.name);
     const lista = Object.keys(AUD_NOMES);
-    if(!nome || !confirm(`Este relatório é da auditoria ${AUD_NOMES[nome]}?\n\nOK = sim · Cancelar = escolher outra`)){
+    if(!nome || (!input.__auto && !confirm(`Este relatório é da auditoria ${AUD_NOMES[nome]}?\n\nOK = sim · Cancelar = escolher outra`))){
       const esc = prompt('De que auditoria é este relatório? Escreva o número:\n\n' + lista.map((n,i) => `${i+1} — ${AUD_NOMES[n]}`).join('\n'), nome ? String(lista.indexOf(nome)+1) : '');
       if(esc === null){ msg(''); return; }
       nome = lista[Number(esc)-1]; if(!nome){ alert('Número inválido.'); msg(''); return; }
@@ -12902,13 +13108,14 @@ function rhLerFormacoes(wb){
   return out;
 }
 // ===== Mapa de Absentismo (dias marcados para gozar Banco de Horas) =====
+function rhHora(v){ if(v == null || v === '') return null; if(typeof v === 'number'){ const f = v - Math.floor(v); if(f < 1e-6) return null; const min = Math.round(f*1440); return String(Math.floor(min/60)).padStart(2,'0') + ':' + String(min%60).padStart(2,'0'); } if(v instanceof Date) return v.getHours() || v.getMinutes() ? String(v.getHours()).padStart(2,'0') + ':' + String(v.getMinutes()).padStart(2,'0') : null; const m = String(v).match(/(\d{1,2})[:h](\d{2})/); return m && !(m[1] === '00' && m[2] === '00') ? m[1].padStart(2,'0') + ':' + m[2] : null; }
 function rhLerGozoBH(wb){
   for(const n of wb.SheetNames){
     const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, defval:'', raw:true});
     const hi = R.findIndex((r,i) => i < 30 && r.some(c => /descri[çc][ãa]o de absentismo/i.test(String(c))) && r.some(c => /data in[íi]cio/i.test(String(c))));
     if(hi < 0) continue;
     const H = R[hi].map(c => rhN(c)); const ci = re => H.findIndex(h => re.test(h));
-    const c = {num: ci(/n\.?\s*º?\s*de colaborador|^n\.?º/), nome: ci(/nome de colaborador/), desc: ci(/descricao de absentismo/), ini: ci(/data inicio/), fim: ci(/data fim/), horas: ci(/^nr de horas|n\.?º de horas|^horas$/), loja: ci(/nome de subarea|^loja$/), sec: ci(/descricao do centro de custo/)};
+    const c = {num: ci(/n\.?\s*º?\s*de colaborador|^n\.?º/), nome: ci(/nome de colaborador/), desc: ci(/descricao de absentismo/), ini: ci(/data inicio/), fim: ci(/data fim/), horas: ci(/^nr de horas|n\.?º de horas|^horas$/), hini: ci(/hora (de )?inicio/), hfim: ci(/hora (de )?fim/), loja: ci(/nome de subarea|^loja$/), sec: ci(/descricao do centro de custo/)};
     const pess = {};
     for(let i = hi+1; i < R.length; i++){ const r = R[i];
       if(c.desc >= 0 && !/banco de horas/i.test(String(r[c.desc]||''))) continue;
@@ -12916,7 +13123,7 @@ function rhLerGozoBH(wb){
       const nome = String(r[c.nome]||'').trim(); const data = horIso(r[c.ini]); if(!nome || !data) continue;
       const num = String(r[c.num]||'').replace(/\D/g,'');
       const k = num || nome; const o = pess[k] = pess[k] || {numero: num, nome, secao: c.sec >= 0 ? String(r[c.sec]||'').trim() : '', datas: []};
-      o.datas.push({data, horas: c.horas >= 0 ? (Number(r[c.horas]) || 0) : null});
+      o.datas.push({data, horas: c.horas >= 0 ? (Number(r[c.horas]) || 0) : null, hora_inicio: rhHora(c.hini >= 0 ? r[c.hini] : r[c.ini]), hora_fim: rhHora(c.hfim >= 0 ? r[c.hfim] : (c.fim >= 0 ? r[c.fim] : null))});
     }
     const lista = Object.values(pess); if(!lista.length) continue;
     const hoje = dataLocalISO(new Date());
@@ -13007,7 +13214,7 @@ function rhBotaoUpload(tipo, texto){
 let fundLista = [], fundLidos = [], fundFiltro = 'falta', fundTel = {}, fundEnviados = new Set();
 const FUND_LINK = 'https://www.fundacao-jeronimomartins.com/SelfRegister', FUND_PRAZO = '2026-10-20';
 function fundPrazoTxt(){ const d = new Date(FUND_PRAZO + 'T12:00:00'); return d.toLocaleDateString('pt-PT', {weekday:'long'}).replace('-feira','') + ', dia ' + FUND_PRAZO.slice(8,10) + '/' + FUND_PRAZO.slice(5,7); }
-function fundMensagem(nome){ const pn = String(nome || '').trim().split(/\s+/)[0] || ''; return `Olá${pn ? ' ' + pn : ''} 😊\nLembrete: tens de fazer a tua inscrição na formação da Fundação Jerónimo Martins até ${fundPrazoTxt()}.\n\nInscreve-te aqui: ${FUND_LINK}\n\nDepois de te inscreveres, avisa o teu responsável para ficar registado. Obrigada!\nConceição`; }
+function fundMensagem(nome){ const pn = String(nome || '').trim().split(/\s+/)[0] || ''; return `Olá${pn ? ' ' + pn : ''} 😊\nLembrete: tem de fazer a sua inscrição na formação da Fundação Jerónimo Martins até ${fundPrazoTxt()}.\n\nInscreva-se aqui: ${FUND_LINK}\n\nDepois de se inscrever, avise o seu responsável para ficar registado. Obrigada!\nConceição`; }
 async function fundLembrar(numero){
   const p = fundLista.find(x => x.numero === numero); if(!p) return;
   lemWhats(fundTel[String(numero).replace(/^0+/,'')] || '', fundMensagem(p.nome));
@@ -13414,7 +13621,7 @@ function horLembrar(numero){
   const itens = horPendentes.filter(a => horNum(a.colaborador_numero) === horNum(numero)); if(!itens.length) return;
   const c = (lemDados && lemDados.colabs || []).find(x => horNum(x.numero_pessoal) === horNum(numero));
   const n = lemPrimeiroNome(itens[0].colaborador_nome);
-  lemWhats(c ? c.telefone : (lemDados ? lemTelDe(numero, itens[0].colaborador_nome) : ''), `Olá ${n} 😊 Tens ${itens.length === 1 ? 'uma troca de horário' : itens.length + ' trocas de horário'} por assinar no Hello:\n\n${itens.map(a => '• ' + a.descricao.replace('Troca de horário — ','')).join('\n')}\n\nQuando puderes, entra no Hello e assina. Obrigada!`);
+  lemWhats(c ? c.telefone : (lemDados ? lemTelDe(numero, itens[0].colaborador_nome) : ''), `Olá ${n} 😊 Tem ${itens.length === 1 ? 'uma troca de horário' : itens.length + ' trocas de horário'} por assinar no Hello:\n\n${itens.map(a => '• ' + a.descricao.replace('Troca de horário — ','')).join('\n')}\n\nQuando puder, entre no Hello e assine. Obrigada!`);
   lemRegistar('alteracao-horario', horNum(numero));
 }
 async function blocoAlteracoesHorarioPendentes(){
@@ -13557,7 +13764,7 @@ async function blocoFormacaoCompliance(){
         html += `<button class="econ-btn" style="padding:3px 8px;font-size:10px;" onclick="editarObservacaoFormacao(${i.id})">📝 ${i.observacoes ? 'Editar' : 'Adicionar'} observação</button>`;
         const tel = telefonePorNumero[i.numero_pessoal];
         if(tel){
-          const msg = `Olá ${i.nome.split(' ')[0]}, é só um lembrete: tens ${pend.length===1?'esta formação':'estas formações'} pendente${pend.length===1?'':'s'} para fazer assim que possível: ${pend.map(p=>p.label).join(', ')}. Obrigada!`;
+          const msg = `Olá ${i.nome.split(' ')[0]}, é só um lembrete: tem ${pend.length===1?'esta formação':'estas formações'} pendente${pend.length===1?'':'s'} para fazer assim que possível: ${pend.map(p=>p.label).join(', ')}. Obrigada!`;
           html += `<button class="econ-btn filled" style="padding:3px 8px;font-size:10px;background:#25D366;border-color:#25D366;color:#fff;" onclick="window.open('https://wa.me/${tel}?text=${encodeURIComponent(msg)}','_blank')">💬 Lembrete WhatsApp</button>`;
         } else {
           html += `<span style="font-size:10px;color:var(--ink-soft);">Sem telefone guardado</span>`;
@@ -15826,7 +16033,7 @@ async function gerarCodigoPara(id){
     p.acesso = {tem_codigo: true, temporario: true};
     desenharCodigosEquipa();
     const link = location.href.split('#')[0].split('?')[0];
-    const msg = `Olá ${String(p.nome||'').split(' ')[0]}! O teu acesso à app da Loja 747:\n${link}\n\nNúmero: ${p.numero_pessoal}\nCódigo provisório: ${r.codigo}\n\nNo primeiro acesso vais escolher o teu próprio código. Não partilhes o código com ninguém.`;
+    const msg = `Olá ${String(p.nome||'').split(' ')[0]}! O seu acesso à app da Loja 747:\n${link}\n\nNúmero: ${p.numero_pessoal}\nCódigo provisório: ${r.codigo}\n\nNo primeiro acesso vai escolher o seu próprio código. Não partilhe o código com ninguém.`;
     let tel = String(p.telefone || '').replace(/\D/g,'');
     if(tel.length === 9) tel = '351' + tel;
     const wa = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
