@@ -4253,27 +4253,34 @@ function lemTelDe(numero, nome){ return (lemDados && (lemDados.tel[numero] || le
 function lemMsgBH(i){
   const c = lemDados.bh[i]; const pos = Number(c.bh_positivo)||0, neg = Number(c.bh_negativo)||0;
   const n = lemPrimeiroNome(c.nome); const hN = v => Number(v).toLocaleString('pt-PT', {maximumFractionDigits:2}) + 'h';
+  const ddmm = iso => lemFmtData(iso).slice(0,5);
+  const diaSem = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-PT', {weekday:'long'});
   let txt;
   if(neg < 0){
     txt = `Olá ${n} 😊 Lembrete do banco de horas: tem ${hN(Math.abs(neg))} a compensar. Podemos combinar quando? Obrigada!`;
   } else {
-    // dia marcado: o de hoje ou o próximo marcado no Hello
-    const hoje = lemHojeISO(); const g = Array.isArray(c.bh_gozo) ? c.bh_gozo.slice().sort((a,b) => String(a.data).localeCompare(String(b.data))) : [];
-    const marc = g.find(x => x.data === c.data_prevista_gozar_horas) || g.find(x => x.data >= hoje) || (c.data_prevista_gozar_horas ? {data: c.data_prevista_gozar_horas} : null);
-    if(marc){
-      let hi = marc.hora_inicio || null, hf = marc.hora_fim || null;
-      if(!hi){
-        const v = prompt(`A que horas ${n} vai tirar as horas no dia ${lemFmtData(marc.data)}?\n\nEx.: 14:00  ou  14:00-17:00\n(deixe em branco se não souber)`, '');
+    // período previsto: todos os dias marcados a partir de hoje
+    const desde = lemHojeISO();
+    let dias = (Array.isArray(c.bh_gozo) ? c.bh_gozo : []).filter(x => x && x.data && x.data >= desde).sort((a,b) => a.data.localeCompare(b.data));
+    if(!dias.length && c.data_prevista_gozar_horas) dias = [{data: c.data_prevista_gozar_horas}];
+    if(dias.length){
+      // hora do primeiro dia: do ficheiro do Hello ou perguntar
+      const d0 = dias[0] = Object.assign({}, dias[0]);
+      if(!d0.hora_inicio){
+        const v = prompt(`A que horas ${n} vai tirar as horas no dia ${ddmm(d0.data)}?\n\nEx.: 14:00  ou  14:00-17:00\n(deixe em branco se não souber)`, '');
         if(v === null) return;
         const m = String(v).match(/(\d{1,2})[:h.]?(\d{2})?\s*(?:-|a|às|até)?\s*(?:(\d{1,2})[:h.]?(\d{2})?)?/i);
-        if(v.trim() && m){ hi = m[1].padStart(2,'0') + ':' + (m[2] || '00'); if(m[3]) hf = m[3].padStart(2,'0') + ':' + (m[4] || '00'); }
+        if(v.trim() && m){ d0.hora_inicio = m[1].padStart(2,'0') + ':' + (m[2] || '00'); if(m[3]) d0.hora_fim = m[3].padStart(2,'0') + ':' + (m[4] || '00'); }
       }
-      const dia = new Date(marc.data + 'T12:00:00'); const diaTxt = dia.toLocaleDateString('pt-PT', {weekday:'long'}) + ', ' + lemFmtData(marc.data).slice(0,5);
-      const horaTxt = hi && hf ? `, das ${hi} às ${hf}` : hi ? `, a partir das ${hi}` : '';
-      const qt = marc.horas ? ` (${hN(marc.horas)})` : '';
-      txt = `Olá ${n} 😊 Lembrete do banco de horas: tem as horas marcadas para ${diaTxt}${horaTxt}${qt}.${pos ? ` O seu saldo atual é de ${hN(pos)}.` : ''} Se precisar de alterar, diga-me. Obrigada!`;
+      const linha = x => `• ${diaSem(x.data)}, ${ddmm(x.data)}${x.horas ? ' — ' + hN(x.horas) : ''}${x.hora_inicio && x.hora_fim ? ` (das ${x.hora_inicio} às ${x.hora_fim})` : x.hora_inicio ? ` (a partir das ${x.hora_inicio})` : ''}`;
+      const total = dias.reduce((s, x) => s + (Number(x.horas) || 0), 0);
+      const periodo = dias.length === 1 ? `no dia ${ddmm(dias[0].data)}` : `de ${ddmm(dias[0].data)} a ${ddmm(dias[dias.length-1].data)}`;
+      txt = `Olá ${n} 😊 Lembrete do banco de horas: o período previsto para gozar as suas horas é ${periodo}:\n${dias.map(linha).join('\n')}`
+        + (total ? `\n\nTotal previsto: ${hN(total)}.` : '')
+        + (pos ? ` O seu saldo atual é de ${hN(pos)}.` : '')
+        + `\nSe precisar de alterar algum dia, diga-me. Obrigada!`;
     } else {
-      txt = `Olá ${n} 😊 Lembrete do banco de horas: tem ${hN(pos)} para gozar. Diga-me que dia e a que horas lhe dá mais jeito para as marcarmos. Obrigada!`;
+      txt = `Olá ${n} 😊 Lembrete do banco de horas: tem ${hN(pos)} para gozar e ainda não tem período marcado. Diga-me que dias e a que horas lhe dá mais jeito para as marcarmos. Obrigada!`;
     }
   }
   lemWhats(c.telefone, txt); lemRegistar('banco-horas', c.numero_pessoal);
@@ -11841,7 +11848,7 @@ async function blocoVozCliente(){
         <div class="vs-box"><div class="vs-label">😞 Correu mal</div><div class="vs-value" style="font-size:22px;color:var(--red);">${vocPct(r.mal)}${seta(r.mal, ant && ant.mal, true)}</div><div style="font-size:10.5px;color:var(--ink-soft);">Mal + Muito mal</div></div>
       </div>
       ${(ref != null || r.cluster != null || r.regiao != null || r.pais != null) ? `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;text-align:center;">
-        ${[['Loja', ref], ['Cluster', r.cluster], ['Região', r.regiao], ['País', r.pais]].map(([l, v]) => `<div style="border:1px solid var(--line);border-radius:10px;padding:6px 2px;"><div style="font-size:10.5px;color:var(--ink-soft);">${l}</div><b style="font-size:14px;color:${l === 'Loja' ? 'var(--navy)' : 'var(--ink)'};">${v == null ? '—' : Number(v).toLocaleString('pt-PT',{maximumFractionDigits:1})}</b><div style="font-size:9.5px;color:var(--ink-soft);">/100</div></div>`).join('')}</div>` : ''}`;
+        ${[['Loja', ref], ['Tipologia', r.cluster], ['Região Norte', r.regiao], ['Pingo Doce', r.pais]].map(([l, v]) => `<div style="border:1px solid var(--line);border-radius:10px;padding:6px 2px;"><div style="font-size:10.5px;color:var(--ink-soft);">${l}</div><b style="font-size:14px;color:${l === 'Loja' ? 'var(--navy)' : 'var(--ink)'};">${v == null ? '—' : Number(v).toLocaleString('pt-PT',{maximumFractionDigits:1})}</b><div style="font-size:9.5px;color:var(--ink-soft);">% bem</div></div>`).join('')}</div>` : ''}`;
     if(S.length > 1){
       const L = S.slice().reverse();
       h += `<div style="font-size:12px;font-weight:700;color:var(--navy);margin-top:10px;">Evolução "Correu bem" — últimas ${L.length} semanas</div>
@@ -11862,8 +11869,8 @@ async function blocoVozCliente(){
   if(dona) h += `<details class="lem-novo" style="margin-top:10px;"><summary>✏️ Registar ou corrigir à mão</summary>
     <div class="com-duo"><div><label class="com-lbl" for="voc-sem">Semana (qualquer dia)</label><input id="voc-sem" type="date" value="${dataLocalISO(new Date(Date.now() - 7*864e5))}"></div><div><label class="com-lbl" for="voc-n">Nº avaliações</label><input id="voc-n" type="number" inputmode="numeric"></div></div>
     <div class="com-duo"><div><label class="com-lbl" for="voc-bem">Correu bem %</label><input id="voc-bem" inputmode="decimal" placeholder="80,8"></div><div><label class="com-lbl" for="voc-mal">Correu mal %</label><input id="voc-mal" inputmode="decimal" placeholder="5,2"></div></div>
-    <div class="com-duo"><div><label class="com-lbl" for="voc-loja">Avaliação loja /100</label><input id="voc-loja" inputmode="decimal"></div><div><label class="com-lbl" for="voc-cl">Cluster /100</label><input id="voc-cl" inputmode="decimal"></div></div>
-    <div class="com-duo"><div><label class="com-lbl" for="voc-rg">Região /100</label><input id="voc-rg" inputmode="decimal"></div><div><label class="com-lbl" for="voc-ps">País /100</label><input id="voc-ps" inputmode="decimal"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-loja">Loja %</label><input id="voc-loja" inputmode="decimal"></div><div><label class="com-lbl" for="voc-cl">Tipologia %</label><input id="voc-cl" inputmode="decimal"></div></div>
+    <div class="com-duo"><div><label class="com-lbl" for="voc-rg">Região Norte %</label><input id="voc-rg" inputmode="decimal"></div><div><label class="com-lbl" for="voc-ps">Pingo Doce %</label><input id="voc-ps" inputmode="decimal"></div></div>
     <label class="com-lbl" for="voc-fat">O que mais influenciou (correu mal)</label><textarea id="voc-fat" rows="3" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;" placeholder="ex.: Disponibilidade de produtos 30%&#10;Rapidez do serviço 25%"></textarea>
     <label class="com-lbl" for="voc-com">Comentários dos clientes</label><textarea id="voc-com" rows="3" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12.5px;" placeholder="Colar os comentários da semana"></textarea>
     <button class="btn-primary" onclick="vocGuardarSemana()">Guardar semana</button></details>`;
@@ -11970,6 +11977,37 @@ function vocLimparEmail(txt){
   }
   return t.split('\n').map(l => l.replace(/[ \t ]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n');
 }
+
+// formato do email "Pingo Doce Reviews & Insights" (Voz do Cliente)
+function vocLerPD(t, out){
+  const L = t.split('\n').map(x => x.trim()).filter(Boolean);
+  const num = s => { const n = parseFloat(String(s).replace(',', '.')); return isNaN(n) ? null : n; };
+  const pctLinha = l => { const m = l.match(/^(-?\d{1,3}(?:[.,]\d+)?)\s*%$/); return m ? num(m[1]) : null; };
+  const pctDepois = i => { for(let k = i + 1; k < Math.min(i + 4, L.length); k++){ const v = pctLinha(L[k]); if(v != null) return v; } return null; };
+  let m;
+  if((m = t.match(/alcan[çc]ou\s*(\d{1,3}(?:[.,]\d+)?)\s*%/i))) out.loja_score = num(m[1]);
+  L.forEach((l, i) => {
+    if(/^Comparação/i.test(l)) return;
+    if(/^Tipologia\s+\d+$/i.test(l) && out.cluster == null) out.cluster = pctDepois(i);
+    else if(/^Regi[ãa]o\s+\w+$/i.test(l) && out.regiao == null) out.regiao = pctDepois(i);
+    else if(/^Pingo Doce$/i.test(l) && out.pais == null) out.pais = pctDepois(i);
+  });
+  if((m = t.match(/(\d+)\s*respostas/i))) out.avaliacoes = Number(m[1]);
+  // motivos por resposta
+  const blocoMotivos = re => { const i = L.findIndex(l => re.test(l)); if(i < 0) return [];
+    const r = []; for(let k = i + 1; k < L.length; k++){ const l = L[k]; if(/^Correu\s+(bem|mal|normal)\b|^Cada resposta|^Textos de|^O que pediram/i.test(l)) break;
+      const x = l.match(/^(.+?)\s+(\d{1,3}(?:[.,]\d+)?)%\s*·\s*(\d+)$/); if(x && Number(x[3]) > 0) r.push(`${x[1].replace(/\s+nova$/i, '')} ${String(x[2]).replace('.', ',')}% (${x[3]})`); } return r; };
+  const mal = blocoMotivos(/^Correu\s+mal\s+\d+\s+respostas/i), normal = blocoMotivos(/^Correu\s+normal\s+\d+\s+respostas/i), bem = blocoMotivos(/^Correu\s+bem\s+\d+\s+respostas/i);
+  if(mal.length || normal.length) out.fatores = (mal.length ? 'Correu mal:\n' + mal.join('\n') : '') + (normal.length ? (mal.length ? '\n\n' : '') + 'Correu normal:\n' + normal.join('\n') : '');
+  const com = [];
+  const iTx = L.findIndex(l => /^Textos de/i.test(l));
+  if(iTx >= 0) for(let k = iTx + 1; k < L.length && !/^O que pediram|^Pingo Doce Reviews/i.test(L[k]); k++){ const l = L[k]; if(/\d{2}\/\d{2}\/\d{4}/.test(l)){ const c = l.match(/(Correu\s+\w+)\s*$/i); if(com.length && c) com[com.length-1] += ` (${c[1].toLowerCase()})`; } else com.push('"' + l + '"'); }
+  const iMel = L.findIndex(l => /^O que pediram para melhorar/i.test(l));
+  if(iMel >= 0){ const r = []; for(let k = iMel + 1; k < L.length && !/^Pingo Doce Reviews/i.test(L[k]); k++){ const x = L[k].match(/^(.+?)\s+(\d{1,3}(?:[.,]\d+)?)%\s*·\s*(\d+)$/); if(x) r.push(`${x[1]} ${String(x[2]).replace('.', ',')}% (${x[3]})`); } if(r.length) com.push('Pediram para melhorar: ' + r.join(' · ')); }
+  if(bem.length) com.push('Pontos fortes (correu bem): ' + bem.slice(0, 4).join(' · '));
+  if(com.length) out.comentarios = com.join('\n');
+  return out;
+}
 function vocLerTexto(bruto){
   const t = vocLimparEmail(bruto);
   const L = t.split('\n');
@@ -12018,6 +12056,7 @@ function vocLerTexto(bruto){
     for(let k = i + 1; k < L.length && r.length < max; k++){ const l = L[k]; if(!l){ if(r.length) break; else continue; } if(reFim.test(l)) break; r.push(l); } return r.length ? r.join('\n') : null; };
   out.fatores = bloco(/(?:o\s+que\s+mais\s+)?influenci|fatores|motivos(?:\s+de\s+insatisfa[çc][ãa]o)?/i, /coment[áa]rio|cumprimentos|obrigad/i, 10);
   out.comentarios = bloco(/coment[áa]rios?(?:\s+dos\s+clientes)?/i, /^(cumprimentos|melhores cumprimentos|obrigad|atentamente|--)/i, 25);
+  if(/Reviews\s*&\s*Insights|Bem\s*\+\s*Muito bem/i.test(t)) vocLerPD(t, out);
   return out;
 }
 async function vocGuardarLido(d){
@@ -12030,8 +12069,9 @@ async function vocGuardarLido(d){
 function vocResumoLido(d){
   const p = [];
   if(d.bem != null) p.push('correu bem ' + vocPct(d.bem)); if(d.mal != null) p.push('correu mal ' + vocPct(d.mal));
-  const nf = v => Number(v).toLocaleString('pt-PT',{maximumFractionDigits:1}); if(d.avaliacoes != null) p.push(d.avaliacoes + ' avaliações'); if(d.loja_score != null) p.push('loja ' + nf(d.loja_score) + '/100');
-  if(d.cluster != null) p.push('cluster ' + nf(d.cluster)); if(d.regiao != null) p.push('região ' + nf(d.regiao)); if(d.pais != null) p.push('país ' + nf(d.pais));
+  const nf = x => Number(x).toLocaleString('pt-PT',{maximumFractionDigits:1});
+  if(d.avaliacoes != null) p.push(d.avaliacoes + ' respostas'); if(d.loja_score != null) p.push('loja ' + nf(d.loja_score) + '%');
+  if(d.cluster != null) p.push('tipologia ' + nf(d.cluster) + '%'); if(d.regiao != null) p.push('região ' + nf(d.regiao) + '%'); if(d.pais != null) p.push('Pingo Doce ' + nf(d.pais) + '%');
   if(d.fatores) p.push('fatores'); if(d.comentarios) p.push('comentários');
   return `semana ${numeroSemanaISO(new Date(d.semana_inicio + 'T12:00:00'))} · ` + (p.join(' · ') || 'sem valores');
 }
