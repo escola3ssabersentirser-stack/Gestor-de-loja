@@ -1740,7 +1740,26 @@ async function sb(path, options={}){
     throw new Error(`Supabase error (${res.status}): ${err}`);
   }
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  let dados = text ? JSON.parse(text) : null;
+  // formação: só colaboradores da loja e sem os retirados da lista
+  if(metodo === 'GET' && Array.isArray(dados)){
+    if(/^loja_formacoes_percurso\?/.test(path)) dados = dados.filter(r => !/retirad/i.test(r.observacoes || ''));
+    else if(/^loja_formacao_compliance\?/.test(path) && dados.length && 'numero_pessoal' in dados[0]){
+      const loja = await formNumsLoja();
+      if(loja) dados = dados.filter(r => loja.nums.has(String(r.numero_pessoal || '').replace(/^0+/, '')) || loja.nomes.has(String(r.nome || '').trim().toLowerCase()));
+    }
+  }
+  return dados;
+}
+let formNumsLojaCache = null;
+async function formNumsLoja(){
+  if(formNumsLojaCache && Date.now() - formNumsLojaCache.t < 5*60*1000) return formNumsLojaCache;
+  try{
+    const rows = await sb('loja_colaboradores?select=numero_pessoal,nome');
+    if(!rows || !rows.length) return null;
+    formNumsLojaCache = {t: Date.now(), nums: new Set(rows.map(r => String(r.numero_pessoal || '').replace(/^0+/, '')).filter(Boolean)), nomes: new Set(rows.map(r => String(r.nome || '').trim().toLowerCase()))};
+    return formNumsLojaCache;
+  }catch(e){ return null; }
 }
 
 async function loadStoreData(){
@@ -13367,6 +13386,10 @@ async function rhGuardar(){
       const subst = (document.getElementById('rh-subst')||{}).checked;
       const comp = linhas.filter(x => x.tipo === 'compliance').map(x => ({numero_pessoal: x.numero || null, nome: x.nome, codigo_conduta: x.codigo_conduta || null, data_privacy: x.data_privacy || null, politica_anticorrupcao: x.politica_anticorrupcao || null, seguranca_protecao: x.seguranca_protecao || null}));
       const perc = linhas.filter(x => x.tipo === 'percurso').map(x => ({numero_pessoal: x.numero || null, nome: x.nome, curso: x.curso, data_prevista: x.data, observacoes: x.obs}));
+      // só guardar colaboradores da loja (o ficheiro pode trazer a região inteira)
+      { formNumsLojaCache = null; const loja = await formNumsLoja(); if(loja){ const daLoja = x => loja.nums.has(String(x.numero_pessoal || '').replace(/\D/g,'').replace(/^0+/, '')) || loja.nomes.has(String(x.nome || '').trim().toLowerCase());
+        const antes = comp.length + perc.length; const c2 = comp.filter(daLoja); comp.length = 0; comp.push(...c2); const p2 = perc.filter(x => !x.numero_pessoal || daLoja(x)); perc.length = 0; perc.push(...p2);
+        if(antes > comp.length + perc.length) console.info(`Formação: ignoradas ${antes - comp.length - perc.length} linhas de pessoas de outras lojas`); } }
       if(comp.length){ if(subst) await sb('loja_formacao_compliance?id=gt.0', {method:'DELETE'}); await sb('loja_formacao_compliance', {method:'POST', body: JSON.stringify(comp)}); }
       if(perc.length){ if(subst) await sb('loja_formacoes_percurso?id=gt.0', {method:'DELETE'}); await sb('loja_formacoes_percurso', {method:'POST', body: JSON.stringify(perc)}); }
       ok = comp.length + perc.length;
