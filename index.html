@@ -2023,22 +2023,24 @@ function lerResumoR05(wb, base){
   const media = (obj, a, k) => { const v = fech.map(m => g(obj, a, m, k)).filter(x => x != null && x > 0); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
   const aval = (ant, atual, menosMelhor) => (!ant) ? 'sem dados do ano anterior' : (atual === ant ? '= igual' : ((atual < ant) === !!menosMelhor ? '▲ melhor' : '▼ pior'));
   const linha = (rub, ant, atual, menosMelhor, budget) => ({rub, ant, atual, dif: ant != null && atual != null ? atual - ant : null, vari: ant ? (atual - ant) / ant : null, budget: budget || null, vsb: budget ? (atual - budget) / budget : null, aval: aval(ant, atual, menosMelhor)});
-  const vA = soma(M, anoAnt, 'v'), v = soma(M, ano, 'v'), qA = soma(M, anoAnt, 'q'), q = soma(M, ano, 'q');
-  const bdg = fech.reduce((s, m) => s + ((baseMes[MESES[m]] && baseMes[MESES[m]].budget) || 0), 0);
+  // vendas e quebra: de janeiro até hoje (mês em curso proporcional aos dias no ano anterior)
+  const ddHoje = `${String(diasDecorridos).padStart(2, '0')}/${String(mesAtual + 1).padStart(2, '0')}`;
+  const vA = soma(M, anoAnt, 'v') + (g(M, anoAnt, mesAtual, 'v') || 0) * frac, v = soma(M, ano, 'v') + (g(M, ano, mesAtual, 'v') || 0);
+  const qA = soma(M, anoAnt, 'q') + (g(M, anoAnt, mesAtual, 'q') || 0) * frac, q = soma(M, ano, 'q') + (g(M, ano, mesAtual, 'q') || 0);
   const per = [];
-  { const lv = linha('Vendas', vA, v, false, bdg || null); if(bdg){ const vComBdg = fech.reduce((t, m) => t + (((baseMes[MESES[m]] && baseMes[MESES[m]].budget) || 0) ? (g(M, ano, m, 'v') || 0) : 0), 0); lv.vsb = (vComBdg - bdg) / bdg; } per.push(lv); }  // vs budget só nos meses com budget
+  { const lv = linha('Vendas', vA, v, false, null); lv.ate = ddHoje; per.push(lv); }  // vs budget e LFL oficiais vêm do Bom Dia (ver painel)
   per.push(linha('Quebra (€)', qA, q, true));
   const qpA = vA ? qA / vA : null, qp = v ? q / v : null;
   per.push({rub: 'Quebra em % das vendas', ant: qpA, atual: qp, dif: qpA != null && qp != null ? (qp - qpA) * 100 : null, vari: null, budget: null, vsb: null, aval: aval(qpA, qp, true)});
   const abA = media(M, anoAnt, 'a'), ab = media(M, ano, 'a');
-  per.push({rub: 'Absentismo médio', ant: abA, atual: ab, dif: abA != null && ab != null ? (ab - abA) * 100 : null, vari: null, budget: null, vsb: null, aval: aval(abA, ab, true)});
+  per.push({rub: fech.length ? `Absentismo médio (jan–${MESES[fech.length-1].slice(0,3).toLowerCase()})` : 'Absentismo médio', ant: abA, atual: ab, dif: abA != null && ab != null ? (ab - abA) * 100 : null, vari: null, budget: null, vsb: null, aval: aval(abA, ab, true)});
   [['Água', 'agua'], ['Luz', 'luz'], ['Economato', 'eco'], ['Manutenções', 'man']].forEach(([r, k]) => per.push(linha(r, soma(C, anoAnt, k), soma(C, ano, k), true)));
   [['Encargos c/ pessoal', 'enc'], ['Limpeza, higiene e conforto', 'limp'], ['Vigilância e segurança', 'seg']].forEach(([r, k]) => { const a = soma(C, anoAnt, k), b = soma(C, ano, k); per.push({rub: r, ant: a, atual: b, dif: a ? b - a : null, vari: a ? (b - a) / a : null, budget: null, vsb: null, aval: a ? aval(a, b, true) : 'sem dados do ano anterior'}); });
   const totA = ['agua', 'luz', 'eco', 'man'].reduce((s, k) => s + soma(C, anoAnt, k), 0), tot = ['agua', 'luz', 'eco', 'man'].reduce((s, k) => s + soma(C, ano, k), 0);
   per.push(linha('Total custos comparáveis (Água, Luz, Economato, Manutenções)', totA, tot, true));
-  const enc = soma(C, ano, 'enc'); per.push({rub: 'Encargos c/ pessoal em % das vendas', ant: 0, atual: v ? enc / v : null, dif: null, vari: null, budget: null, vsb: null, aval: ''});
+  const enc = soma(C, ano, 'enc'); per.push({rub: 'Encargos c/ pessoal em % das vendas', ant: 0, atual: soma(M, ano, 'v') ? enc / soma(M, ano, 'v') : null, dif: null, vari: null, budget: null, vsb: null, aval: ''});
   out.periodo = per;
-  out.periodo_titulo = fech.length ? `${MESES[0]} a ${MESES[fech.length - 1]} · ${ano} vs ${anoAnt}` : '';
+  out.periodo_titulo = `${MESES[0]} a ${ddHoje} · ${ano} vs ${anoAnt}`;
   // 5) mês em curso
   const vm = g(M, ano, mesAtual, 'v') || 0, qm = g(M, ano, mesAtual, 'q') || 0, vmA = (g(M, anoAnt, mesAtual, 'v') || 0) * frac, qmA = g(M, anoAnt, mesAtual, 'q') || 0, vmAtot = g(M, anoAnt, mesAtual, 'v') || 0;
   const bMes = (baseMes[MESES[mesAtual]] && baseMes[MESES[mesAtual]].budget) || 0, bMTD = bMes * frac;
@@ -2224,6 +2226,8 @@ function rpChip(texto, bom){
 }
 
 async function carregarResumoPainel(){
+  try{ const bd = await sb('loja_resumo_painel?id=eq.3&select=dados'); const d3 = bd && bd[0] && bd[0].dados; if(d3 && d3.ano){ window.__bomDiaAno = {vsb: d3.ano.vsb, vsaa: d3.ano.vsaa, ate: d3.data ? d3.data.slice(8,10) + '/' + d3.data.slice(5,7) : ''}; } }catch(e){}
+  try{ const lr = await sb('loja_resumo_painel?id=eq.10&select=dados'); const hs = lr && lr[0] && lr[0].dados && lr[0].dados.hist; if(hs){ const k = Object.keys(hs).sort().pop(); window.__lflAno = hs[k] && hs[k].ano ? hs[k].ano.lfl : null; } }catch(e){}
   try{
     const rows = await sb('loja_resumo_painel?id=eq.1&select=dados,atualizado_em');
     if(rows && rows.length && rows[0].dados){ resumoPainel = rows[0].dados; return; }
@@ -2418,7 +2422,9 @@ function renderPainelResumo(){
       const semAnt = !l.ant;
       const variacao = semAnt ? '–' : ePct ? rpVarPP(l.dif) : rpVarPct(l.vari);
       const bom = l.aval.startsWith('▲') ? true : l.aval.startsWith('▼') ? false : null;
-      const extra = l.budget ? `<div class="rp-mini-sub">budget ${rpEur(l.budget)} · ${rpVarPct(l.vsb)}</div>` : '';
+      const extra = (l.budget ? `<div class="rp-mini-sub">budget${l.bdg_meses ? ' ' + rpEsc(l.bdg_meses) : ''} ${rpEur(l.budget)}${l.v_bdg ? ' vs real ' + rpEur(l.v_bdg) : ''} · ${rpVarPct(l.vsb)}</div>` : '')
+        + (/^Vendas$/i.test(l.rub) && window.__bomDiaAno && window.__bomDiaAno.vsb != null ? `<div class="rp-mini-sub">vs budget: <b>${rpVarPct(window.__bomDiaAno.vsb)}</b> · Bom Dia até ${rpEsc(window.__bomDiaAno.ate || '')}</div>` : '')
+        + (/^Vendas$/i.test(l.rub) && ((window.__bomDiaAno && window.__bomDiaAno.vsaa != null) || window.__lflAno != null) ? `<div class="rp-mini-sub">LFL ano (comparável): <b>${rpVarPct(window.__bomDiaAno && window.__bomDiaAno.vsaa != null ? window.__bomDiaAno.vsaa : window.__lflAno)}</b></div>` : '');
       h += `<tr${/^Total/.test(l.rub) ? ' class="rp-tot"' : ''}><td>${rpEsc(l.rub)}</td><td>${semAnt ? '–' : fmt(l.ant)}</td><td>${fmt(l.atual)}${extra}</td><td>${variacao}</td><td>${bom === null ? `<span class="rp-mini-sub">${rpEsc(l.aval)}</span>` : `<span class="rp-chip ${bom ? 'bom' : 'mau'}">${bom ? '▲ melhor' : '▼ pior'}</span>`}</td></tr>`;
     });
     h += `</tbody></table></div>`;
