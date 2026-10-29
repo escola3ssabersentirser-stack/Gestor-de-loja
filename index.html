@@ -2810,7 +2810,7 @@ function mkdSemEtiquetaLer(R, hIdx, bloco, dataRef){
     const r = R[i] || []; if(impTxt(r[cLoja]).replace(/\.0$/, '') !== IMP_LOJA) continue;
     const n = k => k >= 0 ? (impNum(r[k]) || 0) : 0;
     const qq = n(cQq), pot = n(cVq) + qq, sem = pot - n(cReal);
-    if(!(qq > 0) || !(sem > 0.001)) continue;
+    if(!(qq > 0) || !(sem > 0.05)) continue;
     const dv = impTxt(r[cDiv]).toUpperCase();
     out.push({divisao: dv, secao_app: IMP_SECAO_MKD[dv] || null, artigo_cod: cCod >= 0 ? impTxt(r[cCod]).replace(/\.0$/, '') : null, artigo: impTxt(r[cArt]),
       impressas: n(cImp), qtd_potencial: impR2(pot), qtd_sem_etiqueta: impR2(sem), quebra_qtd: impR2(qq), quebra_valor: impR2(n(cQv)),
@@ -15518,6 +15518,7 @@ async function renderMarkdownScreen(){
   html += `</div>`;
 
   html += await blocoEtiquetasMarkdown();
+  try{ html = (await blocoQuebraSemEtiqueta()) + html; }catch(e){ console.error('sem etiqueta', e); }
   content.innerHTML = html;
 }
 
