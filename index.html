@@ -768,6 +768,7 @@
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:Distrito','Auditoria Distrito')">🗺️ Distrito</button>
           <button class="h3s-pill claro" onclick="selectMenu('auditoria:Marketing','Auditoria Marketing')">📢 Marketing</button>
         </div>
+          <button class="rp-nav-btn hidden" id="rp-btn-codigos" onclick="abrirCodigosEquipa()"><span class="rp-nav-ic">🔑</span><span><b>Códigos de acesso</b><small>gerar o código de entrada de cada colaborador</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:lflarea','Loja vs Área')"><span class="rp-nav-ic">🏁</span><span><b>Loja vs Área</b><small>ranking das lojas da área, LFL e quebra por secção</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')"><span class="rp-nav-ic">👥</span><span><b>Recursos Humanos</b><small>horários, banco de horas, formação</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('melhoria','Melhoria Contínua')"><span class="rp-nav-ic">📈</span><span><b>Melhoria Contínua</b><small>score semanal e evolução</small></span></button>
@@ -4591,6 +4592,7 @@ function renderHome3S(){
   const set = (id, v)=>{ const el = document.getElementById(id); if(el) el.textContent = (v===null||v===undefined||v==='') ? '—' : v; };
   set('h3s-nome', currentUser ? `${currentUser.name} · ${ROLE_LABELS[currentUser.role] || ''}` : '—');
   set('h3s-semana', storeData.week);
+  { const bc = document.getElementById('rp-btn-codigos'); if(bc) bc.classList.toggle('hidden', !souDona()); }
   const [vendas, vendasNota] = separarValorNota(storeData.sales);
   set('h3s-vendas', vendas);
   set('h3s-vendas-sub', vendasNota || 'Mês');
@@ -16359,8 +16361,10 @@ async function abrirCodigosEquipa(){
 
 function desenharCodigosEquipa(){
   const el = document.getElementById('codigos-lista'); if(!el) return;
-  const f = (document.getElementById('codigos-filtro').value || '').toLowerCase();
-  const lista = (window._codigosEquipa || []).filter(p => !f || (p.nome||'').toLowerCase().includes(f) || String(p.numero_pessoal||'').includes(f));
+  const semAc = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const f = semAc((document.getElementById('codigos-filtro').value || '').trim());
+  const fn = f.replace(/\D/g, '').replace(/^0+/, '');
+  const lista = (window._codigosEquipa || []).filter(p => !f || semAc(p.nome).includes(f) || (fn && String(p.numero_pessoal || '').replace(/^0+/, '').includes(fn)));
   const sem = lista.filter(p => !p.acesso.tem_codigo).length;
   el.innerHTML = `<div style="color:var(--ink-soft);margin-bottom:8px;">${lista.length} pessoas · ${sem} ainda sem código</div>` + lista.map(p => {
     const a = p.acesso;
