@@ -3113,8 +3113,9 @@ async function impValidades(wb, nomeFicheiro){
   await sb('loja_validades_artigos_tratar?tratado=not.is.true', {method:'DELETE'});
   if(d.porTratar.length) await sb('loja_validades_artigos_tratar', {method:'POST', body: JSON.stringify(d.porTratar.map(a => ({secao: a.secao, material: a.material, descricao: a.descricao, proxima_validade: a.proxima_validade, acao: (a.motivo.replace(/^Verificar Validades - /,'').slice(0,120)) + (a.dias_dif ? ` (+${a.dias_dif} dias)` : '') + (a.stock != null ? ` · stock ${a.stock}` : ''), tratado: false, data: d.data})))});
   await impGuardarData('validades', d.data);
+  let mkdTxt = ''; try{ const v = await mkdAtualizarDeValidades(d.data); const sv = v.semValidade.length, inc = v.incompletas.length; mkdTxt = ` · markdown: ${sv} quebra${sv === 1 ? '' : 's'} sem validade, ${inc} com etiquetas incompletas este mês`; }catch(e){ console.warn('markdown validades', e); }
   const tot = d.resumo30.find(x => /total/i.test(x.secao)); const porTratarHoje = d.hoje.reduce((a,x) => a + x.por_tratar, 0);
-  return `dados de ${impDDMM(d.data)} · execução 30 dias ${tot && tot.tx != null ? Math.round(tot.tx*100) + '%' : '—'} · ${porTratarHoje} por tratar hoje · ${d.porTratar.length} artigos a verificar`;
+  return `dados de ${impDDMM(d.data)} · execução 30 dias ${tot && tot.tx != null ? Math.round(tot.tx*100) + '%' : '—'} · ${porTratarHoje} por tratar hoje · ${d.porTratar.length} artigos a verificar${mkdTxt}`;
 }
 async function valCarregarRelatorio(input){
   const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar o relatório de validades')) return;
@@ -3339,6 +3340,7 @@ async function importarFicheirosDia(input){
       const wb = XLSX.read(bufX, {type:'array'});
       let tipo = impTipo(wb);
       if(!tipo){ const te = impTipoExtra(wb, f.name); if(te){ l.tipo = IMP_NOMES[te]; lidos.push({l, extra: te, f, tipo: te, nome: f.name}); continue; } }
+      if(tipo === 'markdown'){ l.ok = 'skip'; l.tipo = 'Relatório de markdown — já não é usado'; l.msg = 'O markdown agora vem do Relatório de Gestão de Validades. Este ficheiro foi ignorado.'; continue; }
       if(tipo === 'naousado'){ l.ok = 'skip'; l.tipo = 'Não é preciso'; l.msg = 'A app agora só usa vendas e quebras — este ficheiro foi ignorado.'; continue; }
       if(!tipo){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Este ficheiro não é nenhum dos relatórios que a app conhece. Envie-o ao Claude para a app aprender a lê-lo.'; continue; }
       l.tipo = IMP_NOMES[tipo]; lidos.push({l, wb, tipo, nome: f.name, data: f.lastModified});
@@ -7931,8 +7933,8 @@ async function blocoPontosCriticosSecao(secao, v){
   const divMarkdown = MAPA_SECAO_MARKDOWN[secao];
   if(divMarkdown){
     const mRows = await sb(`loja_markdown_pct_divisao?divisao=eq.${encodeURIComponent(divMarkdown)}&select=*`);
-    if(mRows.length && Number(mRows[0].pct_nao_realizado_valor) > 20){
-      itens.push({tipo:'🏷️ Markdown por fazer', valor: mRows[0].pct_nao_realizado_valor+'%'});
+    if(mRows.length && Number(mRows[0].pct_nao_realizado_valor) > 5){
+      itens.push({tipo:'🏷️ Falhas de markdown (validades)', valor: mRows[0].pct_nao_realizado_valor+'%'});
     }
   }
   const compliancePendente = formacaoRows.filter(f => f.codigo_conduta==='a formar' || f.data_privacy==='a formar' || f.politica_anticorrupcao==='a formar' || f.seguranca_protecao==='a formar').length;
@@ -8207,7 +8209,7 @@ function planoValoresTexto(d){
   if(INV_VISIVEL) L.push(`📋 Inventário da semana: loja ${eur(inv.reduce((t, [, v]) => t + v, 0))}`);
   if(INV_VISIVEL) Object.entries(d.invSec).forEach(([s, v]) => L.push(`   ${INV_CATEGORIAS.includes(s) ? '↳ ' : ''}${labelSecaoPainel(s)}: ${eur(v)}`));
   if(d.score) L.push(`🏅 Score validades: ${pct(d.score.score, 1)} · execução ${pct(d.score.execucao, 1)} · aceitação ${pct(d.score.aceitacao, 1)} · não realizado ${pct(d.score.mnr_pct, 1)}`);
-  if(d.md.length) L.push('🏷️ Markdown não realizado: ' + d.md.slice(0, 5).map(x => `${x.divisao} ${pct(x.pct_nao_realizado_valor)}`).join(' · '));
+  if(d.md.length) L.push('🏷️ Falhas de markdown (validades): ' + d.md.slice(0, 5).map(x => `${x.divisao} ${pct(x.pct_nao_realizado_valor)}`).join(' · '));
   if(d.alertas.length) L.push(`⚠️ Artigos problemáticos: ${d.alertas.length} — ` + d.alertas.slice(0, 6).map(a => `${a.descricao}${a.secao ? ' (' + a.secao + ')' : ''}`).join(' · '));
   return L.join('\n');
 }
@@ -9819,7 +9821,7 @@ async function apGerarSlides(){
   const [ata, cats, mkd, arts, scoreV, vsOps, infos, kvRows, planos] = await Promise.all([
     gerarAtaAutomatica(dReun),
     sb('loja_categorias_perda_vendas?select=categoria,divisao,venda_ac,venda_aa,delta_pct,quebra_ac_pct&order=delta_pct.asc&limit=10').catch(()=>[]),
-    sb('loja_markdown_etiquetas?nivel=eq.divisao&select=divisao,impressas,vendidas,sem_venda,pct_aceitacao,data_referencia&order=sem_venda.desc').catch(()=>[]),
+    vldMes().catch(()=>null),
     quebraArtigosAtuais(10).catch(()=>[]),
     sb('loja_validades_score?select=*&order=ano.desc,data_atualizacao.desc.nullslast&limit=1').catch(()=>[]),
     sb('loja_venda_sugestiva_operadores?select=*&order=data_referencia.desc.nullslast,vendas_un.desc&limit=60').catch(()=>[]),
@@ -9867,11 +9869,11 @@ async function apGerarSlides(){
     <div><h3>Secções onde a quebra sobe</h3><table class="ap-tab">${difQ.filter(x => x.d > 0.3).slice(0,5).map(x => `<tr><td>${esc(x.sec)}</td><td class="ap-mau">${pp(x.d)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table>
     <h3 style="margin-top:14px;">A reconhecer (quebra a descer)</h3><table class="ap-tab">${difQ.filter(x => x.d < -0.3).slice(-4).reverse().map(x => `<tr><td>${esc(x.sec)}</td><td class="ap-bom">${pp(x.d)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table></div>
     <div><h3>Artigos com mais quebra${ultA ? ' (' + impDDMM(ultA) + ')' : ''}</h3><table class="ap-tab">${artsU.map(a => `<tr><td>${esc(titulo(a.descricao))}</td><td>${fmtEuro(a.valor_quebra)}</td></tr>`).join('') || '<tr><td>—</td></tr>'}</table></div></div>${rod(5)}</div>`);
-  // 6 markdown / etiquetas
-  if((mkd||[]).length){
-    const tot = mkd.reduce((a,d) => ({i: a.i + Number(d.impressas||0), v: a.v + Number(d.vendidas||0)}), {i:0, v:0});
-    S.push(`<div class="ap-slide"><h2>Markdown: etiquetas que não venderam</h2><div class="ap-grid4">${tile('Impressas', tot.i.toLocaleString('pt-PT'))}${tile('Vendidas', tot.v.toLocaleString('pt-PT'), '', 'ap-bom')}${tile('Sem venda', Math.max(0, tot.i - tot.v).toLocaleString('pt-PT'), '', 'ap-mau')}${tile('Aceitação', tot.i ? Math.round(tot.v/tot.i*100) + '%' : '—')}</div>
-      <table class="ap-tab" style="margin-top:18px;"><tr><th>Divisão</th><th>Impressas</th><th>Sem venda</th><th>Aceitação</th></tr>${mkd.slice(0,6).map(d => `<tr><td>${esc(titulo(d.divisao))}</td><td>${d.impressas}</td><td class="ap-mau">${d.sem_venda}</td><td>${Math.round(d.pct_aceitacao)}%</td></tr>`).join('')}</table>${rod(6)}</div>`);
+  // 6 markdown (relatório de gestão de validades)
+  if(mkd && mkd.nRel){
+    const t = mkd.sec.reduce((a, x) => ({at: a.at + x.md_atraso, inc: a.inc + x.dif_stock_md, sv: a.sv + x.nao_registadas}), {at:0, inc:0, sv:0});
+    S.push(`<div class="ap-slide"><h2>Markdown do mês (validades)</h2><div class="ap-grid4">${tile('Quebra sem validade', String(mkd.semValidade.length), 'artigos', 'ap-mau')}${tile('Etiquetas incompletas', String(mkd.incompletas.length), 'artigos', mkd.incompletas.length ? 'ap-mau' : 'ap-bom')}${tile('Em atraso', String(t.at), 'soma dos dias')}${tile('Relatórios', String(mkd.nRel), 'até ' + impDDMM(mkd.ref))}</div>
+      <table class="ap-tab" style="margin-top:18px;"><tr><th>Secção</th><th>Em atraso</th><th>Incompletas</th><th>Sem validade</th><th>% falha</th></tr>${mkd.sec.filter(x => x.falhas).slice(0,6).map(x => `<tr><td>${esc(x.secao)}</td><td>${x.md_atraso}</td><td>${x.dif_stock_md}</td><td class="ap-mau">${x.nao_registadas}</td><td>${x.pct.toLocaleString('pt-PT')}%</td></tr>`).join('') || '<tr><td colspan="5">Sem falhas de markdown este mês 🎉</td></tr>'}</table>${rod(6)}</div>`);
   }
   // 7 categorias
   const catsOk = (cats||[]).filter(c => !/natal|páscoa|pascoa|sazona/i.test(c.categoria)).slice(0,8);
@@ -10043,7 +10045,7 @@ async function gerarResumoReuniao(){
       + (sobe.length ? `\nQuebra a subir: ${sobe.join(', ')}.` : '')
       + (desce.length ? `\nQuebra a descer: ${desce.join(', ')}.` : '')
       + (arts.length ? `\nArtigos com mais quebra: ${arts.map(a => `${impTitulo ? impTitulo(a.descricao) : a.descricao} ${rpEur(a.valor_quebra)}`).join(', ')}.` : '')
-      + (mkd.length ? `\nMarkdown não realizado: ${mkd.map(m => `${impTitulo ? impTitulo(m.divisao) : m.divisao} ${Number(m.pct_nao_realizado_valor).toLocaleString('pt-PT')}%`).join(', ')}.` : ''),
+      + (mkd.length ? `\nFalhas de markdown (validades): ${mkd.map(m => `${impTitulo ? impTitulo(m.divisao) : m.divisao} ${Number(m.pct_nao_realizado_valor).toLocaleString('pt-PT')}%`).join(', ')}.` : ''),
     auditorias: auds.length ? `Abaixo do objetivo: ${audAbaixo.join(', ') || 'nenhuma'}.\nCumprem: ${audCumpre.join(', ') || '—'}.` : '',
     pontos: []
   };
@@ -10051,7 +10053,7 @@ async function gerarResumoReuniao(){
   if(vb.vari < 0) v.pontos.push(`Vendas ${rpPct(Math.abs(vb.vari),1)} abaixo do budget${abaixo.length ? ' — começar por ' + abaixo[0].replace(/ [+−].*$/,'') + (usaBdg ? '' : ' (a mais abaixo de ' + anoP + ')') : ''}.`);
   if(cli.vari < -0.03 && tm.vari > 0) v.pontos.push(`Menos clientes (${rpVarPct(cli.vari)}) mas ticket médio a subir (${rpVarPct(tm.vari)}): como trazer mais clientes à loja?`);
   if(qp.vari > 0) v.pontos.push(`Quebra acima de ${anoP} (${rpVarPP(qp.vari)})${sobe.length ? ': ' + sobe.slice(0,2).join(' e ') : ''}.`);
-  if(mkd.length) v.pontos.push(`Markdown: ${mkd.map(m => impTitulo(m.divisao)).join(' e ')} com muito markdown não realizado — marcar mais cedo.`);
+  if(mkd.length) v.pontos.push(`Markdown: ${mkd.map(m => impTitulo(m.divisao)).join(' e ')} com falhas de markdown — registar sempre a validade e imprimir etiquetas para todo o stock.`);
   if(audAbaixo.length) v.pontos.push(`Auditorias abaixo do objetivo: ${auds.filter(a => !a.aval.startsWith('▲')).map(a => a.area).join(', ')}.`);
   if(desce.length) v.pontos.push(`A reconhecer: ${desce.map(x => x.replace(/ [+−].*$/,'')).join(', ')} baixaram a quebra.`);
   v.data = rpDadosAte(r);
@@ -12715,7 +12717,7 @@ function etiquetaDoArtigo(a, etiquetas){
 async function blocoAlertasQuebraArtigo(secao){
   const [todos, etiquetas] = await Promise.all([
     quebraArtigosAtuais(0),
-    sb('loja_markdown_etiquetas?nivel=eq.artigo&select=artigo,artigo_cod,impressas,vendidas,sem_venda').catch(()=>[])
+    vldMes().catch(()=>({semValidade:[], incompletas:[]}))
   ]);
   let itens = todos;
   if(secao) itens = itens.filter(a => a.secao === secao);
@@ -12725,18 +12727,17 @@ async function blocoAlertasQuebraArtigo(secao){
     return html;
   }
   const dataRel = itens[0].data ? new Date(itens[0].data+'T12:00:00').toLocaleDateString('pt-PT') : '';
-  const comEt = itens.map(a => ({a, e: etiquetaDoArtigo(a, etiquetas||[])}));
-  const semEt = comEt.filter(x => !x.e);
+  const comEt = itens.map(a => ({a, e: vldMarcaArtigo(etiquetas, a)}));
+  const semEt = comEt.filter(x => x.e && x.e.tipo === 'sem');
   const totSem = semEt.reduce((s,x)=>s+Number(x.a.valor_quebra||0),0);
   const tot = comEt.reduce((s,x)=>s+Number(x.a.valor_quebra||0),0);
   html += `<div class="card" style="padding:10px 12px;margin-bottom:10px;background:#fff4f4;border-left:4px solid var(--red);">
-    <div style="font-size:12.5px;color:var(--ink);"><b>${semEt.length} de ${comEt.length}</b> artigos com quebra <b>não tiveram etiqueta markdown</b></div>
+    <div style="font-size:12.5px;color:var(--ink);"><b>${semEt.length} de ${comEt.length}</b> artigos com quebra <b>foram para quebra sem validade registada</b> (sem etiqueta de markdown)</div>
     <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">Quebra destes artigos: <b style="color:var(--red);">${totSem.toLocaleString('pt-PT',{maximumFractionDigits:0})} €</b> de ${tot.toLocaleString('pt-PT',{maximumFractionDigits:0})} € · relatório de ${dataRel}</div>
   </div>`;
   html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   comEt.forEach(({a,e})=>{
-    const etq = e ? `<span style="font-size:10.5px;color:var(--green);">🏷️ markdown: ${e.impressas||0} impressas · ${e.vendidas||0} vendidas</span>`
-                  : `<span style="font-size:10.5px;font-weight:700;color:var(--red);">⚠ sem etiqueta markdown</span>`;
+    const etq = e ? `<span style="font-size:10.5px;font-weight:700;color:${e.tipo === 'sem' ? 'var(--red)' : '#C77F12'};">${e.txt}</span>` : '';
     html += `<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;">
       <div style="min-width:0;">
         <div style="font-size:12.5px;color:var(--ink);">${a.descricao}</div>
@@ -15493,77 +15494,9 @@ async function mdCarregar(input){
 async function renderMarkdownScreen(){
   const content = document.getElementById('markdown-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
-
-  const [markdowns, pctDivisoes, artigosMD] = await Promise.all([
-    sb('loja_markdowns_pendentes?select=id,tratado,descricao,secao_codigo'),
-    sb('loja_markdown_pct_divisao?select=*&order=pct_nao_realizado_valor.desc'),
-    sb('loja_markdown_artigos?select=*&order=pct_nao_realizado.desc')
-  ]);
   const editavel = currentUser && souDona();
-
-  let html = editavel ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="md-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="mdCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#md-fich')||document.getElementById('md-fich')).click()">📎 Carregar ficheiro de Markdown (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">A app lê o markdown não realizado por secção e artigo e as etiquetas impressas, vendidas e sem venda.</div><div id="md-estado" style="font-size:12.5px;margin-top:6px;"></div></div>` : '';
-  html += `<div class="section-title">🏷️ % Markdown Não Realizado — Por Secção (real, ${pctDivisoes[0]?.mes_referencia || ''})</div>`;
-  html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
-  DEPARTAMENTOS_LOJA.forEach(secao=>{
-    const divisoesMatch = pctDivisoes.filter(d=>d.secao_app === secao);
-    if(!divisoesMatch.length) return;
-    const artigosDaSecao = artigosMD.filter(a=>a.secao_app === secao && Number(a.pct_nao_realizado) > 0);
-    divisoesMatch.forEach(d=>{
-      const pct = Number(d.pct_nao_realizado_valor);
-      const cor = pct === 0 ? 'var(--green)' : (pct < 20 ? 'var(--amber)' : 'var(--red)');
-      html += `<div class="econ-secao" style="margin-bottom:8px;">
-        <div class="econ-secao-header" onclick="toggleSecao(this)">
-          <span>${labelSecaoPainel(secao)} (${d.divisao}) — <b style="color:${cor};">${pct}%</b> não realizado ${editavel?`<span onclick="event.stopPropagation();editarMarkdownPctDivisao(${d.id})" style="cursor:pointer;">✏️</span>`:''}</span>
-          <span class="chevron">▶</span>
-        </div>
-        <div class="econ-secao-body">`;
-      if(!artigosDaSecao.length){
-        html += `<div style="padding:8px 14px;font-size:12.5px;color:var(--ink-soft);">Ainda sem artigos individuais identificados — a % acima é a real, vinda do relatório oficial.</div>`;
-      } else {
-        html += `<div style="padding:6px 14px;font-size:10.5px;color:var(--ink-soft);font-weight:600;">Artigos com mais % de markdown não realizado:</div>`;
-        artigosDaSecao.forEach(a=>{
-          const corA = a.pct_nao_realizado >= 20 ? 'var(--red)' : (a.pct_nao_realizado >= 5 ? 'var(--amber)' : 'var(--ink-soft)');
-          html += `<div style="padding:6px 14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;">
-            <span style="font-size:12.5px;color:var(--ink);">${a.artigo}</span>
-            <span style="font-size:12.5px;font-weight:700;color:${corA};">${a.pct_nao_realizado}%</span>
-          </div>`;
-        });
-      }
-      html += `</div></div>`;
-    });
-  });
-  const outrasDivisoes = pctDivisoes.filter(d=>!d.secao_app && Number(d.pct_nao_realizado_valor) > 0);
-  if(outrasDivisoes.length){
-    html += `<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 4px 2px;font-weight:600;">Outras divisões (sem secção correspondente na app):</div>`;
-    outrasDivisoes.forEach(d=>{
-      html += `<div style="font-size:12px;color:var(--ink);display:flex;justify-content:space-between;padding:3px 4px;">
-        <span>${d.divisao}</span><span style="font-weight:700;">${d.pct_nao_realizado_valor}%</span>
-      </div>`;
-    });
-  }
-  html += `</div>`;
-
-  const [semMarkdown, piorAceitacao] = await Promise.all([
-    sb(`loja_markdown_artigo_detalhe?tipo=eq.sem_markdown&select=*&order=valor.desc&limit=10`),
-    sb(`loja_markdown_artigo_detalhe?tipo=eq.pior_aceitacao&select=*&order=valor.desc&limit=100`)
-  ]);
-
-  html += `<div class="section-title">⚠️ Artigos que Deram Quebra Sem Etiqueta de Markdown</div>`;
-  html += `<div class="card">`;
-  if(semMarkdown.length){
-    semMarkdown.forEach((a,i)=>{
-      html += `<div style="padding:6px 0;border-top:${i===0?'none':'1px solid var(--line)'};display:flex;justify-content:space-between;">
-        <span style="font-size:12px;color:var(--ink);">${a.artigo} <span style="color:var(--ink-soft);font-size:10.5px;">(${a.divisao})</span></span>
-        <span style="font-size:12px;font-weight:700;color:var(--red);">${a.valor} un. quebra</span>
-      </div>`;
-    });
-  } else {
-    html += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados.</div>`;
-  }
-  html += `</div>`;
-
-  html += await blocoEtiquetasMarkdown();
-  try{ html = (await blocoQuebraSemEtiqueta()) + html; }catch(e){ console.error('sem etiqueta', e); }
+  let html = editavel ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="md-val-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="valCarregarRelatorio(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('md-val-fich').click()">📥 Carregar o Relatório de Gestão de Validades</button><div id="val-rel-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">O relatório de markdown deixou de existir: o markdown vem agora do relatório de validades.</div></div>` : '';
+  try{ html += await blocoQuebraSemEtiqueta(); }catch(e){ console.error('markdown validades', e); html += `<div class="card">Não consegui ler os dados das validades.</div>`; }
   content.innerHTML = html;
 }
 
@@ -15838,64 +15771,94 @@ async function blocoPlanoProducao(){
   return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Toque na ação para ver como fazer. ● vermelho = prioridade alta.</div></div>`;
 }
 // ---------- QUEBRA SEM ETIQUETA DE MARKDOWN (mês em vigor) ----------
-async function blocoQuebraSemEtiqueta(){
-  let rows = [], rels = [];
-  try{ rows = await sb('loja_markdown_sem_etiqueta?select=*&order=valor_sem_etiqueta.desc&limit=500') || []; }catch(e){ rows = []; }
-  const eur = v => Number(v || 0).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
-  const qt = v => Number(v || 0).toLocaleString('pt-PT', {maximumFractionDigits:2});
-  const ref = rows[0] && rows[0].data_referencia;
-  const ini = (ref || impISO(new Date())).slice(0, 8) + '01';
-  try{ rels = await sb(`loja_validades_relatorio?data=gte.${ini}&select=data,dados&order=data.desc`) || []; }catch(e){ rels = []; }
-  // cruzamento com o relatório de validades (todos os dias do mês já carregados)
-  const cod = v => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
-  const semValidade = {}, naoTratado = {};
-  rels.forEach(r => { const d = r.dados || {}; const dia = impDDMM(impMenosUmDia(r.data));
-    (d.naoRegistadas || []).forEach(x => { const k = cod(x.cod) || impNorm(x.descricao); (semValidade[k] = semValidade[k] || {descricao: x.descricao, secao: x.secao, dias: [], qtd: 0}); semValidade[k].dias.push(dia); semValidade[k].qtd += Math.abs(impNum(x.qtd) || 0); });
-    (d.naoTratados || []).forEach(x => { const k = cod(x.cod) || impNorm(x.descricao); (naoTratado[k] = naoTratado[k] || {descricao: x.descricao, secao: x.secao, dias: []}); naoTratado[k].dias.push(dia); }); });
-  const chave = x => cod(x.artigo_cod) || impNorm(x.artigo);
-  const cruz = x => { const k = chave(x), t = []; if(semValidade[k]) t.push(`<span style="color:#B4231A;">📅 quebra sem validade registada (${semValidade[k].dias.join(', ')})</span>`); if(naoTratado[k]) t.push(`<span style="color:#C77F12;">⏳ não tratado na rotina (${naoTratado[k].dias.join(', ')})</span>`); return t.length ? '<div style="font-size:10.5px;margin-top:2px;">' + t.join(' · ') + '</div>' : ''; };
-  const secTxt = x => rpEsc(x.secao_app ? labelSecaoPainel(x.secao_app) : impTitulo(x.divisao));
 
-  let h = `<div class="section-title">⚠️ Quebra sem etiqueta de markdown${ref ? ` <span class="count">· ${rpEsc(rows[0].mes_referencia || '')} até ${impDDMM(ref)}</span>` : ''}</div><div class="card">`;
-  if(!rows.length) return h + `<div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o Relatório de Markdown da loja em "📥 Carregar relatórios".</div></div>`;
-  const nada = rows.filter(x => !Number(x.impressas)).sort((a, b) => b.quebra_valor - a.quebra_valor);
-  const parcial = rows.filter(x => Number(x.impressas) > 0).sort((a, b) => b.valor_sem_etiqueta - a.valor_sem_etiqueta);
-  const totSem = rows.reduce((s, x) => s + Number(x.valor_sem_etiqueta || 0), 0), totQ = rows.reduce((s, x) => s + Number(x.quebra_valor || 0), 0);
-  const tile = (v, t, cor) => `<div style="flex:1;min-width:120px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:18px;font-weight:800;color:${cor};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
+// ===================== MARKDOWN A PARTIR DO RELATÓRIO DE GESTÃO DE VALIDADES =====================
+// O relatório de markdown deixou de existir: tudo o que é markdown passa a vir do Relatório de Gestão de Validades.
+const VLD_SECOES = {'Frutas e Vegetais':['FRUTAS E VEGETAIS','Frutas/Vegetais'], 'Meal Solutions':['TAKE-AWAY','Linha de atendimento'], 'Padaria e Pastelaria':['PADARIA/PASTELARIA','Padaria/Pastelaria'],
+  'Peixaria':['PEIXARIA','Peixaria'], 'Talho':['TALHO','Talho'], 'OPLS':['OPLS','Custos Comuns'], 'Não Perecíveis':['NÃO PERECÍVEIS', null], 'Frente Loja':['FRENTE LOJA','Frente de Loja'], 'Bem Estar':['BEM ESTAR', null]};
+const vldSec = s => VLD_SECOES[s] || [String(s || '').toUpperCase(), null];
+const VLD_INCOMPLETA = /totalmente em markdown|impress[õo]es .*inferior/i;
+const vldCod = v => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
+// junta todos os relatórios de validades do mês (o de ref ou o mais recente)
+async function vldMes(refISO){
+  let ult = null;
+  if(!refISO){ try{ const u = await sb('loja_validades_relatorio?select=data&order=data.desc&limit=1'); ult = u && u[0] && u[0].data; }catch(e){} }
+  const ref = refISO || ult || impISO(new Date());
+  const ini = ref.slice(0, 8) + '01';
+  let rels = [];
+  try{ rels = await sb(`loja_validades_relatorio?data=gte.${ini}&data=lte.${ref}&select=data,dados&order=data.desc`) || []; }catch(e){ rels = []; }
+  const sec = {}, semValidade = {}, incompletas = {}, naoTratados = {};
+  const S = n => sec[n] = sec[n] || {secao: n, md_atraso: 0, dif_stock_md: 0, nao_registadas: 0, nao_tratados: 0, rotina: 0, relatorios: 0};
+  const junta = (mapa, x, dia, extra) => { const k = vldCod(x.material || x.cod) || impNorm(x.descricao); const o = mapa[k] = mapa[k] || {cod: vldCod(x.material || x.cod), descricao: x.descricao, secao: x.secao, dias: [], qtd: 0, stock: null};
+    if(!o.dias.includes(dia)) o.dias.push(dia); if(extra) extra(o); };
+  rels.forEach(r => { const d = r.dados || {}; const hoje = r.data, ontem = impMenosUmDia(r.data);
+    (d.hoje || []).forEach(x => { if(/total/i.test(x.secao)) return; const s = S(x.secao); s.md_atraso += Number(x.md_atraso) || 0; s.dif_stock_md += Number(x.dif_stock_md) || 0; s.relatorios++; });
+    (d.ontem || []).forEach(x => { if(/total/i.test(x.secao)) return; const s = S(x.secao); s.nao_tratados += Number(x.nao_tratados) || 0; s.rotina += Number(x.total) || 0; });
+    (d.naoRegistadas || []).forEach(x => { if(x.secao) S(x.secao).nao_registadas++; junta(semValidade, x, ontem, o => { o.qtd += Math.abs(impNum(x.qtd) || 0); }); });
+    (d.naoTratados || []).forEach(x => junta(naoTratados, x, ontem, o => { o.stock = impNum(x.stock); }));
+    (d.porTratar || []).filter(x => VLD_INCOMPLETA.test(x.motivo || '')).forEach(x => junta(incompletas, x, hoje, o => { o.stock = impNum(x.stock); }));
+  });
+  Object.values(sec).forEach(s => { s.falhas = s.md_atraso + s.dif_stock_md + s.nao_registadas; s.pct = s.rotina ? Math.round(s.falhas / s.rotina * 1000) / 10 : 0; });
+  const ord = o => Object.values(o).sort((a, b) => b.dias.length - a.dias.length || b.qtd - a.qtd);
+  return {ref, ini, nRel: rels.length, datas: rels.map(r => r.data), sec: Object.values(sec).sort((a, b) => b.pct - a.pct || b.falhas - a.falhas),
+    semValidade: ord(semValidade), incompletas: ord(incompletas), naoTratados: ord(naoTratados)};
+}
+// grava o "% markdown em falta" por secção (o resto da app — painel, alertas, reunião, plano — lê daqui)
+async function mkdAtualizarDeValidades(refISO){
+  const v = await vldMes(refISO); if(!v.sec.length) return v;
+  const mes = impTitulo(IMP_MESES[Number(v.ref.slice(5, 7)) - 1]);
+  const linhas = v.sec.map(s => ({divisao: vldSec(s.secao)[0], secao_app: vldSec(s.secao)[1], pct_nao_realizado_valor: s.pct, mes_referencia: mes, atualizado_em: new Date().toISOString()}));
+  await sb('loja_markdown_pct_divisao?id=gt.0', {method:'DELETE'});
+  await sb('loja_markdown_pct_divisao', {method:'POST', body: JSON.stringify(linhas)});
+  try{
+    const hist = await impTodos(`loja_markdown_historico?data=eq.${v.ref}&select=divisao`);
+    const novos = linhas.filter(l => l.pct_nao_realizado_valor > 0 && !hist.some(h => h.divisao === l.divisao)).map(l => ({divisao: l.divisao, pct_nao_realizado_valor: l.pct_nao_realizado_valor, data: v.ref}));
+    if(novos.length) await sb('loja_markdown_historico', {method:'POST', body: JSON.stringify(novos)});
+  }catch(e){}
+  return v;
+}
+const vldDias = l => l.map(d => impDDMM(d)).join(', ');
+// bloco principal: tudo o que falhou no markdown, a partir das validades
+async function blocoQuebraSemEtiqueta(){
+  const v = await vldMes();
+  const mesTxt = impTitulo(IMP_MESES[Number(v.ref.slice(5, 7)) - 1]);
+  let h = `<div class="section-title">🏷️ Markdown — falhas do mês <span class="count">· ${mesTxt}${v.nRel ? ` · ${v.nRel} relatório${v.nRel > 1 ? 's' : ''} de validades até ${impDDMM(v.ref)}` : ''}</span></div><div class="card">`;
+  if(!v.nRel) return h + `<div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o Relatório de Gestão de Validades em "📥 Carregar relatórios" (de preferência todos os dias).</div></div>`;
+  const qt = x => Number(x || 0).toLocaleString('pt-PT', {maximumFractionDigits:2});
+  const tot = v.sec.reduce((a, s) => ({atraso: a.atraso + s.md_atraso, inc: a.inc + s.dif_stock_md, sv: a.sv + s.nao_registadas, rot: a.rot + s.rotina}), {atraso: 0, inc: 0, sv: 0, rot: 0});
+  const pctLoja = tot.rot ? Math.round((tot.atraso + tot.inc + tot.sv) / tot.rot * 1000) / 10 : 0;
+  const tile = (val, t, cor) => `<div style="flex:1;min-width:120px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:19px;font-weight:800;color:${cor};">${val}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
   h += `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-    ${tile(nada.length, 'foram para quebra sem nenhuma etiqueta', '#B4231A')}
-    ${tile(parcial.length, 'imprimiram, mas não a totalidade', '#C77F12')}
-    ${tile(eur(totSem), 'perdido por falta de etiqueta', 'var(--red)')}
-    ${tile(eur(totQ), 'quebra destes artigos', 'var(--red)')}</div>`;
+    ${tile(v.semValidade.length, 'foram para quebra sem validade registada (sem etiqueta)', '#B4231A')}
+    ${tile(v.incompletas.length, 'com etiquetas incompletas (menos do que o stock)', '#C77F12')}
+    ${tile(tot.atraso, 'markdown em atraso (soma dos dias)', 'var(--amber)')}
+    ${tile(pctLoja.toLocaleString('pt-PT') + '%', 'da rotina com falha de markdown', pctLoja > 5 ? 'var(--red)' : pctLoja > 0 ? 'var(--amber)' : 'var(--green)')}</div>`;
   const tab = (cab, linhas) => `<div style="overflow-x:auto;"><table class="results-table" style="font-size:12px;"><thead><tr>${cab.map((c, i) => `<th${i ? '' : ' style="text-align:left;"'}>${c}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>`;
   const lista = (cab, l, fn, n) => tab(cab, l.slice(0, n).map(fn).join('')) + (l.length > n ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;">Ver mais ${l.length - n}</summary>${tab(cab, l.slice(n).map(fn).join(''))}</details>` : '');
-
-  // 1. sem nenhuma etiqueta
-  h += `<div style="font-size:13px;font-weight:800;color:#B4231A;margin:6px 0 2px;">🚫 Foram para quebra sem nenhuma etiqueta impressa</div>`;
-  h += nada.length ? lista(['Artigo', 'Quebra (un/kg)', 'Quebra €'], nada, x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${secTxt(x)} · 0 etiquetas</div>${cruz(x)}</td><td>${qt(x.quebra_qtd)}</td><td><b style="color:var(--red);">${eur(x.quebra_valor)}</b></td></tr>`, 10)
-    : `<div style="font-size:12.5px;color:var(--green);">✓ Nenhum artigo foi para quebra sem etiqueta impressa.</div>`;
-
-  // 2. imprimiram mas não a totalidade
-  h += `<div style="font-size:13px;font-weight:800;color:#C77F12;margin:14px 0 2px;">🟠 Imprimiram etiquetas, mas não a totalidade</div>`;
-  h += parcial.length ? lista(['Artigo', 'Etiquetado', 'Faltou etiquetar', 'Quebra', '€ sem etiqueta'], parcial, x => { const pot = Number(x.qtd_potencial || 0), falta = Number(x.qtd_sem_etiqueta || 0), feito = Math.max(0, pot - falta), p = pot ? Math.round(feito / pot * 100) : 0;
-      return `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.artigo))}<div style="font-size:10.5px;color:var(--ink-soft);">${secTxt(x)} · ${qt(x.impressas)} etiquetas impressas</div>${cruz(x)}</td><td>${qt(feito)} de ${qt(pot)}<div style="font-size:10.5px;color:${p >= 85 ? 'var(--green)' : p >= 60 ? 'var(--amber)' : 'var(--red)'};font-weight:700;">${p}%</div></td><td><b style="color:var(--amber);">${qt(falta)}</b></td><td>${qt(x.quebra_qtd)}<div style="font-size:10.5px;">${eur(x.quebra_valor)}</div></td><td><b style="color:var(--red);">${eur(x.valor_sem_etiqueta)}</b></td></tr>`; }, 10)
-    : `<div style="font-size:12.5px;color:var(--green);">✓ Sem artigos com etiquetagem incompleta.</div>`;
-
-  // 3. relatório de validades
-  const ult = rels[0] && rels[0].dados;
-  const listaSV = Object.entries(semValidade).map(([k, v]) => ({k, ...v})).sort((a, b) => b.qtd - a.qtd);
-  if(rels.length){
-    h += `<div style="font-size:13px;font-weight:800;color:var(--navy);margin:14px 0 2px;">📄 Do relatório de validades${rels.length > 1 ? ` (${rels.length} dias deste mês)` : ''}</div>`;
-    const dif = ((ult && ult.hoje) || []).filter(x => !/total/i.test(x.secao) && Number(x.dif_stock_md) > 0);
-    if(dif.length) h += `<div style="background:#FFF4D6;border:1.5px solid #E0A82E;border-radius:10px;padding:8px 12px;font-size:12.5px;margin:4px 0;">🏷️ <b>Hoje (${rpEsc(ult.periodoHoje || '')}): stock dado como todo em markdown, mas imprimiram menos etiquetas do que o stock</b> — ${dif.map(x => `${rpEsc(x.secao)} <b>${x.dif_stock_md}</b>`).join(' · ')} artigo(s).</div>`;
-    if(listaSV.length){
-      const naMkd = new Set(rows.map(chave));
-      h += `<div style="font-size:12px;margin:6px 0 2px;"><b>Foram para quebra fora de validade sem validade registada</b> — sem validade registada não há etiqueta de markdown:</div>`;
-      h += tab(['Artigo', 'Quebra', 'Dias'], listaSV.map(x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.descricao))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao || '')}${naMkd.has(x.k) ? ' · <b style="color:#B4231A;">também na lista sem etiqueta</b>' : ''}</div></td><td>${qt(x.qtd)}</td><td>${x.dias.join(', ')}</td></tr>`).join(''));
-    } else h += `<div style="font-size:12.5px;color:var(--green);">✓ Sem quebras por validade em artigos sem validade registada.</div>`;
-  } else h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:10px;">Carregue também o Relatório de Gestão de Validades para cruzar com as validades não registadas.</div>`;
-
-  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Faltou etiquetar = (vendido em markdown + quebra) − etiquetado. É o que podia ter sido vendido com desconto e foi para quebra. Markdown: mês em vigor. Validades: todos os relatórios carregados este mês.</div></div>`;
+  // por secção
+  const secs = v.sec.filter(s => s.rotina || s.falhas);
+  h += `<div style="font-size:13px;font-weight:800;color:var(--navy);margin:4px 0 2px;">Por secção</div>` + tab(['Secção', 'Rotina', 'Em atraso', 'Incompletas', 'Sem validade', '% falha'],
+    secs.map(s => `<tr><td style="text-align:left;">${rpEsc(vldSec(s.secao)[1] ? labelSecaoPainel(vldSec(s.secao)[1]) + (s.secao === 'OPLS' ? ' (OPLS)' : '') : s.secao)}</td><td>${s.rotina}</td><td>${s.md_atraso || '—'}</td><td>${s.dif_stock_md || '—'}</td><td>${s.nao_registadas || '—'}</td><td><b style="color:${s.pct > 5 ? 'var(--red)' : s.pct > 0 ? 'var(--amber)' : 'var(--green)'};">${s.pct.toLocaleString('pt-PT')}%</b></td></tr>`).join(''));
+  // 1. quebra sem validade registada
+  h += `<div style="font-size:13px;font-weight:800;color:#B4231A;margin:14px 0 2px;">🚫 Foram para quebra sem validade registada — não houve etiqueta de markdown</div>`;
+  h += v.semValidade.length ? lista(['Artigo', 'Quebra', 'Dias'], v.semValidade, x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.descricao))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao || '')}${x.cod ? ' · ' + x.cod : ''}</div></td><td><b style="color:var(--red);">${qt(x.qtd)}</b></td><td>${vldDias(x.dias)}</td></tr>`, 15)
+    : `<div style="font-size:12.5px;color:var(--green);">✓ Nenhum artigo foi para quebra sem validade registada este mês.</div>`;
+  // 2. etiquetas incompletas
+  h += `<div style="font-size:13px;font-weight:800;color:#C77F12;margin:14px 0 2px;">🟠 Imprimiram etiquetas, mas não a totalidade do stock</div>`;
+  h += v.incompletas.length ? lista(['Artigo', 'Stock', 'Dias'], v.incompletas, x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.descricao))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao || '')}${x.cod ? ' · ' + x.cod : ''}</div></td><td>${x.stock == null ? '—' : qt(x.stock)}</td><td>${vldDias(x.dias)}</td></tr>`, 15)
+    : `<div style="font-size:12.5px;color:var(--green);">✓ Sem artigos com etiquetas incompletas este mês.</div>`;
+  // 3. não tratados
+  if(v.naoTratados.length) h += `<div style="font-size:13px;font-weight:800;color:var(--navy);margin:14px 0 2px;">⏳ Ficaram por tratar na rotina</div>` +
+    lista(['Artigo', 'Stock', 'Dias'], v.naoTratados, x => `<tr><td style="text-align:left;">${rpEsc(impTitulo(x.descricao))}<div style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(x.secao || '')}</div></td><td>${x.stock == null ? '—' : qt(x.stock)}</td><td>${vldDias(x.dias)}</td></tr>`, 10);
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Fonte: Relatório de Gestão de Validades (todos os relatórios carregados este mês). % falha = (markdown em atraso + etiquetas incompletas + quebra sem validade) ÷ artigos da rotina. Carregue o relatório todos os dias para ficar completo.</div></div>`;
+}
+// marca de markdown de um artigo com quebra (usado nos alertas de quebra)
+function vldMarcaArtigo(v, a){
+  const cod = vldCod(a.material), nome = impNorm(a.descricao);
+  const acha = l => l.find(x => (cod && x.cod === cod) || impNorm(x.descricao) === nome);
+  const sv = acha(v.semValidade); if(sv) return {tipo: 'sem', txt: `⚠ quebra sem validade registada (${vldDias(sv.dias)})`};
+  const inc = acha(v.incompletas); if(inc) return {tipo: 'inc', txt: `🟠 etiquetas incompletas (${vldDias(inc.dias)})`};
+  return null;
 }
 
 // ---------- MAPAS DE PRODUÇÃO: leitura (excesso de produção, % para quebra, artigos problemáticos) ----------
@@ -16037,7 +16000,7 @@ async function renderControloQuebra(){
 
   const markdownsComSecao = pctDivisoes.filter(d=>d.secao_app);
   const piorMarkdown = markdownsComSecao.length ? markdownsComSecao.reduce((a,b)=> Number(b.pct_nao_realizado_valor)>Number(a.pct_nao_realizado_valor)?b:a) : null;
-  html += `<div class="section-title">🏷️ % Markdown por Realizar</div>`;
+  html += `<div class="section-title">🏷️ % Falhas de markdown por secção <span class="count">· relatório de validades</span></div>`;
   html += `<div class="card">`;
   if(piorMarkdown){
     html += `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Pior secção: <b style="color:var(--red);">${labelSecaoPainel(piorMarkdown.secao_app)}</b> — ${piorMarkdown.pct_nao_realizado_valor}%</div>`;
