@@ -1,0 +1,32 @@
+{
+  "name": "Gestor de Loja — Conceição Alves",
+  "short_name": "Conceição Alves",
+  "description": "Gestão da loja 747 Viana do Castelo – Portuzelo",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1C4B3E",
+  "theme_color": "#1C4B3E",
+  "lang": "pt-PT",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
