@@ -4238,7 +4238,7 @@ function objDesenhar(){
   </div>`;
   { const totM = e.mensal.reduce((a, b) => a + (Number(b) || 0), 0) || 1; const MC = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
     const k0 = n => n == null ? '—' : Math.round(n / 1000).toLocaleString('pt-PT') + ' k';
-    h += `<details class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;"><summary style="cursor:pointer;font-weight:700;font-size:13px;">📅 Cada secção mês a mês (com semana e dia de cada mês)</summary>
+    h += `<details open class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;"><summary style="cursor:pointer;font-weight:700;font-size:13px;">📅 Cada secção mês a mês (com semana e dia de cada mês)</summary>
       <table style="border-collapse:collapse;font-size:11px;min-width:820px;margin-top:6px;"><tr style="color:var(--ink-soft);"><th style="text-align:left;padding:3px;">Secção</th>${e.meses.map((m, i) => `<th style="padding:3px;">${MC[i] || m.mes}</th>`).join('')}</tr>
       ${e.secoes.map(x => `<tr style="border-top:1px solid var(--line);"><td style="padding:4px 3px;font-weight:600;white-space:nowrap;">${rpEsc(impTitulo(x.sec))}</td>${e.mensal.map((mv, i) => { const v = x.obj * (Number(mv) || 0) / totM, dias = new Date(OBJ_ANO, i + 1, 0).getDate(); return `<td style="text-align:right;padding:3px;" title="por semana ${objEur(v / dias * 7)} · por dia ${objEur(v / dias)}">${k0(v)}<div style="font-size:9.5px;color:var(--ink-soft);">${Math.round(v / dias).toLocaleString('pt-PT')} €/dia</div></td>`; }).join('')}</tr>`).join('')}
       </table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">Cada secção segue o ritmo mensal da loja. k = milhares de euros. Toque num valor para ver a semana e o dia.</div></details>`; }
