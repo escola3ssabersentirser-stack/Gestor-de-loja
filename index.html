@@ -4220,6 +4220,7 @@ function objDesenhar(){
     <div class="vs-box"><div class="vs-label">Por dia (363 dias)</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${objEur(e.total/363)}</div></div>
   </div>
   <div style="font-size:11px;color:var(--ink-soft);margin:-4px 4px 12px;">2026 estimado = vendas reais de janeiro${ultMes ? ' a ' + ultMes.toLowerCase() : ''} + orçamento dos meses que faltam.</div>`;
+  h += `<button class="btn-primary" style="margin:0 0 10px;background:#1F7A33;" onclick="objFolhaImprimir()">🖨️ Folha de objetivos por secção (dia, semana, mês, ano)</button>`;
   h += `<div class="section-title">🏪 Objetivos por secção</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px;">
     <tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:4px;">Secção</th><th style="padding:4px;">Peso</th><th style="padding:4px;">2026 est.</th><th style="padding:4px;">Objetivo 2027</th><th style="padding:4px;">Cresc.</th><th style="padding:4px;">/mês</th><th style="padding:4px;">/semana</th><th style="padding:4px;">/dia</th></tr>
@@ -4263,6 +4264,40 @@ function objDesenhar(){
   box.innerHTML = h;
 }
 // objetivos de 2027 (definidas pela gestora) com o valor atual quando a app o tem
+// folha de objetivos por secção (uma página por secção): ano, mês, semana e dia — para imprimir ou guardar em PDF
+function objFolhaHtml(){
+  const e = objEstado; if(!e) return '';
+  const totM = e.mensal.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+  const eur = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const pag = (nome, total) => {
+    const linhas = e.meses.map((m, i) => { const v = total * (Number(e.mensal[i]) || 0) / totM, dias = new Date(OBJ_ANO, i + 1, 0).getDate();
+      return `<tr><td>${m.mes}</td><td class="n">${eur(v)}</td><td class="n">${eur(v / dias * 7)}</td><td class="n">${eur(v / dias)}</td></tr>`; }).join('');
+    return `<section class="pag"><div class="cab"><div class="lj">Loja 747 · Viana do Castelo – Portuzelo</div><h1>Objetivos de vendas 2027</h1><h2>${rpEsc(nome)}</h2></div>
+      <div class="kpis"><div><span>Ano</span><b>${eur(total)}</b></div><div><span>Mês (média)</span><b>${eur(total / 12)}</b></div><div><span>Semana</span><b>${eur(total / 52)}</b></div><div><span>Dia</span><b>${eur(total / 363)}</b></div></div>
+      <table><thead><tr><th>Mês</th><th>Objetivo do mês</th><th>Por semana</th><th>Por dia</th></tr></thead><tbody>${linhas}</tbody>
+      <tfoot><tr><td>Total 2027</td><td class="n">${eur(total)}</td><td class="n">${eur(total / 52)}</td><td class="n">${eur(total / 363)}</td></tr></tfoot></table>
+      <p class="nota">Cada mês segue a distribuição mensal dos Objetivos 2027 da loja. Por dia = objetivo do mês a dividir pelos dias do mês; no ano contam 363 dias de loja aberta.</p>
+      <div class="ass"><div>Responsável da secção</div><div>Gerente de loja</div></div></section>`;
+  };
+  const secs = [...e.secoes].filter(x => Number(x.obj) > 1000).sort((a, b) => b.obj - a.obj);
+  return `<!doctype html><html lang="pt-PT"><head><meta charset="utf-8"><title>Objetivos 2027 por secção</title><style>
+    @page{size:A4;margin:14mm} body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#1d2a22;margin:0}
+    .pag{page-break-after:always;break-after:page;padding:4px 2px} .pag:last-child{page-break-after:auto}
+    .cab{border-bottom:4px solid #1F5C2E;padding-bottom:8px;margin-bottom:14px} .lj{font-size:11px;color:#5b665e;letter-spacing:.06em;text-transform:uppercase}
+    h1{font-size:15px;margin:4px 0 0;color:#5b665e;font-weight:600} h2{font-size:28px;margin:2px 0 0;color:#1F5C2E}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px} .kpis div{background:#F1F7F1;border-radius:10px;padding:10px;text-align:center}
+    .kpis span{display:block;font-size:11px;color:#5b665e} .kpis b{font-size:17px;color:#14301E}
+    table{width:100%;border-collapse:collapse;font-size:13px} th{background:#1F5C2E;color:#fff;padding:7px 8px;text-align:left;font-size:12px} th:not(:first-child){text-align:right}
+    td{padding:6px 8px;border-bottom:1px solid #e3e0d6} .n{text-align:right;font-variant-numeric:tabular-nums} tfoot td{font-weight:800;border-top:2px solid #1F5C2E;background:#F6F3EC}
+    .nota{font-size:10.5px;color:#6b746e;margin-top:8px} .ass{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px} .ass div{border-top:1px solid #1d2a22;padding-top:4px;font-size:11px;color:#5b665e}
+  </style></head><body>${pag('Loja — total', e.total)}${secs.map(x => pag(impTitulo(x.sec), x.obj)).join('')}</body></html>`;
+}
+async function objFolhaImprimir(){
+  if(!objEstado){ alert('Abra primeiro os Objetivos 2027.'); return; }
+  const html = objFolhaHtml(); const w = window.open('', '_blank');
+  if(w){ w.document.open(); w.document.write(html); w.document.close(); setTimeout(() => { try{ w.focus(); w.print(); }catch(e){} }, 600); return; }
+  const blob = new Blob([html], {type:'text/html'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'Objetivos-2027-por-seccao.html'; document.body.appendChild(a); a.click(); a.remove();
+}
 function objMetasHtml(){
   const e = objEstado, r = e.resumo || {}, dona = souDona(), M = e.metas || (e.metas = {});
   const per = r.periodo || [];
