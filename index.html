@@ -777,7 +777,6 @@
           <button class="rp-nav-btn" onclick="selectMenu('dash:gestao:avaliacao-cliente','Avaliação do Cliente')"><span class="rp-nav-ic">⭐</span><span><b>Avaliação do Cliente</b><small>atendimento avaliado pelos clientes</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('comunicacao','Comunicação Semanal')"><span class="rp-nav-ic">📣</span><span><b>Comunicação</b><small>informações importantes para a equipa</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('lembretes','Lembretes')"><span class="rp-nav-ic">🔔</span><span><b>Lembretes</b><small>banco de horas, horários, formação, ausências</small></span></button>
-          <button class="rp-nav-btn" onclick="selectMenu('comunidade','Comunidade do Mês')"><span class="rp-nav-ic">🤝</span><span><b>Comunidade do Mês</b><small>tema, ferramentas, feedback e PDP</small></span></button>
           <button class="rp-nav-btn rp-nav-destaque" onclick="abrirApresentacao()"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>sempre com os dados mais recentes</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('objetivos2027','Objetivos 2027')"><span class="rp-nav-ic">🚀</span><span><b>2027</b><small>objetivos da loja e secções</small></span></button>
         </div>
@@ -1895,7 +1894,6 @@ function buildDrawer(){
       itensColaborador.push({id:`secao:${minhaSecao}`, icon:'🏬', label: labelSecaoPainel(minhaSecao)});
     }
     itensColaborador.push({id:'minha-area', icon:'👤', label:'A Minha Área'});
-    itensColaborador.push({id:'comunidade', icon:'🤝', label:'Comunidade do Mês'});
     itensColaborador.forEach(entry=>{
       const row = document.createElement('div');
       row.className = 'drawer-item' + (entry.id === currentScreen ? ' active' : '');
