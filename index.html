@@ -12731,6 +12731,30 @@ async function editarVendasQuebraSecao(secao){
   });
 }
 
+// objetivo 2027 dentro do cartão de cada secção (ano, mês, semana, dia)
+const OBJ_SECAO_DIVS = {'Talho':['Talho'], 'Peixaria':['Peixaria'], 'Frutas/Vegetais':['Frutas E Vegetais'], 'Linha de atendimento':['Take-Away','Pronto A Comer'], 'Padaria/Pastelaria':['Padaria/Pastelaria']};
+async function blocoObjetivo2027Secao(secao){
+  let g = null; try{ const r = await sb(`loja_objetivos?ano=eq.${OBJ_ANO}&select=dados`); g = r && r[0] && r[0].dados; }catch(e){}
+  if(!g || !g.secoes) return '';
+  const usados = new Set(Object.values(OBJ_SECAO_DIVS).flat());
+  const divs = OBJ_SECAO_DIVS[secao] || (secao === 'Custos Comuns' ? Object.keys(g.secoes).filter(k => !usados.has(k)) : []);
+  const linhas = divs.map(k => ({k, v: Number(g.secoes[k]) || 0})).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  if(!linhas.length) return '';
+  const total = linhas.reduce((a, x) => a + x.v, 0);
+  const mensal = Array.isArray(g.mensal) ? g.mensal : []; const totM = mensal.reduce((a, m) => a + (Number(m.objetivo) || 0), 0) || 1;
+  const eur = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const mesAtual = new Date().getFullYear() === OBJ_ANO ? new Date().getMonth() : -1;
+  let h = `<div class="section-title">🎯 Objetivo de vendas ${OBJ_ANO}</div><div class="card">
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;text-align:center;">
+      ${[['Ano', total], ['Mês', total / 12], ['Semana', total / 52], ['Dia', total / 363]].map(([t, v]) => `<div style="background:#F1F7F1;border-radius:10px;padding:8px 4px;"><div style="font-size:10.5px;color:var(--ink-soft);">${t}</div><b style="font-size:14px;color:#14301E;">${eur(v)}</b></div>`).join('')}
+    </div>
+    ${linhas.length > 1 ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;">${linhas.map(x => `${rpEsc(impTitulo(x.k))} ${eur(x.v)}`).join(' · ')}</div>` : ''}
+    <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;">Mês a mês</summary><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;"><tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:3px;">Mês</th><th style="text-align:right;">Mês</th><th style="text-align:right;">Semana</th><th style="text-align:right;">Dia</th></tr>
+    ${mensal.map((m, i) => { const v = total * (Number(m.objetivo) || 0) / totM, dias = new Date(OBJ_ANO, i + 1, 0).getDate(); return `<tr style="border-top:1px solid var(--line);${i === mesAtual ? 'background:#FFF4D6;font-weight:700;' : ''}"><td style="padding:4px 3px;">${rpEsc(m.mes)}</td><td style="text-align:right;">${eur(v)}</td><td style="text-align:right;">${eur(v / dias * 7)}</td><td style="text-align:right;">${eur(v / dias)}</td></tr>`; }).join('')}
+    </table></div></details></div>`;
+  return h;
+}
+
 async function renderSecaoDetail(secao, label){
   document.getElementById('colab-title').textContent = label;
   const content = document.getElementById('colab-content');
@@ -12799,6 +12823,7 @@ async function renderSecaoDetail(secao, label){
       }
       resumoHtml += await blocoPontosCriticosSecao(secao, v);
     }
+    try{ resumoHtml += await blocoObjetivo2027Secao(secao); }catch(e){ console.warn('objetivo secção', e); }
     const bhTotal = rows.reduce((s,p)=> s + (p.bh_positivo||0) + (p.bh_negativo||0), 0);
     const trocasTotal = rows.reduce((s,p)=> s + (p.trocas_horario||0), 0);
     resumoHtml += `<div class="section-title">Banco de Horas &amp; Trocas</div>`;
