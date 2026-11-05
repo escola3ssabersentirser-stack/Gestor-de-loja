@@ -2429,7 +2429,7 @@ function renderPainelResumo(){
       <div id="colar-caixa" style="display:none;width:100%;margin-top:8px;"><textarea id="colar-texto" rows="6" style="width:100%;box-sizing:border-box;padding:8px;border-radius:10px;border:1px solid #D5DDD2;font-size:13px;" placeholder="Copie o texto do email (ex.: resultado do atendimento — Voz do Cliente) e cole aqui"></textarea>
         <div style="display:flex;gap:6px;margin-top:6px;"><button class="btn-primary" style="margin:0;flex:1;background:#1F7A33;" onclick="colarLer()">Ler e guardar</button><button class="econ-btn" style="margin:0;" onclick="colarAbrir(false)">Fechar</button></div>
         <div id="colar-estado" style="font-size:12.5px;margin-top:6px;"></div></div>
-      <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls,.csv,.pdf,.docx,.txt,.eml" multiple class="hidden" onchange="importarFicheirosDia(this)">
+      <input type="file" id="rp-input-ficheiro" accept=".xlsx,.xlsm,.xls,.csv,.pdf,.docx,.txt,.eml,image/*" multiple class="hidden" onchange="importarFicheirosDia(this)">
       <div id="rp-estado" class="rp-estado">Escolha os ficheiros de uma vez (Excel, PDF ou Word): a app descobre o que é cada um e envia para o cartão certo.</div>` : ''}
     </div>
   </div>
@@ -3327,6 +3327,11 @@ async function importarFicheirosDia(input){
   for(const f of ficheiros){
     const l = {nome: f.name, tipo: '?', msg: 'a ler…', ok: null}; linhas.push(l);
     try{
+      if(/^image\//.test(f.type) || /\.(png|jpe?g|webp|heic)$/i.test(f.name)){
+        l.tipo = 'Imagem do Score Mensal de Validades';
+        try{ l.msg = await valScoreDeImagem(f, t => { l.msg = t; mostrar(false); }); l.ok = true; }catch(e){ l.ok = false; l.msg = String(e && e.message || e); }
+        continue;
+      }
       if(!/\.(xlsx|xlsm|xls|csv)$/i.test(f.name)){
         let texto = '';
         try{ texto = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); }catch(e){}
@@ -3960,6 +3965,133 @@ function lerScoreValidades(texto){
   d.bottom3 = bloco(/BOTTOM 3 LOJAS/i, /Lojas da [áa]rea/i);
   return d;
 }
+// ---------- SCORE MENSAL DE VALIDADES A PARTIR DE UMA IMAGEM (captura do email) ----------
+const VAL_SCORE_SECOES = ['Talho','Meal Solutions','Fruta','OPLS','Padaria','Não Perecíveis','Peixaria','Flores','Frente Loja','Bem Estar'];
+async function valOcrImagem(f, aviso){
+  if(aviso) aviso('A preparar a leitura da imagem…');
+  await infoCarregarScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js');
+  // aumentar e passar a cinzento: o texto pequeno das tabelas lê-se muito melhor
+  const img = await createImageBitmap(f);
+  const k = Math.max(1, Math.min(3, Math.floor(2800 / img.width) || 1));
+  const cv = document.createElement('canvas'); cv.width = img.width * k; cv.height = img.height * k;
+  const g = cv.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, cv.width, cv.height);
+  const id = g.getImageData(0, 0, cv.width, cv.height), p = id.data;
+  for(let i = 0; i < p.length; i += 4){ const y = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; p[i] = p[i + 1] = p[i + 2] = y; }
+  g.putImageData(id, 0, 0);
+  if(aviso) aviso('A ler a imagem… (pode demorar 20 a 40 segundos)');
+  const r = await window.Tesseract.recognize(cv, 'por');
+  return (r && r.data && r.data.text) || '';
+}
+// número lido por OCR: "1,120" → 1120 · "89.2" → 89.2 · "o" → 0
+function valNumOcr(s, pct){
+  let t = String(s == null ? '' : s).replace(/[oO]/g, '0').replace(/[^\d.,]/g, '');
+  if(!t) return null;
+  if(/^\d{1,3}([.,]\d{3})+$/.test(t) && !pct) t = t.replace(/[.,]/g, '');
+  else t = t.replace(',', '.');
+  let v = Number(t); if(isNaN(v)) return null;
+  if(pct && v > 100 && !/[.]/.test(t)) v = v / 10;
+  return v;
+}
+function lerScoreImagem(texto){
+  const t0 = String(texto || '').replace(/\r/g, '');
+  const t = t0.replace(/(^|\s)[oO0]{1,2}\s*€/g, '$1 0 €');
+  const L = t.split('\n').map(l => l.trim()).filter(Boolean);
+  const mMes = t.match(/M[êe]s:\s*([A-Za-zÀ-ÿ]+)/i);
+  if(!mMes || !/SCORE/i.test(t)) throw new Error('não reconheci o Score Mensal da Rotina de Validades nesta imagem');
+  const iS = L.findIndex(l => /^SCORE\b/i.test(l));
+  let score = null;
+  for(let k = iS; k >= 0 && k < Math.min(L.length, iS + 4) && score == null; k++){ const m = L[k].replace(/^SCORE/i, '').match(/(\d[\d\s.,]*)\s*%/); if(m){ const s = m[1].replace(/\s/g, ''); score = /[.,]/.test(s) ? valNumOcr(s) : (s.length >= 3 ? Number(s) / 100 : Number(s)); } }
+  const mVs = t.match(/([+\-−–])\s*(\d[\d.,\s]*?)\s*p\s*p\b/i);
+  const mAt = t.match(/(\d{2})-(\d{2})-(\d{4})/);
+  const mPos = t.match(/(\d{1,4})\s+de\s+(\d{3,4})/);
+  const fin = re => { const m = t.match(re); return m ? valNumOcr(m[1].replace(/\s/g, '')) : null; };
+  // os 3 indicadores: procurar números com casas decimais logo a seguir aos títulos
+  let kpis = [];
+  const iK = L.findIndex(l => /Execu[çc][ãa]o Rotina/i.test(l));
+  if(iK >= 0) for(let k = iK + 1; k < Math.min(L.length, iK + 4); k++) (L[k].match(/\d{1,3}[.,]\d{1,2}(?=\s*%)/g) || []).forEach(x => kpis.push(valNumOcr(x)));
+  const d = {mes: mMes[1].charAt(0).toUpperCase() + mMes[1].slice(1).toLowerCase(), score,
+    posicao: mPos ? Number(mPos[1]) : null, total_lojas: mPos ? Number(mPos[2]) : null,
+    vs_mes_anterior_pp: mVs ? valNumOcr(mVs[2].replace(/\s/g, '')) * (/[\-−–]/.test(mVs[1]) ? -1 : 1) : null,
+    atualizacao: mAt ? `${mAt[3]}-${mAt[2]}-${mAt[1]}` : null,
+    execucao: kpis[0] ?? null, aceitacao: kpis[1] ?? null, mnr_pct: kpis[2] ?? null,
+    quebra_evitada: fin(/Quebra\s*Evitada\D{0,6}([\d][\d.,\s]*)\s*€/i), mnr_valor: fin(/Markdown\s*N[ãa]o\s*Realizado\s+(\d[\d.,\s]*)\s*€/i), mnv_valor: fin(/Markdown\s*N[ãa]o\s*Vendido\s+(\d[\d.,\s]*)\s*€/i),
+    secoes: [], artigos: []};
+  const norm = s => impNorm(s).replace(/\s/g, '');
+  L.forEach(l => {
+    const nm = VAL_SCORE_SECOES.find(s => norm(l).startsWith(norm(s)));
+    if(!nm || /N\s*Tarefas/i.test(l)) return;
+    let resto = l, conta = 0; for(const ch of resto){ if(norm(nm).length <= conta) break; if(/[A-Za-zÀ-ÿ]/.test(ch)) conta++; resto = resto.slice(1); }
+    const tok = []; resto.replace(/(\d[\dA-Za-z.,]*)\s*(%|€)?/g, (m, n, u) => { tok.push({n: n.replace(/[A-Za-z]/g, ''), u: u || ''}); return m; });
+    const pcts = tok.filter(x => x.u === '%').map(x => valNumOcr(x.n, true)), eur = tok.filter(x => x.u === '€').map(x => valNumOcr(x.n)), simples = tok.filter(x => !x.u).map(x => valNumOcr(x.n.replace(/[.,]/g, '')));
+    const s = {secao: nm, tarefas: simples[0] ?? null, execucao: null, aceitacao: null, nao_realizado: null, quebra_evitada: null, mnr_valor: null, md_quebrado: null};
+    if(pcts.length >= 3){ [s.execucao, s.aceitacao, s.nao_realizado] = pcts; }
+    else if(pcts.length === 2){ if(s.tarefas != null){ s.execucao = pcts[0]; s.nao_realizado = pcts[1]; } else { s.aceitacao = pcts[0]; s.nao_realizado = pcts[1]; } }
+    else if(pcts.length === 1) s.nao_realizado = pcts[0];
+    if(eur.length >= 3){ [s.quebra_evitada, s.mnr_valor, s.md_quebrado] = eur; } else if(eur.length === 2){ [s.mnr_valor, s.md_quebrado] = eur; }
+    if(!d.secoes.some(x => x.secao === nm)) d.secoes.push(s);
+  });
+  // confirmação pelos totais das secções (o OCR às vezes perde um algarismo)
+  const soma = k => d.secoes.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+  [['quebra_evitada', 'quebra_evitada'], ['mnr_valor', 'mnr_valor'], ['mnv_valor', 'md_quebrado']].forEach(([k, c]) => { const sm = soma(c); if(sm > 0 && (d[k] == null || d[k] < sm * 0.8 || d[k] > sm * 1.25)) d[k] = Math.round(sm); });
+  L.forEach(l => { const m = l.match(/^\W*(\d{5,8})\s+(.+?)\s+(\d[\d.,]*)\s*€\s+(\d[\d.,]*)\s*€\s+(\d[\d.,]*)\s*€/);
+    if(m) d.artigos.push({codigo: m[1], artigo: m[2].trim(), quebra_evitada: valNumOcr(m[3]), mnr_valor: valNumOcr(m[4]), md_quebrado: valNumOcr(m[5])}); });
+  return d;
+}
+// grava (mantém o que já existia desse mês e não veio na imagem: lojas da área, top 3, bottom 3)
+async function valGuardarScoreDados(d){
+  const ano = d.atualizacao ? (d.mes.toLowerCase() === 'dezembro' && d.atualizacao.slice(5, 7) === '01' ? Number(d.atualizacao.slice(0, 4)) - 1 : Number(d.atualizacao.slice(0, 4))) : new Date().getFullYear();
+  let ant = {}; try{ const r = await sb(`loja_validades_score?ano=eq.${ano}&mes=eq.${encodeURIComponent(d.mes)}&select=dados`); ant = (r && r[0] && r[0].dados) || {}; }catch(e){}
+  const final = {...ant, ...Object.fromEntries(Object.entries(d).filter(([k, v]) => v != null && !(Array.isArray(v) && !v.length)))};
+  ['area', 'top3', 'bottom3', 'secoes', 'artigos'].forEach(k => { if(!final[k]) final[k] = []; });
+  const a747 = (final.area || []).find(x => String(x.loja) === IMP_LOJA); if(a747){ if(d.score != null) a747.score = d.score; if(d.posicao != null) a747.posicao = d.posicao; }
+  await sb('loja_validades_score?on_conflict=ano,mes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({ano, mes: d.mes, data_atualizacao: d.atualizacao, dados: final})});
+  return final;
+}
+// janela para confirmar/corrigir o que foi lido da imagem antes de guardar
+function valRevisaoScore(d){
+  let ov = document.getElementById('val-rev'); if(ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'val-rev';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;display:flex;align-items:flex-end;justify-content:center;';
+  const inp = (id, v, w) => `<input id="vr-${id}" value="${v == null ? '' : String(v).replace(/"/g, '&quot;')}" inputmode="decimal" style="width:${w || '100%'};box-sizing:border-box;padding:6px;border:1px solid var(--line);border-radius:6px;font-size:13px;">`;
+  const campo = (id, rot, v) => `<label style="font-size:11px;color:var(--ink-soft);">${rot}${inp(id, v)}</label>`;
+  const C = ['tarefas', 'execucao', 'aceitacao', 'nao_realizado', 'quebra_evitada', 'mnr_valor', 'md_quebrado'];
+  ov.innerHTML = `<div style="background:var(--paper,#fff);width:100%;max-width:560px;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;"><h3 style="margin:0;">🏅 Confirmar o Score lido da imagem</h3><button onclick="document.getElementById('val-rev').remove()" style="border:0;background:none;font-size:22px;">×</button></div>
+    <p style="font-size:12px;color:var(--ink-soft);margin:6px 0 10px;">A leitura de imagens pode trocar algum número. Confira com a imagem e corrija o que estiver errado.</p>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
+      ${campo('mes', 'Mês', d.mes)}${campo('atualizacao', 'Atualização (aaaa-mm-dd)', d.atualizacao)}${campo('score', 'Score %', d.score)}
+      ${campo('posicao', 'Posição', d.posicao)}${campo('total_lojas', 'Total de lojas', d.total_lojas)}${campo('vs', 'Vs mês anterior (pp)', d.vs_mes_anterior_pp)}
+      ${campo('execucao', 'Execução %', d.execucao)}${campo('aceitacao', 'Aceitação %', d.aceitacao)}${campo('mnr_pct', 'Markdown não realizado %', d.mnr_pct)}
+      ${campo('quebra_evitada', 'Quebra evitada €', d.quebra_evitada)}${campo('mnr_valor', 'Markdown não realizado €', d.mnr_valor)}${campo('mnv_valor', 'Markdown não vendido €', d.mnv_valor)}
+    </div>
+    <div style="font-size:12.5px;font-weight:700;margin:12px 0 4px;">Por secção</div>
+    <div style="overflow-x:auto;"><table style="font-size:11px;border-collapse:collapse;"><thead><tr><th style="text-align:left;">Secção</th><th>Tarefas</th><th>Exec. %</th><th>Aceit. %</th><th>Não real. %</th><th>Q. evit. €</th><th>MNR €</th><th>MD queb. €</th></tr></thead><tbody>
+    ${VAL_SCORE_SECOES.map((s, i) => { const x = d.secoes.find(y => y.secao === s) || {}; return `<tr><td style="white-space:nowrap;padding-right:4px;">${s}</td>${C.map(c => `<td>${inp(`s${i}-${c}`, x[c], '58px')}</td>`).join('')}</tr>`; }).join('')}
+    </tbody></table></div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;">Top artigos lidos: ${d.artigos.length}</div>
+    <button class="btn-primary" style="margin-top:12px;" onclick="valConfirmarScore()">💾 Guardar o Score</button>
+    <div id="vr-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
+  ov._dados = d; document.body.appendChild(ov);
+}
+async function valConfirmarScore(){
+  const ov = document.getElementById('val-rev'); if(!ov) return; const d = ov._dados;
+  const v = id => { const e = document.getElementById('vr-' + id); return e ? e.value.trim() : ''; };
+  const n = id => { const x = v(id); return x === '' ? null : valNumOcr(x.replace(/^[+]/, '')) * (/^[-−]/.test(x) ? -1 : 1); };
+  const C = ['tarefas', 'execucao', 'aceitacao', 'nao_realizado', 'quebra_evitada', 'mnr_valor', 'md_quebrado'];
+  const novo = {...d, mes: v('mes') || d.mes, atualizacao: v('atualizacao') || d.atualizacao, score: n('score'), posicao: n('posicao'), total_lojas: n('total_lojas'), vs_mes_anterior_pp: n('vs'),
+    execucao: n('execucao'), aceitacao: n('aceitacao'), mnr_pct: n('mnr_pct'), quebra_evitada: n('quebra_evitada'), mnr_valor: n('mnr_valor'), mnv_valor: n('mnv_valor'),
+    secoes: VAL_SCORE_SECOES.map((s, i) => { const o = {secao: s}; C.forEach(c => { const x = v(`s${i}-${c}`); o[c] = x === '' ? null : valNumOcr(x); }); return o; }).filter(o => C.some(c => o[c] != null))};
+  const est = document.getElementById('vr-estado'); if(est) est.textContent = 'A guardar…';
+  try{ await valGuardarScoreDados(novo); ov.remove(); showToast(); try{ renderArea('validades'); }catch(e){} }
+  catch(e){ if(est) est.textContent = '✕ Não consegui guardar: ' + (e && e.message || e); }
+}
+async function valScoreDeImagem(f, aviso){
+  const texto = await valOcrImagem(f, aviso);
+  const d = lerScoreImagem(texto);
+  if(aviso) aviso('Leitura feita — confirme os números.');
+  valRevisaoScore(d);
+  return `${d.mes}: score ${d.score ?? '?'}% — confirme os números na janela que abriu`;
+}
 async function valGuardarScore(texto){
   const est = document.getElementById('val-score-estado'); const msg = t => { if(est) est.textContent = t; };
   try{
@@ -3974,17 +4106,19 @@ async function valCarregarFicheiro(input){
   if(!soDona('carregar ficheiros')){ if(input) input.value = ''; return; }
   const f = input.files && input.files[0]; input.value = ''; if(!f) return;
   const est = document.getElementById('val-score-estado'); if(est) est.textContent = 'A ler…';
-  try{ const t = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); await valGuardarScore(t); }catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
+  try{
+    if(/^image\//.test(f.type) || /\.(png|jpe?g|webp|heic)$/i.test(f.name)){ const m = await valScoreDeImagem(f, t => { if(est) est.textContent = t; }); if(est) est.textContent = m; return; }
+    const t = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); await valGuardarScore(t); }catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
 }
 async function blocoScoreValidades(){
   let rows = [];
   try{ rows = await sb('loja_validades_score?select=*&order=ano.desc,data_atualizacao.desc.nullslast&limit=6') || []; }catch(e){}
   const pode = souDona();
   const carregar = pode ? `<details class="card lem-novo" style="margin-top:8px;"><summary>📥 Atualizar com o email do Score Mensal</summary>
-      <p class="com-ajuda" style="margin:6px 0;">Abra o email "Score Mensal - Rotina Diária Validades", copie tudo e cole aqui. Também pode carregar o email guardado (PDF, Word ou .txt).</p>
+      <p class="com-ajuda" style="margin:6px 0;">Abra o email "Score Mensal - Rotina Diária Validades", copie tudo e cole aqui. Também pode carregar uma captura do email (imagem) ou o email guardado (PDF, Word ou .txt).</p>
       <textarea id="val-score-texto" rows="6" style="width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--line);font-size:12px;" placeholder="Colar aqui o texto do email…"></textarea>
       <div style="display:flex;gap:8px;margin-top:6px;"><button class="btn-primary" style="flex:1;margin:0;" onclick="valGuardarScore(document.getElementById('val-score-texto').value)">Guardar</button>
-      <input type="file" id="val-score-fich" class="hidden" accept=".txt,.eml,.pdf,.docx" onchange="valCarregarFicheiro(this)"><button class="btn-primary" style="flex:1;margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#val-score-fich')||document.getElementById('val-score-fich')).click()">📎 Ficheiro</button></div>
+      <input type="file" id="val-score-fich" class="hidden" accept=".txt,.eml,.pdf,.docx,image/*" onchange="valCarregarFicheiro(this)"><button class="btn-primary" style="flex:1;margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#val-score-fich')||document.getElementById('val-score-fich')).click()">📎 Ficheiro</button></div>
       <div id="val-score-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></details>` : '';
   if(!rows.length) return `<div class="rp-bloco-tit" style="margin-top:4px;">🏅 Score mensal da rotina de validades</div><div class="card" style="font-size:13px;color:var(--ink-soft);">Ainda sem score guardado.</div>${carregar}`;
   const d = rows[0].dados || {}; const ant = rows[1] && rows[1].dados;
