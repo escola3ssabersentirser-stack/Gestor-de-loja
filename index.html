@@ -838,7 +838,7 @@
             </button>
             <button class="h3s-tile" onclick="selectMenu('objetivos2027','Objetivos 2027')">
               <span class="h3s-ic">🎯</span><span class="h3s-tile-tit">2027</span>
-              <span class="h3s-tile-num">8 M€</span><span class="h3s-tile-sub">objetivos da loja e secções</span>
+              <span class="h3s-tile-num">7,5 M€</span><span class="h3s-tile-sub">objetivos da loja e secções</span>
             </button>
             <button class="h3s-tile" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')">
               <span class="h3s-ic">👥</span><span class="h3s-tile-tit">Recursos Humanos</span>
@@ -4159,7 +4159,7 @@ async function areaTratarValidade(id){
 
 
 // ===================== OBJETIVOS 2027 — loja e secções =====================
-const OBJ_ANO = 2027, OBJ_MINIMO = 8000000;
+const OBJ_ANO = 2027, OBJ_MINIMO = 7500000;
 let objEstado = null;
 const objEur = v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString('pt-PT') + ' €';
 const objPct = v => v == null || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + (v*100).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%';
@@ -4346,7 +4346,7 @@ function objMensalBase(total){
 function objMudarMes(i, t){ const v = objLerNum(t); if(v == null) return; objEstado.mensal[i] = v; objEstado.mensalEditado = true; objDesenhar(); }
 function objRepartirMeses(){ objEstado.mensal = objMensalBase(objEstado.total); objEstado.mensalEditado = false; objDesenhar(); }
 function objMudarTotal(){
-  const v = objLerNum((document.getElementById('obj-total')||{}).value); if(!v){ alert('Escreva o valor do objetivo, por exemplo 8 000 000'); return; }
+  const v = objLerNum((document.getElementById('obj-total')||{}).value); if(!v){ alert('Escreva o valor do objetivo, por exemplo 7 500 000'); return; }
   if(v < OBJ_MINIMO && !confirm(`O valor é inferior ao mínimo de ${objEur(OBJ_MINIMO)}. Quer mesmo usar ${objEur(v)}?`)) return;
   const fator = v / (objEstado.total || v); objEstado.total = v;
   objEstado.secoes.forEach(x => { x.obj = Math.round(x.obj * fator); });
@@ -4359,7 +4359,7 @@ async function objGuardar(){
   if(!soDona('alterar os objetivos')) return;
   const e = objEstado; const q = (document.getElementById('obj-quebra')||{}).value;
   e.quebraObj = q && q.trim() ? Number(q.replace(',','.')) : null; e.notas = (document.getElementById('obj-notas')||{}).value || '';
-  if(e.total < OBJ_MINIMO && !confirm('O objetivo está abaixo do mínimo de 8 milhões. Guardar mesmo assim?')) return;
+  if(e.total < OBJ_MINIMO && !confirm('O objetivo está abaixo do mínimo de 7,5 milhões. Guardar mesmo assim?')) return;
   const secoes = {}; e.secoes.forEach(x => { secoes[x.sec] = Math.round(x.obj); });
   document.querySelectorAll('[data-meta]').forEach(i => { const v = objLerNum(String(i.value).replace('.', ',')); if(v != null) e.metas[i.dataset.meta] = v; else delete e.metas[i.dataset.meta]; });
   document.querySelectorAll('[data-qsec]').forEach(i => { const v = objLerNum(String(i.value).replace('.', ',')); if(v != null) e.quebraSec[i.dataset.qsec] = v; else delete e.quebraSec[i.dataset.qsec]; });
