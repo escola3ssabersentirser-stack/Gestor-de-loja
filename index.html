@@ -2484,16 +2484,10 @@ function renderPainelResumo(){
     h += `</tbody></table></div>`;
   }
 
-  // ---- Score e auditorias
-  const sc = (r.score||[]).filter(s => s.score != null);
-  if(sc.length || (r.auditorias||[]).length){
-    h += `<div class="rp-bloco-tit">Melhoria contínua: score e auditorias</div><div class="rp-graficos">`;
-    h += `<div class="h3s-card"><div class="rp-graf-tit">Score de Melhoria Contínua (média das semanas)${r.score_media != null ? ' · média do ano ' + Number(r.score_media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="rp-score">`;
-    sc.forEach(s => {
-      const v = Number(s.score);
-      h += `<div class="rp-score-linha"><span class="rp-score-mes">${RP_MESES_CURTOS[s.mes]||s.mes}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT',{maximumFractionDigits:1})}%</span></div>`;
-    });
-    h += `</div></div><div class="h3s-card rp-tabela-box"><div class="rp-graf-tit">Auditorias</div><table class="rp-tab"><thead><tr><th>Área</th><th>${anoP}</th><th>${anoA}</th><th>Objetivo</th><th>Avaliação</th></tr></thead><tbody>`;
+  // ---- Auditorias (o gráfico do score saiu da entrada)
+  if((r.auditorias||[]).length){
+    h += `<div class="rp-bloco-tit">Auditorias</div><div>`;
+    h += `<div class="h3s-card rp-tabela-box"><table class="rp-tab"><thead><tr><th>Área</th><th>${anoP}</th><th>${anoA}</th><th>Objetivo</th><th>Avaliação</th></tr></thead><tbody>`;
     (r.auditorias||[]).forEach(a => {
       const cumpre = a.aval.startsWith('▲');
       h += `<tr><td>${rpEsc(a.area)}</td><td>${a.ant > 0 ? rpPct(a.ant,0) : '–'}</td><td>${a.atual > 0 ? rpPct(a.atual,0) : '–'}</td><td>${rpPct(a.obj,0)}</td><td>${a.atual > 0 ? `<span class="rp-chip ${cumpre ? 'bom' : 'mau'}">${cumpre ? '▲ cumpre' : '▼ abaixo'}</span>` : '<span class="rp-mini-sub">sem nota</span>'}</td></tr>`;
