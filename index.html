@@ -4333,6 +4333,10 @@ function objMetasHtml(){
     <div style="font-size:13px;font-weight:800;color:#1F7A33;margin-bottom:6px;">🤝 Objetivo com as pessoas</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">${['📚 Formar', '💚 Responsabilidade emocional', '🔄 Partilha', '💬 Comunicação'].map(t => `<span style="background:#fff;border:1px solid #1F7A33;border-radius:16px;padding:5px 10px;font-size:12.5px;">${t}</span>`).join('')}</div>
   </div>`;
+  h += `<div class="card" style="background:#eef4fb;border-left:5px solid #1E4E8C;">
+    <div style="font-size:13px;font-weight:800;color:#1E4E8C;margin-bottom:6px;">🧭 Como vamos trabalhar em 2027</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${['🗂️ Organização', '📅 Planeamento', '🎯 Foco', '🧽 Limpeza', '👀 Supervisão', '🔁 Consistência'].map(t => `<span style="background:#fff;border:1px solid #1E4E8C;border-radius:16px;padding:5px 10px;font-size:12.5px;">${t}</span>`).join('')}</div>
+  </div>`;
   if(dona) h += `<div style="font-size:11px;color:var(--ink-soft);margin:-4px 4px 10px;">Pode mudar qualquer objetivo nas caixas. Carregue em "💾 Guardar objetivos 2027" no fim.</div>`;
   return h;
 }
