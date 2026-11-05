@@ -757,7 +757,6 @@
           <button class="rp-nav-btn hidden" onclick="selectMenu('inventario','Resultados de Inventário')"><span class="rp-nav-ic">📋</span><span><b>Inventário</b><small>registar resultados por secção e categoria</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('markdown','Ruturas')"><span class="rp-nav-ic">📭</span><span><b>Ruturas</b><small>stock teórico · artigos do sortido</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:validades','Gestão de Validades')"><span class="rp-nav-ic">📅</span><span><b>Gestão de Validades</b><small>execução por secção e artigos a tratar</small></span></button>
-          <button class="rp-nav-btn" onclick="selectMenu('area:notas','Notas de Crédito')"><span class="rp-nav-ic">🧾</span><span><b>Notas de Crédito</b><small>validar as notas da loja</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:vendasugestiva','Venda Sugestiva')"><span class="rp-nav-ic">🛍️</span><span><b>Venda Sugestiva</b><small>campanha da semana e operadoras</small></span></button>
           <button class="rp-nav-btn" onclick="rpAbrirAuditorias()" aria-expanded="false" id="rp-btn-aud"><span class="rp-nav-ic">✅</span><span><b>Auditorias</b><small>HACCP, SHT, RH, Ambiente, Controlo</small></span></button>
           <div id="rp-aud-lista" class="rp-pills" style="display:none;grid-column:1 / -1;flex-wrap:wrap;gap:8px;padding:10px;border:2px solid #1F7A33;border-radius:14px;background:#F2F7EC;">
@@ -1061,9 +1060,6 @@
 
         <div class="section-title">🔧 Regularizações</div>
         <div class="card" id="dashboard-regularizacoes-card"></div>
-
-        <div class="section-title">🧾 Notas de Crédito — Por Validar</div>
-        <div class="card" id="dashboard-notas-credito-card"></div>
 
         <div class="section-title">Resultados — Vendas mensais</div>
         <div class="card">
@@ -3338,7 +3334,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -9379,9 +9375,6 @@ async function abrirDetalheAuditoria(nome){
 
     try{ html += audMediaHtml(await audMediaAno(nome)); }catch(e){}
     html += `<div class="section-title">📄 Relatórios da auditoria</div><div id="aud-relatorios" class="card"><div style="font-size:13px;color:var(--ink-soft);">A carregar…</div></div>`;
-    if(nome === 'Controlo'){
-      html += `<div class="section-title">🧾 Notas de Crédito</div><div class="card">${await blocoNotasCredito('auditoria', true)}</div>`;
-    }
     if(nome === 'HACCP'){ html += await blocoHaccpQuadro(); html += await blocoZaragatoas(); html += await blocoControloAnalitico(); }
 
     if(!auditorias || !auditorias.length){
@@ -12705,7 +12698,6 @@ async function renderSecaoDetail(secao, label){
   if(secao === 'Frente de Loja'){
     tarefasHtml += await blocoIndicadoresFrenteLoja();
     tarefasHtml += await blocoVendaSugestiva();
-    tarefasHtml += `<div class="section-title">🧾 Notas de Crédito</div><div class="card">${await blocoNotasCredito('frente', true)}</div>`;
   }
   if(secao === 'Custos Comuns'){
     tarefasHtml += await blocoPicagemPaletes();
