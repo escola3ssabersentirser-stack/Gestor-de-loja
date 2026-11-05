@@ -4221,21 +4221,27 @@ function objDesenhar(){
   </div>
   <div style="font-size:11px;color:var(--ink-soft);margin:-4px 4px 12px;">2026 estimado = vendas reais de janeiro${ultMes ? ' a ' + ultMes.toLowerCase() : ''} + orçamento dos meses que faltam.</div>`;
   h += `<div class="section-title">🏪 Objetivos por secção</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;">
-    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:430px;">
-    <tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:4px;">Secção</th><th style="padding:4px;">Peso</th><th style="padding:4px;">2026 est.</th><th style="padding:4px;">Objetivo 2027</th><th style="padding:4px;">Cresc.</th><th style="padding:4px;">/semana</th></tr>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px;">
+    <tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:4px;">Secção</th><th style="padding:4px;">Peso</th><th style="padding:4px;">2026 est.</th><th style="padding:4px;">Objetivo 2027</th><th style="padding:4px;">Cresc.</th><th style="padding:4px;">/mês</th><th style="padding:4px;">/semana</th><th style="padding:4px;">/dia</th></tr>
     ${e.secoes.map((x,i) => { const cr = x.est26 ? x.obj/x.est26 - 1 : null; return `<tr style="border-top:1px solid var(--line);">
       <td style="padding:5px 4px;font-weight:600;">${rpEsc(impTitulo(x.sec))}</td>
       <td style="text-align:center;">${(x.peso*100).toLocaleString('pt-PT',{maximumFractionDigits:1})}%</td>
       <td style="text-align:right;">${objEur(x.est26)}</td>
       <td style="text-align:right;">${dona ? `<input type="text" inputmode="decimal" value="${Math.round(x.obj).toLocaleString('pt-PT')}" onchange="objMudarSec(${i}, this.value)" style="width:100px;padding:6px;border-radius:8px;border:1px solid var(--line);text-align:right;font-weight:700;">` : `<b>${objEur(x.obj)}</b>`}</td>
       <td style="text-align:center;font-weight:700;color:${cr==null?'inherit':cr>=0?'var(--green)':'var(--red)'};">${objPct(cr)}</td>
-      <td style="text-align:right;">${objEur(x.obj/52)}</td></tr>`; }).join('')}
-    <tr style="border-top:2px solid var(--line);font-weight:800;"><td style="padding:6px 4px;">Total secções</td><td></td><td style="text-align:right;">${objEur(e.secoes.reduce((s,x)=>s+x.est26,0))}</td><td style="text-align:right;color:${Math.abs(difSec) > 1 ? 'var(--red)' : 'var(--green)'};">${objEur(somaSec)}</td><td></td><td style="text-align:right;">${objEur(somaSec/52)}</td></tr>
+      <td style="text-align:right;">${objEur(x.obj/12)}</td><td style="text-align:right;">${objEur(x.obj/52)}</td><td style="text-align:right;">${objEur(x.obj/363)}</td></tr>`; }).join('')}
+    <tr style="border-top:2px solid var(--line);font-weight:800;"><td style="padding:6px 4px;">Total secções</td><td></td><td style="text-align:right;">${objEur(e.secoes.reduce((s,x)=>s+x.est26,0))}</td><td style="text-align:right;color:${Math.abs(difSec) > 1 ? 'var(--red)' : 'var(--green)'};">${objEur(somaSec)}</td><td></td><td style="text-align:right;">${objEur(somaSec/12)}</td><td style="text-align:right;">${objEur(somaSec/52)}</td><td style="text-align:right;">${objEur(somaSec/363)}</td></tr>
     </table>
     ${Math.abs(difSec) > 1 ? `<div style="font-size:12px;color:var(--red);margin:6px 2px;">${difSec > 0 ? `Faltam ${objEur(difSec)} nas secções para chegar ao objetivo da loja.` : `As secções somam mais ${objEur(-difSec)} do que o objetivo da loja.`}</div>` : `<div style="font-size:12px;color:var(--green);margin:6px 2px;">✓ As secções somam o objetivo da loja.</div>`}
     ${dona ? `<button class="econ-btn" style="margin-top:4px;" onclick="objRepartir()">↺ Repartir pelo peso de cada secção</button>` : ''}
-    <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Peso = parte de cada secção nas vendas atuais. Pode mudar o objetivo de cada secção; o crescimento é comparado com a estimativa de 2026.</div>
+    <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Peso = parte de cada secção nas vendas atuais. Pode mudar o objetivo de cada secção; o crescimento é comparado com a estimativa de 2026. /mês = média; /dia = 363 dias de loja aberta.</div>
   </div>`;
+  { const totM = e.mensal.reduce((a, b) => a + (Number(b) || 0), 0) || 1; const MC = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const k0 = n => n == null ? '—' : Math.round(n / 1000).toLocaleString('pt-PT') + ' k';
+    h += `<details class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;"><summary style="cursor:pointer;font-weight:700;font-size:13px;">📅 Cada secção mês a mês (com semana e dia de cada mês)</summary>
+      <table style="border-collapse:collapse;font-size:11px;min-width:820px;margin-top:6px;"><tr style="color:var(--ink-soft);"><th style="text-align:left;padding:3px;">Secção</th>${e.meses.map((m, i) => `<th style="padding:3px;">${MC[i] || m.mes}</th>`).join('')}</tr>
+      ${e.secoes.map(x => `<tr style="border-top:1px solid var(--line);"><td style="padding:4px 3px;font-weight:600;white-space:nowrap;">${rpEsc(impTitulo(x.sec))}</td>${e.mensal.map((mv, i) => { const v = x.obj * (Number(mv) || 0) / totM, dias = new Date(OBJ_ANO, i + 1, 0).getDate(); return `<td style="text-align:right;padding:3px;" title="por semana ${objEur(v / dias * 7)} · por dia ${objEur(v / dias)}">${k0(v)}<div style="font-size:9.5px;color:var(--ink-soft);">${Math.round(v / dias).toLocaleString('pt-PT')} €/dia</div></td>`; }).join('')}</tr>`).join('')}
+      </table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">Cada secção segue o ritmo mensal da loja. k = milhares de euros. Toque num valor para ver a semana e o dia.</div></details>`; }
   h += `<div class="section-title">📅 Objetivo mês a mês</div><div class="card rp-tabela-box" style="padding:6px 8px;overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:380px;">
     <tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:4px;">Mês</th><th style="padding:4px;">2025</th><th style="padding:4px;">2026</th><th style="padding:4px;">Objetivo 2027</th><th style="padding:4px;">/dia</th></tr>
