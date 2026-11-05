@@ -775,7 +775,6 @@
           <button class="rp-nav-btn" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')"><span class="rp-nav-ic">👥</span><span><b>Recursos Humanos</b><small>horários, banco de horas, formação</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('melhoria','Melhoria Contínua')"><span class="rp-nav-ic">📈</span><span><b>Melhoria Contínua</b><small>listas automáticas, auditorias e reposição</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('dash:gestao:avaliacao-cliente','Avaliação do Cliente')"><span class="rp-nav-ic">⭐</span><span><b>Avaliação do Cliente</b><small>atendimento avaliado pelos clientes</small></span></button>
-          <button class="rp-nav-btn" onclick="selectMenu('comunicacao','Comunicação Semanal')"><span class="rp-nav-ic">📣</span><span><b>Comunicação</b><small>informações importantes para a equipa</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('lembretes','Lembretes')"><span class="rp-nav-ic">🔔</span><span><b>Lembretes</b><small>banco de horas, horários, formação, ausências</small></span></button>
           <button class="rp-nav-btn rp-nav-destaque" onclick="abrirApresentacao()"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>sempre com os dados mais recentes</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('objetivos2027','Objetivos 2027')"><span class="rp-nav-ic">🚀</span><span><b>2027</b><small>objetivos da loja e secções</small></span></button>
@@ -1031,8 +1030,6 @@
         <div class="section-title">✅ Checklists por Validar</div>
         <div class="card" id="dashboard-checklists-validar-card"></div>
 
-        <div class="section-title">📣 Comunicações Importantes</div>
-        <div class="card" id="dashboard-comunicacoes-card"></div>
 
         <div class="section-title">📉 Quebra (%) — Toque para Aprofundar</div>
         <div class="card" id="dashboard-quebra-pct-card" style="cursor:pointer;" onclick="selectMenu('controlo-quebra','Controlo de Quebra')"></div>
@@ -1811,7 +1808,6 @@ const MENU_ITEMS = [
 
 const MENU_GRUPOS = [
   {tipo:'item', id:'dashboard', icon:'📊', label:'Dashboard'},
-  {tipo:'item', id:'comunicacao', icon:'📣', label:'Comunicação Semanal'},
 
   {tipo:'grupo', label:'💶 Vendas', icon:'💶', itens:[
     {id:'painel-vendas', icon:'💶', label:'Vendas'},
