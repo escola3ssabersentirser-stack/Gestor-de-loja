@@ -773,7 +773,7 @@
           <button class="rp-nav-btn hidden" id="rp-btn-codigos" onclick="abrirCodigosEquipa()"><span class="rp-nav-ic">🔑</span><span><b>Códigos de acesso</b><small>gerar o código de entrada de cada colaborador</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:lflarea','Loja vs Área')"><span class="rp-nav-ic">🏁</span><span><b>Loja vs Área</b><small>ranking das lojas da área, LFL e quebra por secção</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('formacoes','Banco de Horas, Horários e Formação')"><span class="rp-nav-ic">👥</span><span><b>Recursos Humanos</b><small>horários, banco de horas, formação</small></span></button>
-          <button class="rp-nav-btn" onclick="selectMenu('melhoria','Melhoria Contínua')"><span class="rp-nav-ic">📈</span><span><b>Melhoria Contínua</b><small>listas automáticas, auditorias e reposição</small></span></button>
+          <button class="rp-nav-btn" onclick="selectMenu('melhoria','Melhoria Contínua')"><span class="rp-nav-ic">📈</span><span><b>Melhoria Contínua</b><small>listas automáticas, reposição e plano de ação</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('dash:gestao:avaliacao-cliente','Avaliação do Cliente')"><span class="rp-nav-ic">⭐</span><span><b>Avaliação do Cliente</b><small>atendimento avaliado pelos clientes</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('lembretes','Lembretes')"><span class="rp-nav-ic">🔔</span><span><b>Lembretes</b><small>banco de horas, horários, formação, ausências</small></span></button>
           <button class="rp-nav-btn rp-nav-destaque" onclick="abrirApresentacao()"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>sempre com os dados mais recentes</small></span></button>
@@ -15398,31 +15398,19 @@ async function renderMelhoriaContinua(){
   const content = document.getElementById('melhoria-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
 
-  const categorias = [
-    {nome:'SHT', label:'SHT'},
-    {nome:'RH', label:'RH'},
-    {nome:'Marketing', label:'Marketing'},
-    {nome:'Controlo', label:'Controlo Operacional'}
-  ];
-  const [auditorias, evolucao, plano, kpisRows, listasHoje, listas7dias] = await Promise.all([
-    sb('loja_auditorias?select=nome,percentagem'),
-    sb('loja_melhoria_evolucao?select=*&order=id.asc'),
+  const [plano, listasHoje, listas7dias] = await Promise.all([
     sb('loja_plano_acao?select=*&order=area.asc'),
-    sb('loja_kpis?id=eq.1&select=score'),
     sb(`loja_listas_automaticas?data=eq.${hojeISO()}&select=numero_listas,secao`),
     sb(`loja_listas_automaticas?select=data,numero_listas&order=data.asc&limit=60`)
   ]);
 
-  const scoreLoja = kpisRows && kpisRows.length ? kpisRows[0].score : '—';
   const totalListas = listasHoje.reduce((s,l)=>s+(l.numero_listas||0),0);
 
   const editavel = currentUser && souDona();
-  let html = audBotaoAuto() + `<div class="vs-detail-grid" style="margin-bottom:16px;grid-template-columns:1fr;">
+  let html = `<div class="vs-detail-grid" style="margin-bottom:16px;grid-template-columns:1fr;">
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
   </div>` + listasFormHtml();
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
-  try{ html += `<div class="aqui-obs-wrap">${await blocoAquiObservacoes()}</div>`; }catch(e){}
-  try{ html += `<div class="voc-wrap">${await blocoVozCliente()}</div>`; }catch(e){ console.error('voz do cliente', e); }
 
   const porDiaListas = {};
   listas7dias.forEach(l=>{
@@ -15443,42 +15431,6 @@ async function renderMelhoriaContinua(){
       html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--line);font-size:12px;">
         <span style="color:var(--ink-soft);">${new Date(d+'T00:00:00').toLocaleDateString('pt-PT')}</span>
         <span style="font-weight:700;color:var(--ink);">${porDiaListas[d]}</span>
-      </div>`;
-    });
-    html += `</div>`;
-  }
-
-  html += '<div class="mc-grid">';
-  categorias.forEach(cat=>{
-    const found = auditorias.find(a=>a.nome === cat.nome);
-    const pct = found ? found.percentagem : null;
-    html += `<div class="mc-card" onclick="abrirDetalheAuditoria('${cat.nome}')">
-      <div class="mc-name">${cat.label}</div>
-      <div class="mc-pct ${pct===null?'nodata':''}">${pct===null ? 'Sem dados' : pct+'%'}</div>
-    </div>`;
-  });
-  html += '</div>';
-
-  if(evolucao.length){
-    html += `<div class="mc-chart-wrap"><div class="chart-title">Evolução do Score Semanal — ${ANO()}</div>${buildSparkline(evolucao)}</div>`;
-  }
-
-  const classificacoes = await sb('loja_classificacao_secao_auditoria?select=*&order=classificacao_pct.desc');
-  if(classificacoes.length){
-    const dataAud = classificacoes[0].data_auditoria ? new Date(classificacoes[0].data_auditoria+'T00:00:00').toLocaleDateString('pt-PT') : '—';
-    html += `<div class="section-title">Classificação por Secção (Auditoria AAF) <span class="count">· ${dataAud}</span></div>`;
-    html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
-    classificacoes.forEach(c=>{
-      const cor = c.classificacao_pct >= 90 ? 'var(--green)' : (c.classificacao_pct >= 80 ? 'var(--amber)' : 'var(--red)');
-      html += `<div style="padding:9px 0;border-bottom:1px solid var(--line);">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:13px;font-weight:600;color:var(--ink);">${MENU_ITEMS.find(m=>m.id==='secao:'+c.secao) ? MENU_ITEMS.find(m=>m.id==='secao:'+c.secao).label : c.secao}</span>
-          <span style="font-size:14px;font-weight:700;color:${cor};">${c.classificacao_pct}%</span>
-        </div>
-        <div class="bar-track" style="height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:5px;">
-          <div style="height:100%;width:${c.classificacao_pct}%;background:${cor};"></div>
-        </div>
-        ${c.comentarios ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;line-height:1.4;">${c.comentarios}</div>` : ''}
       </div>`;
     });
     html += `</div>`;
