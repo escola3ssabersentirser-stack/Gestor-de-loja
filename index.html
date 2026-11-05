@@ -4169,11 +4169,16 @@ async function renderObjetivos2027(){
   box.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
   try{ await carregarResumoPainel(); }catch(e){}
   const r = resumoPainel || RESUMO_PADRAO;
-  const [guardadoRows, auds, colabsBH] = await Promise.all([
+  const [guardadoRows, auds, colabsBH, scoreV, voc, vsug, rutUlt] = await Promise.all([
     sb(`loja_objetivos?ano=eq.${OBJ_ANO}&select=dados,atualizado_em,atualizado_por`).catch(()=>[]),
     sb('loja_auditorias?select=nome,percentagem&order=id.asc').catch(()=>[]),
-    sb('loja_colaboradores?select=nome,bh_positivo&bh_positivo=gt.20&order=bh_positivo.desc').catch(()=>[])
+    sb('loja_colaboradores?select=nome,bh_positivo&bh_positivo=gt.20&order=bh_positivo.desc').catch(()=>[]),
+    sb('loja_validades_score?select=dados&order=ano.desc,data_atualizacao.desc.nullslast&limit=1').catch(()=>[]),
+    sb('loja_voz_cliente?select=bem,mal,loja_score,semana_inicio&order=semana_inicio.desc&limit=1').catch(()=>[]),
+    sb('loja_venda_sugestiva?select=vs_objetivo_pct,data_referencia&order=data_referencia.desc.nullslast&limit=30').catch(()=>[]),
+    sb('loja_ruturas?select=data&order=data.desc&limit=1').catch(()=>[])
   ]);
+  let rutN = null; try{ if(rutUlt && rutUlt[0]){ const l = await sb(`loja_ruturas?data=eq.${rutUlt[0].data}&select=artigo_cod`); rutN = (l || []).length; } }catch(e){}
   const guardado = (guardadoRows || [])[0];
   const meses = r.meses || [];
   const v25 = meses.reduce((s,m) => s + (Number(m.v_ant)||0), 0);
@@ -4183,7 +4188,9 @@ async function renderObjetivos2027(){
   const g = (guardado && guardado.dados) || {};
   objEstado = {v25, v26, meses, total: Number(g.total) || OBJ_MINIMO,
     secoes: secs.map(x => ({sec: x.sec, peso: Number(x.real)/somaReal, est26: Number(x.real)/somaReal*v26, obj: g.secoes && g.secoes[x.sec] != null ? Number(g.secoes[x.sec]) : null})),
-    quebraObj: g.quebra_obj != null ? Number(g.quebra_obj) : 1.96, notas: g.notas || '', auds: auds || [], bhAcima: colabsBH || [], resumo: r,
+    quebraObj: g.quebra_obj != null && Number(g.quebra_obj) <= 20 ? Number(g.quebra_obj) : 1.96, notas: g.notas || '', auds: auds || [], bhAcima: colabsBH || [], resumo: r,
+    metas: {...(g.metas || {}), ...(g.quebra_obj != null && Number(g.quebra_obj) > 20 && !(g.metas || {}).score_validades ? {score_validades: Number(g.quebra_obj)} : {})},
+    quebraSec: g.quebra_secoes || {}, scoreV: (scoreV && scoreV[0] && scoreV[0].dados) || null, voc: (voc || [])[0] || null, vsug: vsug || [], rutN,
     atualizado: guardado ? guardado.atualizado_em : null, por: guardado ? guardado.atualizado_por : null};
   objEstado.secoes.forEach(x => { if(x.obj == null) x.obj = Math.round(x.peso * objEstado.total); });
   objEstado.mensal = (Array.isArray(g.mensal) && g.mensal.length === 12 && g.mensal_editado) ? g.mensal.map(m => Number(m.objetivo) || 0) : objMensalBase(objEstado.total);
@@ -4250,45 +4257,83 @@ function objDesenhar(){
 }
 // objetivos de 2027 (definidas pela gestora) com o valor atual quando a app o tem
 function objMetasHtml(){
-  const e = objEstado, r = e.resumo || {};
+  const e = objEstado, r = e.resumo || {}, dona = souDona(), M = e.metas || (e.metas = {});
   const per = r.periodo || [];
   const rub = n => per.find(x => String(x.rub||'').toLowerCase().startsWith(n.toLowerCase()));
   const nMeses = Math.max(1, (r.custos || []).filter(c => Number(c.agua) > 0 || Number(c.luz) > 0).length);
   const anual = v => v == null ? null : v / nMeses * 12;
   const p1 = v => v == null ? '—' : (v*100).toLocaleString('pt-PT',{maximumFractionDigits:2}) + '%';
+  const n1 = v => v == null ? '—' : Number(v).toLocaleString('pt-PT',{maximumFractionDigits:2});
   const qAtual = (r.secoes_total && r.secoes_total.qp != null) ? r.secoes_total.qp : (rub('Quebra em %') || {}).atual;
   const abs = (rub('Absentismo') || {}).atual;
   const agua = (rub('Água') || {}).atual, luz = (rub('Luz') || {}).atual, eco = (rub('Economato') || {}).atual;
   const pessoal = (rub('Encargos c/ pessoal') || {}).atual;
   const custos3 = [agua, luz, eco].every(v => v != null) ? agua + luz + eco : null;
-  const nomes = {Ambiental:'Ambiente', Controlo:'Controlo Operacional', Distrito:'Distrito'};
   const estado = (ok) => ok == null ? '<span style="color:var(--ink-soft);">—</span>' : ok ? '<span style="color:var(--green);font-weight:800;">✓ cumpre</span>' : '<span style="color:var(--red);font-weight:800;">✗ por atingir</span>';
   const linha = (ic, tit, meta, atual, ok, nota) => `<div style="display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);">
       <span style="font-size:18px;">${ic}</span>
       <div><div style="font-size:13px;font-weight:700;color:var(--ink);">${tit}</div><div style="font-size:11.5px;color:var(--ink-soft);">Objetivo: <b style="color:var(--navy);">${meta}</b>${atual != null ? ` · Agora: <b>${atual}</b>` : ''}${nota ? ` · ${nota}` : ''}</div></div>
       <div style="font-size:11.5px;text-align:right;">${estado(ok)}</div></div>`;
-  let h = `<div class="section-title">🎯 Objetivos da loja para 2027</div><div class="card" style="padding:4px 12px;">`;
-  h += linha('💶', 'Vendas', objEur(e.total), objEur(e.v26) + ' (2026 est.)', e.v26 >= e.total, objPct(e.total/e.v26-1) + ' de crescimento');
-  h += linha('📉', 'Quebra', (e.quebraObj ?? 1.96).toLocaleString('pt-PT') + '% das vendas', qAtual != null ? p1(qAtual) : null, qAtual != null ? qAtual*100 <= (e.quebraObj ?? 1.96) : null);
-  const audsCom = (e.auds||[]).filter(a => a.nome !== 'Distrito');
-  const audTxt = audsCom.map(a => `${nomes[a.nome] || a.nome} ${a.percentagem != null ? String(a.percentagem).replace('.',',') + '%' : '—'}`).join(' · ');
-  const audOk = audsCom.filter(a => a.percentagem != null);
-  h += linha('✅', 'Auditorias — todas', '95%', audTxt || null, audOk.length ? audOk.every(a => Number(a.percentagem) >= 95) : null, audOk.length ? `${audOk.filter(a => Number(a.percentagem) >= 95).length} de ${audOk.length} já cumprem` : '');
-  h += linha('📈', 'Melhoria Contínua', '96%', r.score_media != null ? Number(r.score_media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '% (média do ano)' : null, r.score_media != null ? Number(r.score_media) >= 96 : null);
-  h += linha('🤒', 'Absentismo', 'máximo 14%', abs != null ? p1(abs) : null, abs != null ? abs <= 0.14 : null);
-  h += linha('💡', 'Água, luz e economato', '−5% vs 2026', custos3 != null ? objEur(anual(custos3)) + '/ano (est.)' : null, null, custos3 != null ? `limite 2027: <b>${objEur(anual(custos3)*0.95)}</b> (água ${objEur(anual(agua)*0.95)}, luz ${objEur(anual(luz)*0.95)}, economato ${objEur(anual(eco)*0.95)})` : '');
-  h += linha('👥', 'Custo com pessoal', '−2% vs 2026', pessoal != null ? objEur(anual(pessoal)) + '/ano (est.)' : null, null, pessoal != null ? `limite 2027: <b>${objEur(anual(pessoal)*0.98)}</b>` : '');
-  h += linha('⏰', 'Banco de horas', 'máximo 20h acumuladas por pessoa', e.bhAcima.length ? `${e.bhAcima.length} acima de 20h` : '0 acima de 20h', e.bhAcima.length === 0, e.bhAcima.length ? e.bhAcima.slice(0,4).map(c => rpEsc(String(c.nome).split(' ')[0]) + ' ' + Number(c.bh_positivo).toLocaleString('pt-PT',{maximumFractionDigits:1}) + 'h').join(', ') : '');
+  // meta editável: valor guardado (ou o padrão) + unidade; maior=true → cumpre se atual >= meta
+  const meta = (k, def, uni, pre) => { const v = M[k] != null ? M[k] : def; return dona ? `${pre || ''}<input data-meta="${k}" value="${v == null ? '' : String(v).replace('.', ',')}" inputmode="decimal" style="width:62px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;font-size:12px;font-weight:700;color:var(--navy);"> ${uni}` : `${pre || ''}${v == null ? '—' : n1(v)} ${uni}`; };
+  const val = (k, def) => M[k] != null ? Number(M[k]) : def;
+  const ok = (atual, k, def, maior) => atual == null || val(k, def) == null ? null : (maior ? atual >= val(k, def) : atual <= val(k, def));
+  const grupo = t => `</div><div class="section-title">${t}</div><div class="card" style="padding:4px 12px;">`;
+  let h = `<div class="section-title">💶 Vendas</div><div class="card" style="padding:4px 12px;">`;
+  h += linha('💶', 'Vendas da loja', objEur(e.total), objEur(e.v26) + ' (2026 est.)', e.v26 >= e.total, objPct(e.total/e.v26-1) + ' de crescimento · por secção e por mês nas tabelas acima');
+  const vs = e.vsug.filter(x => x.vs_objetivo_pct != null); const vsPct = vs.length ? vs.filter(x => Number(x.vs_objetivo_pct) >= 0).length / vs.length * 100 : null;
+  h += linha('🛍️', 'Venda sugestiva — dias com objetivo atingido', meta('venda_sugestiva', 80, '% dos dias', '≥ '), vsPct != null ? n1(vsPct) + '% (últimos ' + vs.length + ' dias)' : null, ok(vsPct, 'venda_sugestiva', 80, true));
+  h += linha('🏁', 'Loja vs Área — posição', meta('posicao_area', 1, '.º lugar', ''), null, null);
+  h += grupo('📉 Quebras');
+  h += linha('📉', 'Quebra da loja', (e.quebraObj ?? 1.96).toLocaleString('pt-PT') + '% das vendas (máximo)', qAtual != null ? p1(qAtual) + ' (mês)' : null, qAtual != null ? qAtual*100 <= (e.quebraObj ?? 1.96) : null, dona ? 'altere em "Outros objetivos" abaixo' : '');
+  const secsQ = (r.secoes || []).filter(x => x.qp != null && Number(x.real) > 0).sort((a, b) => Number(b.qp) - Number(a.qp));
+  if(secsQ.length){
+    h += `<div style="font-size:12.5px;font-weight:700;margin:10px 0 4px;">Quebra por secção (% das vendas, máximo)</div><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;padding:3px;">Secção</th><th>Agora (mês)</th><th>Ano passado</th><th>Objetivo 2027</th><th></th></tr>` +
+      secsQ.map(x => { const at = Number(x.qp) * 100, aa = x.qp_aa != null ? Number(x.qp_aa) * 100 : null;
+        const def = Math.max(0, Math.round(Math.min(at, aa != null && aa > 0 ? aa : at) * 0.9 * 100) / 100);
+        const ob = e.quebraSec[x.sec] != null ? Number(e.quebraSec[x.sec]) : def;
+        return `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 3px;">${rpEsc(impTitulo(x.sec))}</td><td style="text-align:center;">${n1(at)}%</td><td style="text-align:center;color:var(--ink-soft);">${aa != null ? n1(aa) + '%' : '—'}</td>
+          <td style="text-align:center;">${dona ? `<input data-qsec="${rpEsc(x.sec)}" value="${String(ob).replace('.', ',')}" inputmode="decimal" style="width:58px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;font-size:12px;font-weight:700;">%` : `<b>${n1(ob)}%</b>`}</td>
+          <td style="text-align:right;font-size:11px;">${at <= ob ? '<span style="color:var(--green);font-weight:800;">✓</span>' : '<span style="color:var(--red);font-weight:800;">✗</span>'}</td></tr>`; }).join('') +
+      `</table></div><div style="font-size:10.5px;color:var(--ink-soft);margin:4px 0 6px;">Sugestão inicial: 10% abaixo do melhor entre este mês e o ano passado. Pode mudar cada secção.</div>`;
+  }
+  h += linha('📭', 'Ruturas de stock teórico', meta('ruturas', 50, 'artigos (máximo)', '≤ '), e.rutN != null ? e.rutN + ' artigos' : null, ok(e.rutN, 'ruturas', 50, false));
+  const sv = e.scoreV || {};
+  h += grupo('📋 Gestão de Validades');
+  h += linha('🏅', 'Score mensal da rotina de validades', meta('score_validades', 95, '%', '≥ '), sv.score != null ? n1(sv.score) + '% (' + (sv.mes || '') + ')' : null, ok(sv.score, 'score_validades', 95, true), sv.posicao ? `posição ${sv.posicao} de ${sv.total_lojas || '—'}` : '');
+  h += linha('✅', 'Execução da rotina diária', meta('exec_validades', 99, '%', '≥ '), sv.execucao != null ? n1(sv.execucao) + '%' : null, ok(sv.execucao, 'exec_validades', 99, true));
+  h += linha('🏷️', 'Taxa de aceitação (etiquetas vendidas)', meta('aceitacao_validades', 80, '%', '≥ '), sv.aceitacao != null ? n1(sv.aceitacao) + '%' : null, ok(sv.aceitacao, 'aceitacao_validades', 80, true));
+  h += grupo('✅ Auditorias');
+  const nomes = {Ambiental:'Ambiente', Controlo:'Controlo Operacional'};
+  (e.auds || []).forEach(a => { const k = 'aud_' + a.nome; const at = a.percentagem != null ? Number(a.percentagem) : null;
+    h += linha('✅', 'Auditoria ' + (nomes[a.nome] || a.nome), meta(k, 95, '%', '≥ '), at != null ? n1(at) + '%' : null, ok(at, k, 95, true)); });
+  h += grupo('⭐ Atendimento ao Cliente');
+  const vc = e.voc;
+  h += linha('⭐', 'Voz do Cliente — correu bem', meta('voz_cliente', 85, '%', '≥ '), vc && vc.bem != null ? n1(vc.bem) + '% (semana de ' + impDDMM(vc.semana_inicio) + ')' : null, ok(vc && vc.bem != null ? Number(vc.bem) : null, 'voz_cliente', 85, true));
+  h += linha('😟', 'Voz do Cliente — correu mal', meta('voz_mal', 5, '%', '≤ '), vc && vc.mal != null ? n1(vc.mal) + '%' : null, ok(vc && vc.mal != null ? Number(vc.mal) : null, 'voz_mal', 5, false));
+  h += linha('👀', 'Avaliações AQUI para o Cliente', meta('aqui_mes', 1, 'por colaborador / mês', '≥ '), null, null);
+  h += grupo('👥 Recursos Humanos');
+  h += linha('🤒', 'Absentismo', meta('absentismo', 14, '% (máximo)', '≤ '), abs != null ? p1(abs) : null, abs != null ? abs * 100 <= val('absentismo', 14) : null);
+  h += linha('⏰', 'Banco de horas', meta('bh_max', 20, 'h acumuladas por pessoa (máximo)', '≤ '), e.bhAcima.length ? `${e.bhAcima.length} acima de 20h` : '0 acima de 20h', e.bhAcima.length === 0, e.bhAcima.length ? e.bhAcima.slice(0,4).map(c => rpEsc(String(c.nome).split(' ')[0]) + ' ' + Number(c.bh_positivo).toLocaleString('pt-PT',{maximumFractionDigits:1}) + 'h').join(', ') : '');
   h += linha('🎓', 'Formações', 'planeamento mensal', null, null, 'planear todas as formações do mês no início de cada mês');
-  h += linha('🖐️', 'Picagens manuais — loja', 'máximo 5 por mês', null, null);
-  h += linha('🧑‍💼', 'Picagens manuais — gerência', '0 por mês', null, null);
+  h += linha('🖐️', 'Picagens manuais — loja', meta('picagens_loja', 5, 'por mês (máximo)', '≤ '), null, null);
+  h += linha('🧑‍💼', 'Picagens manuais — gerência', meta('picagens_gerencia', 0, 'por mês', ''), null, null);
+  h += grupo('💡 Custos da Loja');
+  h += linha('💡', 'Água, luz e economato', meta('custos_reducao', 5, '% abaixo de 2026', '−'), custos3 != null ? objEur(anual(custos3)) + '/ano (est.)' : null, null, custos3 != null ? `limite 2027: <b>${objEur(anual(custos3)*(1 - val('custos_reducao', 5)/100))}</b> (água ${objEur(anual(agua)*(1 - val('custos_reducao', 5)/100))}, luz ${objEur(anual(luz)*(1 - val('custos_reducao', 5)/100))}, economato ${objEur(anual(eco)*(1 - val('custos_reducao', 5)/100))})` : '');
+  h += linha('👥', 'Custo com pessoal', meta('pessoal_reducao', 2, '% abaixo de 2026', '−'), pessoal != null ? objEur(anual(pessoal)) + '/ano (est.)' : null, null, pessoal != null ? `limite 2027: <b>${objEur(anual(pessoal)*(1 - val('pessoal_reducao', 2)/100))}</b>` : '');
+  h += grupo('🗂️ Rotinas da loja');
+  [['checklist_gerencia', '📝', 'Checklist da gerência'], ['checklist_resp', '📋', 'Checklist dos responsáveis de secção'], ['rastreabilidades', '🔎', 'Rastreabilidades'], ['validacao_tarefas', '✔️', 'Validação de tarefas'], ['limpeza', '🧽', 'Limpeza'], ['haccp_zaragatoas', '🧪', 'HACCP — quadro e zaragatoas'], ['notas_credito', '🧾', 'Notas de crédito validadas']]
+    .forEach(([k, ic, t]) => { h += linha(ic, t, meta(k, 100, '% feito', ''), null, null); });
+  h += linha('📦', 'Economato e fardamento', 'dentro do orçamento, sem pedidos urgentes', null, null);
   h += `</div>`;
   h += `<div class="card" style="background:#f1faf3;border-left:5px solid #1F7A33;">
     <div style="font-size:13px;font-weight:800;color:#1F7A33;margin-bottom:6px;">🤝 Objetivo com as pessoas</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;">${['📚 Formar', '💚 Responsabilidade emocional', '🔄 Partilha', '💬 Comunicação'].map(t => `<span style="background:#fff;border:1px solid #1F7A33;border-radius:16px;padding:5px 10px;font-size:12.5px;font-weight:600;color:#14532D;">${t}</span>`).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${['📚 Formar', '💚 Responsabilidade emocional', '🔄 Partilha', '💬 Comunicação'].map(t => `<span style="background:#fff;border:1px solid #1F7A33;border-radius:16px;padding:5px 10px;font-size:12.5px;">${t}</span>`).join('')}</div>
   </div>`;
+  if(dona) h += `<div style="font-size:11px;color:var(--ink-soft);margin:-4px 4px 10px;">Pode mudar qualquer objetivo nas caixas. Carregue em "💾 Guardar objetivos 2027" no fim.</div>`;
   return h;
 }
+
 // ritmo de 2025, com agosto um pouco mais baixo e dezembro mais alto (Natal)
 const OBJ_AJUSTE_MES = 50000;
 function objMensalBase(total){
@@ -4316,9 +4361,11 @@ async function objGuardar(){
   e.quebraObj = q && q.trim() ? Number(q.replace(',','.')) : null; e.notas = (document.getElementById('obj-notas')||{}).value || '';
   if(e.total < OBJ_MINIMO && !confirm('O objetivo está abaixo do mínimo de 7,5 milhões. Guardar mesmo assim?')) return;
   const secoes = {}; e.secoes.forEach(x => { secoes[x.sec] = Math.round(x.obj); });
+  document.querySelectorAll('[data-meta]').forEach(i => { const v = objLerNum(String(i.value).replace('.', ',')); if(v != null) e.metas[i.dataset.meta] = v; else delete e.metas[i.dataset.meta]; });
+  document.querySelectorAll('[data-qsec]').forEach(i => { const v = objLerNum(String(i.value).replace('.', ',')); if(v != null) e.quebraSec[i.dataset.qsec] = v; else delete e.quebraSec[i.dataset.qsec]; });
   const mensal = e.meses.map((m, i) => ({mes: m.mes, objetivo: Math.round(e.mensal[i] || 0)}));
   try{
-    await sb('loja_objetivos?on_conflict=ano', {method:'POST', body: JSON.stringify({ano: OBJ_ANO, dados: {total: Math.round(e.total), secoes, mensal, mensal_editado: true, quebra_obj: e.quebraObj, notas: e.notas, base_2025: Math.round(e.v25), base_2026: Math.round(e.v26)}, atualizado_em: new Date().toISOString(), atualizado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'});
+    await sb('loja_objetivos?on_conflict=ano', {method:'POST', body: JSON.stringify({ano: OBJ_ANO, dados: {total: Math.round(e.total), secoes, mensal, mensal_editado: true, quebra_obj: e.quebraObj, metas: e.metas, quebra_secoes: e.quebraSec, notas: e.notas, base_2025: Math.round(e.v25), base_2026: Math.round(e.v26)}, atualizado_em: new Date().toISOString(), atualizado_por: currentUser ? currentUser.name : null}), prefer:'resolution=merge-duplicates,return=minimal'});
     showToast(); renderObjetivos2027();
   }catch(err){ alert('Não consegui guardar. Tente novamente.'); }
 }
