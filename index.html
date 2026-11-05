@@ -15432,23 +15432,9 @@ async function renderMelhoriaContinua(){
   const totalListas = listasHoje.reduce((s,l)=>s+(l.numero_listas||0),0);
 
   const editavel = currentUser && souDona();
-  let html = audBotaoAuto() + `<div class="vs-detail-grid" style="margin-bottom:16px;">
-    <div class="vs-box" ${editavel?'style="cursor:pointer;" onclick="editarScoreLoja()"':''}><div class="vs-label">🎯 Score de Melhoria Contínua${editavel?' ✏️':''}</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${scoreLoja}</div></div>
+  let html = audBotaoAuto() + `<div class="vs-detail-grid" style="margin-bottom:16px;grid-template-columns:1fr;">
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
   </div>` + listasFormHtml();
-  // score de melhoria contínua mês a mês (do Resumo da loja)
-  try{
-    await carregarResumoPainel();
-    const sc = ((resumoPainel && resumoPainel.score) || []).filter(x => x.score != null);
-    if(sc.length){
-      const media = resumoPainel.score_media;
-      html += `<div class="section-title">📈 Score de Melhoria Contínua — mês a mês${media != null ? ' · média do ano ' + Number(media).toLocaleString('pt-PT',{maximumFractionDigits:1}) + '%' : ''}</div><div class="card"><div class="rp-score">`;
-      sc.forEach((x, i) => { const v = Number(x.score); const ant = i ? Number(sc[i-1].score) : null;
-        html += `<div class="rp-score-linha" style="grid-template-columns:34px 1fr 72px;"><span class="rp-score-mes">${RP_MESES_CURTOS[x.mes]||x.mes}</span><span class="rp-score-barra"><span style="width:${Math.max(0,Math.min(100,v))}%;background:${v >= 85 ? '#1F7A33' : v >= 75 ? '#C77F12' : '#B4231A'}"></span></span><span class="rp-score-num">${v.toLocaleString('pt-PT',{maximumFractionDigits:1})}%${ant != null ? (v >= ant ? ' <span style="color:#1F7A33">▲</span>' : ' <span style="color:#B4231A">▼</span>') : ''}</span></div>`; });
-      html += `</div><div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Média das semanas de cada mês. O score da rotina de validades está no cartão Quebras.</div></div>`;
-    }
-  }catch(e){}
-
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
   try{ html += `<div class="aqui-obs-wrap">${await blocoAquiObservacoes()}</div>`; }catch(e){}
   try{ html += `<div class="voc-wrap">${await blocoVozCliente()}</div>`; }catch(e){ console.error('voz do cliente', e); }
