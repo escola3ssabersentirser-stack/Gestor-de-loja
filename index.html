@@ -4307,6 +4307,7 @@ function objMetasHtml(){
   const nomes = {Ambiental:'Ambiente', Controlo:'Controlo Operacional'};
   (e.auds || []).forEach(a => { const k = 'aud_' + a.nome; const at = a.percentagem != null ? Number(a.percentagem) : null;
     h += linha('✅', 'Auditoria ' + (nomes[a.nome] || a.nome), meta(k, 95, '%', '≥ '), at != null ? n1(at) + '%' : null, ok(at, k, 95, true)); });
+  ['Melhoria Contínua'].filter(n => !(e.auds || []).some(a => a.nome === n)).forEach(n => { h += linha('✅', 'Auditoria ' + n, meta('aud_' + n, 98, '%', '≥ '), null, null); });
   h += grupo('⭐ Atendimento ao Cliente');
   const vc = e.voc;
   h += linha('⭐', 'Voz do Cliente — correu bem', meta('voz_cliente', 85, '%', '≥ '), vc && vc.bem != null ? n1(vc.bem) + '% (semana de ' + impDDMM(vc.semana_inicio) + ')' : null, ok(vc && vc.bem != null ? Number(vc.bem) : null, 'voz_cliente', 85, true));
