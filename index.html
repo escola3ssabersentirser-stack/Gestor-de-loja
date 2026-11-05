@@ -755,7 +755,7 @@
           <button class="rp-nav-btn" onclick="selectMenu('painel-custos','Custos da Loja')"><span class="rp-nav-ic">💡</span><span><b>Custos da loja</b><small>luz, água, pessoal, economato</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('controlo-quebra','Controlo de Quebra')"><span class="rp-nav-ic">📉</span><span><b>Quebras</b><small>artigos, secções e motivos</small></span></button>
           <button class="rp-nav-btn hidden" onclick="selectMenu('inventario','Resultados de Inventário')"><span class="rp-nav-ic">📋</span><span><b>Inventário</b><small>registar resultados por secção e categoria</small></span></button>
-          <button class="rp-nav-btn" onclick="selectMenu('markdown','Markdown')"><span class="rp-nav-ic">🏷️</span><span><b>Markdown</b><small>para baixar a quebra</small></span></button>
+          <button class="rp-nav-btn" onclick="selectMenu('markdown','Ruturas')"><span class="rp-nav-ic">📭</span><span><b>Ruturas</b><small>stock teórico · artigos do sortido</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:validades','Gestão de Validades')"><span class="rp-nav-ic">📅</span><span><b>Gestão de Validades</b><small>execução por secção e artigos a tratar</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:notas','Notas de Crédito')"><span class="rp-nav-ic">🧾</span><span><b>Notas de Crédito</b><small>validar as notas da loja</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('area:vendasugestiva','Venda Sugestiva')"><span class="rp-nav-ic">🛍️</span><span><b>Venda Sugestiva</b><small>campanha da semana e operadoras</small></span></button>
@@ -853,9 +853,9 @@
               <span class="h3s-ic">🗓️</span><span class="h3s-tile-tit">Reuniões Semanais</span>
               <span class="h3s-tile-num h3s-abrir">Abrir ›</span><span class="h3s-tile-sub">reuniões e formações</span>
             </button>
-            <button class="h3s-tile" onclick="selectMenu('markdown','Markdown')">
-              <span class="h3s-ic">🏷️</span><span class="h3s-tile-tit">Markdown</span>
-              <span class="h3s-tile-num" id="kpi-home-markdown">—</span><span class="h3s-tile-sub">pior secção · não realizado</span>
+            <button class="h3s-tile" onclick="selectMenu('markdown','Ruturas')">
+              <span class="h3s-ic">📭</span><span class="h3s-tile-tit">Ruturas</span>
+              <span class="h3s-tile-num" id="kpi-home-markdown">—</span><span class="h3s-tile-sub">artigos em rutura · stock teórico</span>
             </button>
             <button class="h3s-tile" onclick="abrirDetalheHome('validades')">
               <span class="h3s-ic">📋</span><span class="h3s-tile-tit">Gestão de Validades</span>
@@ -1453,7 +1453,7 @@
         <button class="menu-btn" onclick="botaoTopo()" aria-label="Voltar ao início"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"></path><path d="M5 10v10h5v-6h4v6h5V10"></path></svg></button>
         <div>
           <div class="who">Módulo</div>
-          <div class="name">🏷️ Markdown</div>
+          <div class="name">📭 Ruturas</div>
         </div>
       </div>
       <button class="logout" onclick="logout()">Sair</button>
@@ -1826,7 +1826,7 @@ const MENU_GRUPOS = [
 
   {tipo:'grupo', label:'📉 Quebras', icon:'📉', itens:[
     {id:'controlo-quebra', icon:'📉', label:'Controlo de Quebra'},
-    {id:'markdown', icon:'🏷️', label:'Markdown'},
+    {id:'markdown', icon:'📭', label:'Ruturas'},
   ]},
 
   {tipo:'grupo', label:'💰 Custos de Loja', icon:'💰', itens:[
@@ -2357,7 +2357,7 @@ async function renderDatasDados(){
   const r = resumoPainel || RESUMO_PADRAO;
   if(!d.resumo && r && r.data_relatorio){ const p = r.data_relatorio.split('/'); d.resumo = impMenosUmDia(`${p[2]}-${p[1]}-${p[0]}`); }
   const ontem = impMenosUmDia(impISO(new Date()));
-  const itens = [['resumo','Resumo'],['bomdia','Bom Dia'],['markdown','Markdown'],['categorias','Categorias']];
+  const itens = [['resumo','Resumo'],['bomdia','Bom Dia'],['ruturas','Ruturas'],['categorias','Categorias']];
   box.innerHTML = itens.map(([k,nome]) => {
     if(!d[k]) return `<span class="rp-data falta">${nome}: sem dados</span>`;
     const atrasado = d[k] < ontem;
@@ -2611,6 +2611,7 @@ function impTipo(wb){
   for(const n of nomes){
     const R = impLinhas(wb.Sheets[n]);
     if(impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','PRODUÇÃO','QUEBRAS UN','QUEBRA SUGESTÃO'])) return 'mapasproducao';
+    if(impCabecalho(R, ['Codigo do Artigo','Descricao Artigo','PA'])) return 'ruturas';
     if(impCabecalho(R, ['Nome Operador','Vendas Operador'])) return 'vendasugestiva';
     if(impCabecalho(R, ['Numero Factura','Valor Fact']) || impCabecalho(R, ['Loja','Numero Factura','Numero da Transaccao'])) return 'notascredito';
   }
@@ -3113,7 +3114,7 @@ async function impValidades(wb, nomeFicheiro){
   await sb('loja_validades_artigos_tratar?tratado=not.is.true', {method:'DELETE'});
   if(d.porTratar.length) await sb('loja_validades_artigos_tratar', {method:'POST', body: JSON.stringify(d.porTratar.map(a => ({secao: a.secao, material: a.material, descricao: a.descricao, proxima_validade: a.proxima_validade, acao: (a.motivo.replace(/^Verificar Validades - /,'').slice(0,120)) + (a.dias_dif ? ` (+${a.dias_dif} dias)` : '') + (a.stock != null ? ` · stock ${a.stock}` : ''), tratado: false, data: d.data})))});
   await impGuardarData('validades', d.data);
-  let mkdTxt = ''; try{ const v = await mkdAtualizarDeValidades(d.data); const sv = v.semValidade.length, inc = v.incompletas.length; mkdTxt = ` · markdown: ${sv} quebra${sv === 1 ? '' : 's'} sem validade, ${inc} com etiquetas incompletas este mês`; }catch(e){ console.warn('markdown validades', e); }
+  const mkdTxt = '';
   const tot = d.resumo30.find(x => /total/i.test(x.secao)); const porTratarHoje = d.hoje.reduce((a,x) => a + x.por_tratar, 0);
   return `dados de ${impDDMM(d.data)} · execução 30 dias ${tot && tot.tx != null ? Math.round(tot.tx*100) + '%' : '—'} · ${porTratarHoje} por tratar hoje · ${d.porTratar.length} artigos a verificar${mkdTxt}`;
 }
@@ -3233,7 +3234,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3340,7 +3341,7 @@ async function importarFicheirosDia(input){
       const wb = XLSX.read(bufX, {type:'array'});
       let tipo = impTipo(wb);
       if(!tipo){ const te = impTipoExtra(wb, f.name); if(te){ l.tipo = IMP_NOMES[te]; lidos.push({l, extra: te, f, tipo: te, nome: f.name}); continue; } }
-      if(tipo === 'markdown'){ l.ok = 'skip'; l.tipo = 'Relatório de markdown — já não é usado'; l.msg = 'O markdown agora vem do Relatório de Gestão de Validades. Este ficheiro foi ignorado.'; continue; }
+      if(tipo === 'markdown'){ l.ok = 'skip'; l.tipo = 'Relatório de markdown — já não é usado'; l.msg = 'O markdown saiu da app. Este ficheiro foi ignorado.'; continue; }
       if(tipo === 'naousado'){ l.ok = 'skip'; l.tipo = 'Não é preciso'; l.msg = 'A app agora só usa vendas e quebras — este ficheiro foi ignorado.'; continue; }
       if(!tipo){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Este ficheiro não é nenhum dos relatórios que a app conhece. Envie-o ao Claude para a app aprender a lê-lo.'; continue; }
       l.tipo = IMP_NOMES[tipo]; lidos.push({l, wb, tipo, nome: f.name, data: f.lastModified});
@@ -3352,7 +3353,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: impNotas, vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -4691,7 +4692,7 @@ function selectMenu(id, label){
     renderControloQuebra().then(() => { const c = document.getElementById('inv-grid-card'); if(c) c.scrollIntoView({behavior:'smooth', block:'start'}); });
   } else if(id === 'markdown'){
     document.getElementById('markdown-screen').classList.remove('hidden');
-    renderMarkdownScreen();
+    renderRuturasScreen();
   } else if(id === 'formacoes'){
     document.getElementById('formacoes-screen').classList.remove('hidden');
     renderFormacoesScreen();
@@ -6369,10 +6370,7 @@ async function renderResultadosOrganizados(prefixo){
     const kVQ = document.getElementById('kpi-home-vendas-quebras');
     if(kVQ) kVQ.textContent = quebraPctMes!==null ? quebraPctMes.toFixed(2)+'%' : '—';
     const kMk = document.getElementById('kpi-home-markdown');
-    if(kMk){
-      const piorMk = [...markdowns].sort((a,b)=>b.pct_nao_realizado_valor-a.pct_nao_realizado_valor)[0];
-      kMk.textContent = piorMk ? piorMk.pct_nao_realizado_valor+'%' : '—';
-    }
+    if(kMk){ rutDados().then(D => { kMk.textContent = D.hoje.length ? String(D.hoje.length) : '—'; }).catch(()=>{}); }
     const kVal = document.getElementById('kpi-home-validades');
     if(kVal){
       const pior = [...validades].sort((a,b)=>a.tx_execucao_pct-b.tx_execucao_pct)[0];
@@ -15772,6 +15770,99 @@ async function blocoPlanoProducao(){
 }
 // ---------- QUEBRA SEM ETIQUETA DE MARKDOWN (mês em vigor) ----------
 
+// ===================== RUTURAS DE STOCK TEÓRICO (KPI 01.09.01 — sortido da loja) =====================
+// Substitui o antigo cartão de Markdown.
+function rutLerExcel(wb){
+  const out = [];
+  for(const n of wb.SheetNames){
+    const R = impLinhas(wb.Sheets[n]);
+    const h = impCabecalho(R, ['Codigo do Artigo', 'Descricao Artigo']);
+    if(!h) continue;
+    const row = (R[h.i] || []).map(impTxt); const c = t => row.findIndex(x => impNorm(x) === impNorm(t));
+    const cL = c('Codigo Loja'), cCod = c('Codigo do Artigo'), cA = c('Descricao Artigo'), cPa = c('PA'), cAr = c('Descrição Area'), cDv = c('Codigo Divisao');
+    for(let i = h.i + 1; i < R.length; i++){
+      const r = R[i] || []; const cod = impTxt(r[cCod]).replace(/\.0$/, '');
+      if(!cod || !/^\d+$/.test(cod) || !impTxt(r[cA])) continue;
+      if(cL >= 0 && impTxt(r[cL]) && impTxt(r[cL]).replace(/\.0$/, '') !== IMP_LOJA) continue;
+      out.push({artigo_cod: cod, artigo: impTitulo(r[cA]), pa: cPa >= 0 ? impTxt(r[cPa]) || null : null, area: cAr >= 0 ? impTitulo(r[cAr]) || null : null, divisao_cod: cDv >= 0 ? impTxt(r[cDv]).replace(/\.0$/, '') || null : null});
+    }
+  }
+  return out;
+}
+async function impRuturas(wb, nomeFicheiro, dataFicheiro){
+  const l = rutLerExcel(wb);
+  if(!l.length) throw new Error('não encontrei artigos em rutura da loja ' + IMP_LOJA);
+  const data = impISO(new Date());   // o relatório é do dia em que é carregado
+  const vistos = new Set(); const linhas = l.filter(x => !vistos.has(x.artigo_cod) && vistos.add(x.artigo_cod)).map(x => ({...x, data}));
+  await sb(`loja_ruturas?data=eq.${data}`, {method:'DELETE'});
+  for(let i = 0; i < linhas.length; i += 300) await sb('loja_ruturas', {method:'POST', body: JSON.stringify(linhas.slice(i, i + 300))});
+  await impGuardarData('ruturas', data);
+  let ant = []; try{ const u = await sb(`loja_ruturas?data=lt.${data}&select=data&order=data.desc&limit=1`); if(u && u[0]) ant = await sb(`loja_ruturas?data=eq.${u[0].data}&select=artigo_cod`) || []; }catch(e){}
+  const antSet = new Set(ant.map(x => x.artigo_cod)), novas = linhas.filter(x => !antSet.has(x.artigo_cod)).length;
+  return `${linhas.length} artigos em rutura${ant.length ? ` (${linhas.length - ant.length >= 0 ? '+' : ''}${linhas.length - ant.length} vs último relatório · ${novas} novas)` : ''}`;
+}
+async function rutDados(){
+  let rows = [];
+  try{ rows = await sb('loja_ruturas?select=data,artigo_cod,artigo,pa,area&order=data.desc&limit=5000') || []; }catch(e){ rows = []; }
+  const datas = [...new Set(rows.map(r => r.data))].sort().reverse();
+  const hoje = rows.filter(r => r.data === datas[0]), ant = datas[1] ? rows.filter(r => r.data === datas[1]) : null;
+  const diasSeguidos = cod => { let n = 0; for(const d of datas){ if(rows.some(r => r.data === d && r.artigo_cod === cod)) n++; else break; } return n; };
+  const vezes = cod => rows.filter(r => r.artigo_cod === cod).length;
+  return {rows, datas, hoje, ant, diasSeguidos, vezes};
+}
+async function renderRuturasScreen(){
+  const content = document.getElementById('markdown-content');
+  content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
+  const dona = currentUser && souDona();
+  let h = dona ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="rut-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="rutCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rut-fich').click()">📥 Carregar o KPI de Ruturas (stock teórico)</button><div id="rut-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></div>` : '';
+  try{ h += await blocoRuturas(); }catch(e){ console.error('ruturas', e); h += `<div class="card">Não consegui ler as ruturas.</div>`; }
+  content.innerHTML = h;
+}
+async function rutCarregar(input){
+  const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar ficheiros')) return;
+  const est = document.getElementById('rut-estado'); if(est) est.textContent = 'A ler…';
+  try{ const msg = await impRuturas(XLSX.read(await f.arrayBuffer(), {type:'array'}), f.name); if(est) est.textContent = '✓ ' + msg; setTimeout(renderRuturasScreen, 900); }
+  catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
+}
+async function blocoRuturas(){
+  const D = await rutDados();
+  let h = `<div class="section-title">📭 Ruturas de stock teórico — artigos do sortido${D.datas[0] ? ` <span class="count">· ${new Date(D.datas[0] + 'T12:00:00').toLocaleDateString('pt-PT')}</span>` : ''}</div>`;
+  if(!D.hoje.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o relatório "KPI Rupturas Stock Teórico Sortido Lojas" em "📥 Carregar relatórios".</div></div>`;
+  const n = D.hoje.length, nAnt = D.ant ? D.ant.length : null;
+  const antSet = new Set((D.ant || []).map(x => x.artigo_cod)), hojeSet = new Set(D.hoje.map(x => x.artigo_cod));
+  const novas = D.ant ? D.hoje.filter(x => !antSet.has(x.artigo_cod)) : [], resolvidas = D.ant ? D.ant.filter(x => !hojeSet.has(x.artigo_cod)) : [];
+  const repetidas = D.hoje.map(x => ({...x, seg: D.diasSeguidos(x.artigo_cod)})).filter(x => x.seg >= 2).sort((a, b) => b.seg - a.seg);
+  const tile = (v, t, cor) => `<div style="flex:1;min-width:110px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:22px;font-weight:800;color:${cor};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
+  h += `<div class="card"><div style="display:flex;flex-wrap:wrap;gap:8px;">
+    ${tile(n, 'artigos em rutura', 'var(--red)')}
+    ${nAnt != null ? tile((n - nAnt > 0 ? '+' : '') + (n - nAnt), 'vs relatório anterior', n > nAnt ? 'var(--red)' : n < nAnt ? 'var(--green)' : 'var(--ink)') : ''}
+    ${D.ant ? tile(novas.length, 'novas ruturas', 'var(--amber)') : ''}
+    ${D.ant ? tile(resolvidas.length, 'resolvidas', 'var(--green)') : ''}
+    ${tile(repetidas.length, 'repetidas (2+ relatórios seguidos)', repetidas.length ? 'var(--red)' : 'var(--green)')}</div></div>`;
+  // por área
+  const conta = (l, k) => { const o = {}; l.forEach(x => { const v = x[k] || '—'; o[v] = (o[v] || 0) + 1; }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
+  const areas = conta(D.hoje, 'area'), max = areas[0] ? areas[0][1] : 1;
+  const antArea = {}; (D.ant || []).forEach(x => { antArea[x.area || '—'] = (antArea[x.area || '—'] || 0) + 1; });
+  h += `<div class="card"><h3 style="margin-bottom:8px;">Por área</h3>` + areas.map(([a, c]) => { const d = D.ant ? c - (antArea[a] || 0) : null;
+    return `<div style="display:grid;grid-template-columns:minmax(0,1fr) 34px 44px;gap:8px;align-items:center;margin:6px 0;font-size:12.5px;"><div><div>${rpEsc(a)}</div><div style="height:8px;border-radius:5px;background:var(--line);margin-top:3px;overflow:hidden;"><div style="height:100%;width:${(c / max * 100).toFixed(1)}%;background:var(--red);"></div></div></div><b style="text-align:right;">${c}</b><span style="font-size:11px;text-align:right;color:${d > 0 ? 'var(--red)' : d < 0 ? 'var(--green)' : 'var(--ink-soft)'};">${d == null ? '' : (d > 0 ? '▲' + d : d < 0 ? '▼' + (-d) : '=')}</span></div>`; }).join('') + `</div>`;
+  // por PA
+  const pas = conta(D.hoje, 'pa').sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  h += `<div class="card"><h3 style="margin-bottom:6px;">Por PA</h3><div style="display:flex;flex-wrap:wrap;gap:6px;">${pas.map(([p, c]) => `<span style="background:${p === 'P1' ? '#FBE3DE' : 'var(--bg-soft,#F6F4EF)'};border-radius:8px;padding:5px 10px;font-size:12.5px;"><b>${rpEsc(p)}</b> · ${c}</span>`).join('')}</div></div>`;
+  // evolução
+  if(D.datas.length > 1){
+    const ds = D.datas.slice(0, 20).reverse(), tot = ds.map(d => D.rows.filter(r => r.data === d).length), mx = Math.max(...tot, 1);
+    h += `<div class="card"><h3 style="margin-bottom:8px;">Evolução</h3><div class="rchart" style="height:90px;">${tot.map(t => `<div class="bars"><div class="bar" style="height:${(t / mx * 100).toFixed(1)}%;background:var(--red);" title="${t}"></div></div>`).join('')}</div><div class="rchart-labels">${ds.map((d, i) => `<span style="font-size:8px;">${impDDMM(d)}<br>${tot[i]}</span>`).join('')}</div></div>`;
+  }
+  const linha = (x, extra) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><span style="min-width:0;">${rpEsc(x.artigo)}<div style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod} · ${rpEsc(x.area || '')}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</div></span>${extra || ''}</div>`;
+  const linhaRep = x => linha(x, `<b style="white-space:nowrap;color:var(--red);">${x.seg} relatórios</b>`);
+  if(repetidas.length) h += `<div class="card"><h3 style="margin-bottom:4px;color:var(--red);">🔁 Repetidas — continuam em rutura (${repetidas.length})</h3>${repetidas.slice(0, 12).map(linhaRep).join('')}${repetidas.length > 12 ? `<details><summary style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 0;">Ver mais ${repetidas.length - 12}</summary>${repetidas.slice(12).map(linhaRep).join('')}</details>` : ''}<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Verificar stock real, pedidos em curso e se o artigo está na loja (armazém, outra morada).</div></div>`;
+  if(novas.length) h += `<details class="card"><summary style="cursor:pointer;font-weight:700;">🆕 Novas ruturas (${novas.length})</summary>${novas.map(x => linha(x)).join('')}</details>`;
+  if(resolvidas.length) h += `<details class="card"><summary style="cursor:pointer;font-weight:700;color:var(--green);">✅ Resolvidas desde o relatório anterior (${resolvidas.length})</summary>${resolvidas.map(x => linha(x)).join('')}</details>`;
+  // lista completa por área
+  h += `<div class="card"><h3 style="margin-bottom:6px;">📋 Todos os artigos em rutura</h3>` + areas.map(([a, c]) => `<details style="border-top:1px solid var(--line);"><summary style="cursor:pointer;padding:8px 0;font-size:13px;font-weight:600;">${rpEsc(a)} · ${c}</summary>${D.hoje.filter(x => (x.area || '—') === a).sort((p, q) => String(p.pa).localeCompare(String(q.pa))).map(x => linha(x, D.diasSeguidos(x.artigo_cod) >= 2 ? `<span style="font-size:11px;color:var(--red);white-space:nowrap;">🔁 ${D.diasSeguidos(x.artigo_cod)}</span>` : '')).join('')}</details>`).join('') + `</div>`;
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin:4px 4px 12px;">Fonte: KPI 01.09.01 Rupturas Stock Teórico — Sortido Lojas. Carregue-o todos os dias para ver novas, resolvidas e repetidas.</div>`;
+}
+
 // ===================== MARKDOWN A PARTIR DO RELATÓRIO DE GESTÃO DE VALIDADES =====================
 // O relatório de markdown deixou de existir: tudo o que é markdown passa a vir do Relatório de Gestão de Validades.
 const VLD_SECOES = {'Frutas e Vegetais':['FRUTAS E VEGETAIS','Frutas/Vegetais'], 'Meal Solutions':['TAKE-AWAY','Linha de atendimento'], 'Padaria e Pastelaria':['PADARIA/PASTELARIA','Padaria/Pastelaria'],
@@ -15962,7 +16053,6 @@ async function renderControloQuebra(){
   try{ html += blocoRegrasQuebra(); }catch(e){ console.error('regras quebra', e); }
   try{ html += `<div id="pp-wrap">${await blocoPlanoProducao()}</div>`; }catch(e){ console.error('plano produção', e); }
   try{ html += await blocoMapasProducao(); }catch(e){ console.error('mapas produção', e); }
-  try{ html += await blocoQuebraSemEtiqueta(); }catch(e){ console.error('sem etiqueta', e); }
   if(INV_VISIVEL) html += await blocoInventarioPorSecao();
   html += await blocoScoreValidades();
   html += await blocoAlertasQuebraArtigo(null);
@@ -15997,39 +16087,6 @@ async function renderControloQuebra(){
     html += `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">Categorias mais finas (ex: Carne de Suíno, Vinhos, Queijos) ainda não têm dados próprios da loja — só tenho ao nível de secção.</div>`;
     html += `</div>`;
   }
-
-  const markdownsComSecao = pctDivisoes.filter(d=>d.secao_app);
-  const piorMarkdown = markdownsComSecao.length ? markdownsComSecao.reduce((a,b)=> Number(b.pct_nao_realizado_valor)>Number(a.pct_nao_realizado_valor)?b:a) : null;
-  html += `<div class="section-title">🏷️ % Falhas de markdown por secção <span class="count">· relatório de validades</span></div>`;
-  html += `<div class="card">`;
-  if(piorMarkdown){
-    html += `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Pior secção: <b style="color:var(--red);">${labelSecaoPainel(piorMarkdown.secao_app)}</b> — ${piorMarkdown.pct_nao_realizado_valor}%</div>`;
-  }
-  markdownsComSecao.forEach(d=>{
-    const pct = Number(d.pct_nao_realizado_valor);
-    const cor = pct === 0 ? 'var(--green)' : (pct < 20 ? 'var(--amber)' : 'var(--red)');
-    html += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;">
-      <span style="color:var(--ink);">${labelSecaoPainel(d.secao_app)}</span>
-      <span style="font-weight:700;color:${cor};">${pct}%</span>
-    </div>`;
-  });
-  html += `</div>`;
-
-  if(markdownsComSecao.length){
-    const maxPct = Math.max(...markdownsComSecao.map(d=>Number(d.pct_nao_realizado_valor)), 1);
-    html += `<div class="card">
-      <h3 style="margin-bottom:10px;">Variação de % Markdown por Secção</h3>
-      <div class="rchart" style="height:110px;">`;
-    markdownsComSecao.forEach(d=>{
-      const pct = Number(d.pct_nao_realizado_valor);
-      const cor = pct === 0 ? 'var(--green)' : (pct < 20 ? 'var(--amber)' : 'var(--red)');
-      html += `<div class="bars"><div class="bar" style="height:${(pct/maxPct*100).toFixed(1)}%;background:${cor};"></div></div>`;
-    });
-    html += `</div><div class="rchart-labels">`;
-    markdownsComSecao.forEach(d=> html += `<span style="font-size:8.5px;">${labelSecaoPainel(d.secao_app)}</span>`);
-    html += `</div></div>`;
-  }
-
 
   html += `<div class="section-title">📅 % Execução — Rotina de Validades</div>`;
   html += `<div class="card">`;
