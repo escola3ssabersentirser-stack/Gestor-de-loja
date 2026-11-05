@@ -1114,7 +1114,7 @@
       <!-- ===== TAB: GESTÃO ===== -->
       <div class="dash-tab-panel" data-dashpanel="gestao" style="display:none;">
         <div class="gestao-bloco" data-bloco="checklist">
-          <div class="section-title">✅ Checklist Diária da Gerência</div>
+          <div class="section-title">✅ Checklist da Gerência</div>
           <div id="checklist-gerencia-wrap"></div>
         </div>
 
@@ -6828,79 +6828,102 @@ function diaAbrevAtual(){
   return mapa[idx];
 }
 
+// ===== Checklist interativa da gerência: por momento do dia, com dias certos, responsáveis, prazos e progresso =====
+// m = momento · d = dias em que se aplica (vazio = todos) · ate = hora limite
+const CKL_INFO = {
+  0:{m:'abertura', ate:8}, 1:{m:'abertura'}, 2:{m:'manha', ate:10}, 3:{m:'dia'}, 4:{m:'manha'}, 5:{m:'tarde'}, 6:{m:'dia'}, 7:{m:'manha'}, 8:{m:'manha'}, 9:{m:'dia'},
+  10:{m:'manha'}, 11:{m:'manha'}, 12:{m:'semana', d:['ter']}, 13:{m:'tarde'}, 14:{m:'manha'}, 15:{m:'semana', d:['seg']}, 16:{m:'manha'}, 17:{m:'manha'}, 18:{m:'manha', ate:10}, 19:{m:'manha'},
+  20:{m:'semana', d:['seg','qui']}, 21:{m:'manha'}, 22:{m:'fecho'}, 23:{m:'manha'}, 24:{m:'manha'}, 25:{m:'tarde'}, 26:{m:'manha'}, 27:{m:'manha'}, 28:{m:'tarde'}, 29:{m:'semana', d:['sex']},
+  30:{m:'tarde'}, 31:{m:'semana', d:['seg']}, 32:{m:'semana', d:['seg']}, 33:{m:'tarde'}, 34:{m:'semana', d:['sex']}, 35:{m:'semana', mes:15}, 36:{m:'semana', d:['seg']}, 37:{m:'semana', d:['seg']}, 38:{m:'tarde'}, 39:{m:'fecho'},
+  40:{m:'fecho', ate:20}, 41:{m:'fecho'}, 42:{m:'tarde'}
+};
+const CKL_MOMENTOS = [['abertura','🌅 Abertura'], ['manha','☀️ Manhã'], ['dia','🔁 Ao longo do dia'], ['tarde','🌤️ Tarde'], ['fecho','🌙 Fecho'], ['semana','📅 Tarefas da semana e do mês']];
+let cklResp = {}, cklFiltro = 'todas', cklAbertos = null;
+function cklDataDoDia(d){ const hoje = new Date(); const i = (hoje.getDay() + 6) % 7; const seg = new Date(hoje); seg.setDate(hoje.getDate() - i); const x = new Date(seg); x.setDate(seg.getDate() + DIAS_CHECKLIST.indexOf(d)); return x; }
+function cklAplica(i, d){ const inf = CKL_INFO[i] || {}; if(inf.mes){ return cklDataDoDia(d).getDate() <= inf.mes; } return !inf.d || inf.d.includes(d); }
+function cklFeito(i, d){ return !!(checklistData && checklistData[i] && checklistData[i][d] && checklistData[i][d].feito); }
 async function renderChecklistGerencia(){
-  const wrap = document.getElementById('checklist-gerencia-wrap');
+  const wrap = document.getElementById('checklist-gerencia-wrap'); if(!wrap) return;
   const semana = semanaAtualLabel();
-  const rows = await sb(`loja_checklist_gerencia?semana=eq.${encodeURIComponent(semana)}&select=*`);
-  if(rows && rows.length){
-    checklistRowId = rows[0].id;
-    checklistData = rows[0].dados || {};
-  } else {
-    checklistRowId = null;
-    checklistData = {};
-  }
+  const [rows, resp] = await Promise.all([
+    sb(`loja_checklist_gerencia?semana=eq.${encodeURIComponent(semana)}&select=*`).catch(()=>[]),
+    sb('loja_checklist_gerencia_resp?select=indice,responsavel').catch(()=>[])
+  ]);
+  if(rows && rows.length){ checklistRowId = rows[0].id; checklistData = rows[0].dados || {}; } else { checklistRowId = null; checklistData = {}; }
+  cklResp = {}; (resp || []).forEach(r => { if(r.responsavel) cklResp[r.indice] = r.responsavel; });
   if(!checklistDiaSelecionado) checklistDiaSelecionado = diaAbrevAtual();
-
-  const totalCelulas = CHECKLIST_TAREFAS.length * DIAS_CHECKLIST.length;
-  let feitas = 0;
-  CHECKLIST_TAREFAS.forEach((_, i)=>{
-    DIAS_CHECKLIST.forEach(d=>{
-      if(checklistData[i] && checklistData[i][d] && checklistData[i][d].feito) feitas++;
-    });
-  });
-  const pct = totalCelulas ? Math.round(feitas/totalCelulas*100) : 0;
-
-  const porPessoa = {};
-  CHECKLIST_TAREFAS.forEach((_, i)=>{
-    DIAS_CHECKLIST.forEach(d=>{
-      const cell = checklistData[i] && checklistData[i][d];
-      if(cell && cell.feito){
-        const chave = cell.nome || cell.por || '—';
-        porPessoa[chave] = (porPessoa[chave]||0) + 1;
-      }
-    });
-  });
-  const ranking = Object.entries(porPessoa).sort((a,b)=>b[1]-a[1]);
-
-  let html = '';
-  if(ranking.length){
-    html += `<div class="card" style="margin-bottom:12px;">
-      <h3 style="margin-bottom:8px;">Quem validou esta semana</h3>`;
-    ranking.forEach(([nome,n])=>{
-      html += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;">
-        <span style="color:var(--ink);">${nome}</span>
-        <span style="font-weight:700;color:var(--navy);">${n} tarefa${n!==1?'s':''}</span>
-      </div>`;
+  const d = checklistDiaSelecionado, eHoje = d === diaAbrevAtual(), hora = new Date().getHours();
+  const dona = souDona(), eu = currentUser ? String(currentUser.name || '').split(' ')[0].toLowerCase() : '';
+  // semana
+  const diaPct = dd => { const ap = CHECKLIST_TAREFAS.map((_, i) => i).filter(i => cklAplica(i, dd)); const f = ap.filter(i => cklFeito(i, dd)).length; return {f, t: ap.length, p: ap.length ? Math.round(f / ap.length * 100) : 0}; };
+  const sem = DIAS_CHECKLIST.map(dd => ({dd, ...diaPct(dd)}));
+  const hojeIdx = DIAS_CHECKLIST.indexOf(diaAbrevAtual());
+  const semPct = (() => { const ate = sem.slice(0, hojeIdx + 1); const t = ate.reduce((a, x) => a + x.t, 0), f = ate.reduce((a, x) => a + x.f, 0); return t ? Math.round(f / t * 100) : 0; })();
+  const ap = CHECKLIST_TAREFAS.map((t, i) => ({t, i, inf: CKL_INFO[i] || {}})).filter(x => cklAplica(x.i, d));
+  const feitasDia = ap.filter(x => cklFeito(x.i, d)).length, pctDia = ap.length ? Math.round(feitasDia / ap.length * 100) : 0;
+  const atrasada = x => eHoje && x.inf.ate && hora >= x.inf.ate && !cklFeito(x.i, d);
+  const corP = p => p >= 90 ? '#1F7A33' : p >= 60 ? '#C77F12' : '#B4231A';
+  let html = `<div class="card" style="display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center;">
+    <div style="width:92px;height:92px;border-radius:50%;background:conic-gradient(${corP(pctDia)} ${pctDia * 3.6}deg, var(--line) 0);display:flex;align-items:center;justify-content:center;">
+      <div style="width:72px;height:72px;border-radius:50%;background:var(--paper,#fff);display:flex;flex-direction:column;align-items:center;justify-content:center;"><b style="font-size:22px;color:${corP(pctDia)};">${pctDia}%</b><span style="font-size:10px;color:var(--ink-soft);">${DIAS_CHECKLIST_LABEL[d]}</span></div></div>
+    <div><div style="font-size:15px;font-weight:800;color:var(--navy);">${feitasDia} de ${ap.length} tarefas feitas</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${semana} · semana até hoje: <b style="color:${corP(semPct)};">${semPct}%</b></div>
+      ${ap.filter(atrasada).length ? `<div style="font-size:12px;color:#B4231A;font-weight:700;margin-top:4px;">⏰ ${ap.filter(atrasada).length} com hora limite já passada</div>` : ''}
+      <div style="display:flex;gap:3px;margin-top:8px;align-items:flex-end;height:30px;">${sem.map(x => `<div title="${DIAS_CHECKLIST_LABEL[x.dd]} ${x.p}%" onclick="selecionarDiaChecklistGerencia('${x.dd}')" style="flex:1;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;"><div style="width:100%;height:${Math.max(3, x.p * 0.22)}px;background:${x.dd === d ? 'var(--navy)' : corP(x.p)};border-radius:3px;opacity:${DIAS_CHECKLIST.indexOf(x.dd) > hojeIdx ? .35 : 1};"></div><span style="font-size:9px;color:var(--ink-soft);">${DIAS_CHECKLIST_LABEL[x.dd]}</span></div>`).join('')}</div>
+    </div></div>`;
+  html += `<div class="day-pills">${DIAS_CHECKLIST.map(dd => `<div class="day-pill ${dd === d ? 'active' : ''}" onclick="selecionarDiaChecklistGerencia('${dd}')">${DIAS_CHECKLIST_LABEL[dd]}</div>`).join('')}</div>`;
+  html += `<div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap;">${[['todas', 'Todas'], ['porfazer', 'Por fazer'], ['minhas', 'As minhas']].map(([k, t]) => `<button class="econ-btn" style="margin:0;${cklFiltro === k ? 'background:var(--navy);color:#fff;' : ''}" onclick="cklFiltrar('${k}')">${t}</button>`).join('')}</div>`;
+  if(cklAbertos == null) cklAbertos = new Set(CKL_MOMENTOS.map(m => m[0]));
+  CKL_MOMENTOS.forEach(([m, titulo]) => {
+    let l = ap.filter(x => (x.inf.m || 'dia') === m);
+    if(cklFiltro === 'porfazer') l = l.filter(x => !cklFeito(x.i, d));
+    if(cklFiltro === 'minhas') l = l.filter(x => eu && cklResp[x.i] && impNorm(cklResp[x.i]).startsWith(impNorm(eu)));
+    const tot = ap.filter(x => (x.inf.m || 'dia') === m), f = tot.filter(x => cklFeito(x.i, d)).length;
+    if(!tot.length || (!l.length && cklFiltro !== 'todas')) return;
+    const aberto = cklAbertos.has(m);
+    html += `<div class="card" style="padding:4px 12px;margin-top:8px;">
+      <div onclick="cklToggle('${m}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;cursor:pointer;"><b style="font-size:13.5px;">${titulo}</b><span style="font-size:12px;font-weight:700;color:${f === tot.length ? '#1F7A33' : 'var(--ink-soft)'};">${f}/${tot.length} ${f === tot.length ? '✓' : ''} ${aberto ? '▾' : '▸'}</span></div>`;
+    if(aberto) l.forEach(x => {
+      const cell = checklistData[x.i] && checklistData[x.i][d], feito = cklFeito(x.i, d), at = atrasada(x), r = cklResp[x.i];
+      html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line);${at ? 'background:#FFF1EE;margin:0 -12px;padding-left:12px;padding-right:12px;' : ''}">
+        <input type="checkbox" ${feito ? 'checked' : ''} style="width:24px;height:24px;flex-shrink:0;accent-color:#1F7A33;margin-top:1px;" onchange="onCheckboxChecklistGerencia(${x.i}, this)">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;line-height:1.35;${feito ? 'color:var(--ink-soft);text-decoration:line-through;' : 'color:var(--ink);'}">${rpEsc(x.t)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:10.5px;">
+            ${x.inf.ate ? `<span style="color:${at ? '#B4231A' : 'var(--ink-soft)'};font-weight:${at ? 800 : 400};">⏰ até às ${x.inf.ate}h${at ? ' — atrasada' : ''}</span>` : ''}
+            ${x.inf.d ? `<span style="color:var(--ink-soft);">📅 ${x.inf.d.map(z => DIAS_CHECKLIST_LABEL[z]).join(' e ')}</span>` : ''}${x.inf.mes ? `<span style="color:var(--ink-soft);">📅 até dia ${x.inf.mes}</span>` : ''}
+            <span ${dona ? `onclick="cklResponsavel(${x.i})" style="cursor:pointer;background:var(--bg-soft,#F3F1EA);border-radius:10px;padding:1px 7px;color:var(--navy);"` : 'style="color:var(--navy);"'}>👤 ${r ? rpEsc(r) : (dona ? 'atribuir' : 'sem responsável')}</span>
+            ${feito ? `<span style="color:#1F7A33;">✓ ${rpEsc(cell.nome || cell.por || '')} · ${cell.quando || ''}</span>` : ''}
+            ${cell && cell.nota ? `<span style="color:#8A5A00;">📝 ${rpEsc(cell.nota)}</span>` : ''}
+            ${feito ? `<span onclick="cklNota(${x.i})" style="cursor:pointer;color:var(--ink-soft);">${cell && cell.nota ? '✏️' : '📝 nota'}</span>` : ''}
+          </div></div></div>`;
     });
     html += `</div>`;
-  }
-
-  html += `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${pct}% concluído esta semana · Semana ${semana}</div>`;
-
-  html += `<div class="day-pills">`;
-  DIAS_CHECKLIST.forEach(d=>{
-    html += `<div class="day-pill ${d===checklistDiaSelecionado?'active':''}" onclick="selecionarDiaChecklistGerencia('${d}')">${DIAS_CHECKLIST_LABEL[d]}</div>`;
   });
-  html += `</div>`;
-
-  const d = checklistDiaSelecionado;
-  const feitasDia = CHECKLIST_TAREFAS.filter((_,i)=> checklistData[i] && checklistData[i][d] && checklistData[i][d].feito).length;
-
-  html += `<div class="card" style="margin-top:10px;">
-    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">${feitasDia} de ${CHECKLIST_TAREFAS.length} tarefas validadas — ${DIAS_CHECKLIST_LABEL[d]}</div>`;
-  CHECKLIST_TAREFAS.forEach((tarefa, i)=>{
-    const cell = checklistData[i] && checklistData[i][d];
-    const feito = cell && cell.feito;
-    html += `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);">
-      <input type="checkbox" ${feito?'checked':''} style="width:20px;height:20px;flex-shrink:0;accent-color:var(--teal);" onchange="onCheckboxChecklistGerencia(${i}, this)">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:12.5px;color:var(--ink);line-height:1.35;">${i+1}. ${tarefa}</div>
-        ${feito ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">✓ ${cell.nome || cell.por} · ${cell.quando || ''}</div>` : ''}
-      </div>
-    </div>`;
-  });
-  html += `</div>`;
+  // quem validou
+  const porPessoa = {};
+  CHECKLIST_TAREFAS.forEach((_, i) => DIAS_CHECKLIST.forEach(dd => { const c = checklistData[i] && checklistData[i][dd]; if(c && c.feito){ const k = c.nome || c.por || '—'; porPessoa[k] = (porPessoa[k] || 0) + 1; } }));
+  const ranking = Object.entries(porPessoa).sort((a, b) => b[1] - a[1]);
+  if(ranking.length) html += `<details class="card" style="margin-top:8px;"><summary style="cursor:pointer;font-weight:700;">👥 Quem validou esta semana</summary>${ranking.map(([n, c]) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;"><span>${rpEsc(n)}</span><b style="color:var(--navy);">${c} tarefa${c !== 1 ? 's' : ''}</b></div>`).join('')}</details>`;
   wrap.innerHTML = html;
+}
+function cklFiltrar(k){ cklFiltro = k; renderChecklistGerencia(); }
+function cklToggle(m){ if(!cklAbertos) cklAbertos = new Set(); cklAbertos.has(m) ? cklAbertos.delete(m) : cklAbertos.add(m); renderChecklistGerencia(); }
+async function cklResponsavel(i){
+  if(!soDona('atribuir responsáveis')) return;
+  const atual = cklResp[i] || '';
+  const nome = prompt(`Responsável por:\n«${CHECKLIST_TAREFAS[i]}»\n\nEscreva o nome (ex.: Virgínia, Inês, Glória, Natália, Rita, Liliana). Deixe vazio para tirar.`, atual);
+  if(nome === null) return;
+  try{ await sb('loja_checklist_gerencia_resp?on_conflict=indice', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({indice: i, responsavel: nome.trim() || null, atualizado_em: new Date().toISOString()})}); showToast(); renderChecklistGerencia(); }
+  catch(e){ alert('Não consegui guardar o responsável.'); }
+}
+async function cklNota(i){
+  const d = checklistDiaSelecionado; const c = checklistData[i] && checklistData[i][d]; if(!c) return;
+  const nota = prompt('Nota sobre esta tarefa (o que se viu, o que ficou por resolver):', c.nota || '');
+  if(nota === null) return;
+  c.nota = nota.trim() || undefined;
+  try{ await sb(`loja_checklist_gerencia?id=eq.${checklistRowId}`, {method:'PATCH', body: JSON.stringify({dados: checklistData, atualizado_em: new Date().toISOString()})}); showToast(); renderChecklistGerencia(); }
+  catch(e){ alert('Não consegui guardar a nota.'); }
 }
 
 function selecionarDiaChecklistGerencia(dia){
