@@ -15752,7 +15752,10 @@ async function renderMelhoriaContinua(){
   const editavel = currentUser && souDona();
   let html = '';
   try{ html += await blocoAutomaticas(); }catch(e){ console.error('automáticas', e); }
-  try{ const RD = await reposDados(); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
+  try{ const RD = await reposDados();
+    try{ const M = mcMesIntervalo(); const ag = await impTodos(`loja_automaticas_agg?data=gte.${M.ini}&data=lte.${M.fim}&select=linhas`); const esp = (ag || []).reduce((a, x) => a + (Number(x.linhas) || 0), 0);
+      if(esp && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
+    html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
 
   content.innerHTML = html; mcOrganizarSeparadores(content);
 }
@@ -16141,9 +16144,11 @@ async function impAutomaticas(wb){
   if(!l.length) throw new Error('não encontrei linhas de reposição da loja ' + IMP_LOJA);
   const datas = [...new Set(l.map(x => x.data))].sort();
   await sb(`loja_automaticas_agg?data=gte.${datas[0]}&data=lte.${datas[datas.length - 1]}`, {method:'DELETE'});
-  for(let i = 0; i < l.length; i += 500) await sb('loja_automaticas_agg', {method:'POST', body: JSON.stringify(l.slice(i, i + 500))});
+  for(let i = 0; i < l.length; i += 500){ const bloco = JSON.stringify(l.slice(i, i + 500)); let ok = false, erro = null;
+    for(let t = 0; t < 4 && !ok; t++){ try{ await sb('loja_automaticas_agg', {method:'POST', body: bloco}); ok = true; }catch(e){ erro = e; await new Promise(r => setTimeout(r, 800 * (t + 1))); } }
+    if(!ok) throw new Error('não consegui gravar o resumo das listas (' + String(erro && erro.message || erro).slice(0, 80) + '). Carregue o ficheiro outra vez.'); }
   const tot = l.reduce((a, x) => a + x.linhas, 0);
-  try{ await reposGuardarLinhas(wb); }catch(e){ console.warn('linhas de reposição', e); }
+  await reposGuardarLinhas(wb);
   return `${tot.toLocaleString('pt-PT')} linhas de reposição de ${impDDMM(datas[0])} a ${impDDMM(datas[datas.length - 1])} (${datas.length} dias)`;
 }
 // mês escolhido na Melhoria Contínua: 'atual' ou 'anterior'
@@ -16242,7 +16247,12 @@ async function reposGuardarLinhas(wb){
   const l = reposLinhasExcel(wb); if(!l.length) return 0;
   const ds = l.map(x => x.data).sort();
   await sb(`loja_reposicao_linhas?data=gte.${ds[0]}&data=lte.${ds[ds.length - 1]}`, {method:'DELETE'});
-  for(let i = 0; i < l.length; i += 500) await sb('loja_reposicao_linhas', {method:'POST', body: JSON.stringify(l.slice(i, i + 500))});
+  // grava em blocos e tenta de novo se a rede falhar; se um bloco não gravar, avisa (antes ficava meio mês gravado sem aviso)
+  for(let i = 0; i < l.length; i += 400){
+    const bloco = JSON.stringify(l.slice(i, i + 400)); let ok = false, erro = null;
+    for(let t = 0; t < 4 && !ok; t++){ try{ await sb('loja_reposicao_linhas', {method:'POST', body: bloco}); ok = true; }catch(e){ erro = e; await new Promise(r => setTimeout(r, 800 * (t + 1))); } }
+    if(!ok) throw new Error(`só gravei ${i} de ${l.length} linhas de reposição (${String(erro && erro.message || erro).slice(0, 80)}). Carregue o ficheiro outra vez.`);
+  }
   return l.length;
 }
 async function reposDados(){
