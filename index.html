@@ -1858,7 +1858,7 @@ const MENU_GRUPOS = [
 let currentScreen = "dashboard";
 
 function entrarNaTelaInicial(){
-  try{ if(currentUser && currentUser.name) aplicarIconePessoal(currentUser.role === 'demo' ? '' : currentUser.name); }catch(e){}
+  try{ if(currentUser && currentUser.name) aplicarIconePessoal(''); }catch(e){}
   if(currentUser && currentUser.role === 'colaborador'){
     selectMenu('minha-area', 'A Minha Área');
   } else {
