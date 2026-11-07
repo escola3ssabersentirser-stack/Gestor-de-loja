@@ -1,12 +1,12 @@
 {
-  "name": "Gestor de Loja — Conceição Alves",
-  "short_name": "Conceição Alves",
+  "name": "Liderança 3S — Gestor de Loja",
+  "short_name": "Liderança 3S",
   "description": "Gestão da loja 747 Viana do Castelo – Portuzelo",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#1C4B3E",
+  "background_color": "#123629",
   "theme_color": "#1C4B3E",
   "lang": "pt-PT",
   "icons": [

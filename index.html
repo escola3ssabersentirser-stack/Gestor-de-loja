@@ -7,6 +7,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Liderança 3S">
 <meta name="theme-color" content="#1C4B3E">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1856,6 +1858,7 @@ const MENU_GRUPOS = [
 let currentScreen = "dashboard";
 
 function entrarNaTelaInicial(){
+  try{ if(currentUser && currentUser.name) aplicarIconePessoal(currentUser.role === 'demo' ? 'Liderança' : currentUser.name); }catch(e){}
   if(currentUser && currentUser.role === 'colaborador'){
     selectMenu('minha-area', 'A Minha Área');
   } else {
@@ -16168,6 +16171,52 @@ async function blocoRuturasReposicao(D){
         ${x.ss ? `<br>🚫 dado sem stock a ${dm(x.ss.data)} por ${rpEsc(nome(x.ss.numero))}` : ''}
       </div></div>`).join('') + `</details>`; });
   return h;
+}
+
+// ===== Logótipo 3S (Saber · Sentir · Ser) — desenhado em canvas; com o nome de quem entra no ícone da app =====
+function desenharLogo3S(cv, nome, maskable){
+  const S = cv.width, g = cv.getContext('2d'), k = maskable ? 0.8 : 1, c = S / 2;
+  const gr = g.createRadialGradient(c, c * 0.8, S * 0.05, c, c, S * 0.75); gr.addColorStop(0, '#2C7460'); gr.addColorStop(1, '#123629');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  g.save(); g.translate(c, c); g.scale(k, k); g.translate(-c, -c);
+  const R = S * 0.37;
+  // anel dourado
+  g.lineWidth = S * 0.014; g.strokeStyle = '#D9B25F'; g.beginPath(); g.arc(c, c, R, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = S * 0.004; g.strokeStyle = 'rgba(217,178,95,.45)'; g.beginPath(); g.arc(c, c, R - S * 0.03, 0, Math.PI * 2); g.stroke();
+  // três pilares: Saber, Sentir, Ser
+  [['#D9B25F', -90], ['#F6EFE0', 30], ['#9CC8A8', 150]].forEach(([cor, a]) => { const r = a * Math.PI / 180; g.fillStyle = cor; g.beginPath(); g.arc(c + R * Math.cos(r), c + R * Math.sin(r), S * 0.034, 0, Math.PI * 2); g.fill(); g.lineWidth = S * 0.008; g.strokeStyle = '#123629'; g.stroke(); });
+  // monograma 3S
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.font = `700 ${S * 0.30}px Georgia, 'Times New Roman', serif`;
+  const w3 = g.measureText('3').width, wS = g.measureText('S').width, x0 = c - (w3 + wS) / 2, yb = c + S * 0.08;
+  g.fillStyle = '#D9B25F'; g.textAlign = 'left'; g.fillText('3', x0, yb);
+  g.fillStyle = '#F6EFE0'; g.fillText('S', x0 + w3, yb);
+  // nome por baixo
+  const t = String(nome || 'LIDERANÇA').toUpperCase();
+  let fs = S * 0.058; g.font = `600 ${fs}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`;
+  const esp = t.length > 9 ? S * 0.004 : S * 0.012;
+  const larg = () => [...t].reduce((a, ch) => a + g.measureText(ch).width + esp, -esp);
+  while(larg() > R * 1.45 && fs > S * 0.03){ fs -= S * 0.002; g.font = `600 ${fs}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`; }
+  let x = c - larg() / 2; g.fillStyle = '#F6EFE0';
+  [...t].forEach(ch => { g.fillText(ch, x, c + S * 0.205); x += g.measureText(ch).width + esp; });
+  g.restore();
+  return cv;
+}
+function logo3SDataURL(nome, tam, maskable){ const cv = document.createElement('canvas'); cv.width = cv.height = tam || 512; return desenharLogo3S(cv, nome, maskable).toDataURL('image/png'); }
+// ícone pessoal: quem entra vê o seu nome no ícone; ao instalar ("Adicionar ao ecrã principal") fica com esse ícone
+function aplicarIconePessoal(nomeCompleto){
+  try{
+    const primeiro = String(nomeCompleto || '').trim().split(/\s+/)[0] || '';
+    const nome = primeiro ? primeiro : 'Liderança';
+    const i512 = logo3SDataURL(nome, 512), i192 = logo3SDataURL(nome, 192), im = logo3SDataURL(nome, 512, true), i180 = logo3SDataURL(nome, 180);
+    const set = (rel, href) => { let l = document.querySelector(`link[rel="${rel}"]`); if(!l){ l = document.createElement('link'); l.rel = rel; document.head.appendChild(l); } l.href = href; };
+    set('icon', logo3SDataURL(nome, 64)); set('apple-touch-icon', i180);
+    let mt = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(!mt){ mt = document.createElement('meta'); mt.name = 'apple-mobile-web-app-title'; document.head.appendChild(mt); } mt.content = '3S ' + nome;
+    const base = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, '');
+    const man = {name: 'Liderança 3S — ' + (primeiro || 'Gestor de Loja'), short_name: '3S ' + nome, start_url: base, scope: base, display: 'standalone', orientation: 'portrait', background_color: '#123629', theme_color: '#1C4B3E', lang: 'pt-PT',
+      icons: [{src: i192, sizes: '192x192', type: 'image/png', purpose: 'any'}, {src: i512, sizes: '512x512', type: 'image/png', purpose: 'any'}, {src: im, sizes: '512x512', type: 'image/png', purpose: 'maskable'}]};
+    set('manifest', 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(man)));
+  }catch(e){ console.warn('ícone pessoal', e); }
 }
 
 // ===================== RUTURAS DE STOCK TEÓRICO (KPI 01.09.01 — sortido da loja) =====================
