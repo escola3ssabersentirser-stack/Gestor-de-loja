@@ -16131,6 +16131,37 @@ async function reposDados(){
   const nome = n => { const x = nomes[n]; if(!x) return n ? 'Nº ' + n : '—'; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   return {l, nome};
 }
+const MC_DIAS_SEM = [['1','Seg'],['2','Ter'],['3','Qua'],['4','Qui'],['5','Sex'],['6','Sáb'],['0','Dom']];
+const MC_DIAS_NOME = {'1':'segunda','2':'terça','3':'quarta','4':'quinta','5':'sexta','6':'sábado','0':'domingo'};
+const mcAoDia = k => (k === '6' || k === '0' ? 'ao ' : 'à ') + MC_DIAS_NOME[k];
+function mcHoraSemHtml(dia){
+  const D = window.__mcHoraSem; if(!D) return '';
+  const dsem = d => String(new Date(d + 'T12:00:00').getDay());
+  const dias = dia === 'todos' ? D.datas : D.datas.filter(d => dsem(d) === dia);
+  const val = (d, hh) => D.cel[d + '|' + hh] || 0;
+  let h = `<h3 style="margin-bottom:2px;">Automática: artigos repostos por hora</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">${D.mes} · escolha o dia da semana</div>`;
+  h += `<div style="display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;margin-bottom:10px;">${[['todos','Todos'], ...MC_DIAS_SEM].map(([k, t]) => { const n = k === 'todos' ? D.datas.length : D.datas.filter(d => dsem(d) === k).length;
+    return `<button type="button" onclick="document.getElementById('mc-hora-sem').innerHTML=mcHoraSemHtml('${k}')" style="border:1px solid ${dia === k ? 'var(--navy)' : 'var(--line)'};background:${dia === k ? 'var(--navy)' : '#fff'};color:${dia === k ? '#fff' : 'var(--navy)'};border-radius:9px;padding:6px 0;font-size:11px;font-weight:700;cursor:pointer;${n ? '' : 'opacity:.4;'}">${t}</button>`; }).join('')}</div>`;
+  if(!dias.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">Não há dias destes no mês.</div>`;
+  const linhas = D.H.map(hh => { const tot = dias.reduce((a, d) => a + val(d, hh), 0); return {hh, med: tot / dias.length, falta: dias.filter(d => !val(d, hh)).length}; });
+  const mx = Math.max(...linhas.map(x => x.med), 1), med = linhas.reduce((a, x) => a + x.med, 0) / linhas.length;
+  const fracas = [...linhas].sort((a, b) => a.med - b.med).slice(0, 3).map(x => x.hh);
+  const totDia = linhas.reduce((a, x) => a + x.med, 0);
+  h += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 10px;border-radius:10px;background:#EEF3EF;margin-bottom:8px;"><span style="font-size:12px;">${dia === 'todos' ? 'Média por dia' : 'Média ' + mcAoDia(dia)} <span style="color:var(--ink-soft);">(${dias.length} dia${dias.length > 1 ? 's' : ''})</span></span><b style="font-size:18px;color:var(--navy);">${Math.round(totDia)} artigos</b></div>`;
+  h += linhas.map(x => { const fr = fracas.includes(x.hh); return `<div style="display:grid;grid-template-columns:62px minmax(0,1fr) 52px;gap:8px;align-items:center;padding:3px 0;font-size:12.5px;">
+    <span style="font-weight:700;color:${fr ? 'var(--red)' : 'var(--ink)'};">${x.hh}h–${x.hh + 1}h</span>
+    <div style="height:14px;border-radius:7px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.med / mx * 100).toFixed(1)}%;background:${fr ? 'var(--red)' : '#1F7A33'};border-radius:7px;"></div></div>
+    <b style="text-align:right;color:${fr ? 'var(--red)' : 'var(--navy)'};font-size:14px;">${x.med < 10 ? x.med.toLocaleString('pt-PT', {maximumFractionDigits:1}) : Math.round(x.med)}</b></div>${x.falta ? `<div style="font-size:10.5px;color:var(--red);margin:-2px 0 2px 70px;">sem automáticas em ${x.falta} de ${dias.length} dia${dias.length > 1 ? 's' : ''}</div>` : ''}`; }).join('');
+  h += `<div style="font-size:11.5px;margin-top:8px;padding:7px 10px;border-radius:10px;background:#FBEAEA;">🔻 Horas mais fracas${dia === 'todos' ? '' : ' ' + mcAoDia(dia)}: <b style="color:var(--red);">${fracas.sort((a, b) => a - b).map(x => x + 'h').join(', ')}</b></div>`;
+  // resumo por dia da semana
+  const porSem = MC_DIAS_SEM.map(([k, t]) => { const ds = D.datas.filter(d => dsem(d) === k); const tot = ds.reduce((a, d) => a + D.H.reduce((b, hh) => b + val(d, hh), 0), 0); return {k, t, n: ds.length, med: ds.length ? tot / ds.length : 0}; }).filter(x => x.n);
+  const mxS = Math.max(...porSem.map(x => x.med), 1), piorS = [...porSem].sort((a, b) => a.med - b.med)[0], melhorS = [...porSem].sort((a, b) => b.med - a.med)[0];
+  h += `<div style="font-weight:800;font-size:13px;color:var(--navy);margin:14px 0 4px;">Por dia da semana <span style="font-weight:400;font-size:11px;color:var(--ink-soft);">(média de artigos por dia)</span></div>` + porSem.map(x => `<div onclick="document.getElementById('mc-hora-sem').innerHTML=mcHoraSemHtml('${x.k}')" style="cursor:pointer;display:grid;grid-template-columns:62px minmax(0,1fr) 52px;gap:8px;align-items:center;padding:3px 0;font-size:12.5px;">
+    <span style="font-weight:700;">${x.t}</span><div style="height:14px;border-radius:7px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.med / mxS * 100).toFixed(1)}%;background:${x === piorS ? 'var(--red)' : x === melhorS ? '#1F7A33' : '#2F6DB5'};border-radius:7px;"></div></div>
+    <b style="text-align:right;font-size:14px;color:${x === piorS ? 'var(--red)' : 'var(--navy)'};">${Math.round(x.med)}</b></div>`).join('');
+  h += `<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Melhor dia: <b>${MC_DIAS_NOME[melhorS.k]}</b> · pior dia: <b style="color:var(--red);">${MC_DIAS_NOME[piorS.k]}</b>. Toque num dia para ver as horas desse dia.</div>`;
+  return h;
+}
 // quadro visual: automáticas hora a hora (9h–22h), horas mais fracas, quem não faz em que horas; massiva com paletes por colaborador; visível
 const MC_CORES = ['#1F7A33','#2F6DB5','#C77F12','#8E44AD','#B4231A','#16A085','#D35400','#2C3E50','#7F8C8D','#E84393','#6C5CE7','#00B894','#FDCB6E','#636E72','#A0522D','#0984E3'];
 async function blocoReposicaoDia(D){
@@ -16150,13 +16181,9 @@ async function blocoReposicaoDia(D){
     <div class="rchart" style="height:90px;">${porDia.map(x => `<div class="bars"><div class="bar" title="${impDDMM(x.d)}: ${x.n} artigos" style="height:${(x.n / mxD * 100).toFixed(1)}%;background:${x.semHoras ? '#C77F12' : '#1F7A33'};"></div></div>`).join('')}</div>
     <div class="rchart-labels">${porDia.map(x => `<span style="font-size:8px;">${x.d.slice(8, 10)}</span>`).join('')}</div>
     <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Média: <b>${Math.round(porDia.reduce((a, x) => a + x.n, 0) / porDia.length)}</b> artigos por dia · verde = todas as horas feitas · laranja = faltou alguma hora</div></div>`;
-  // total de artigos repostos na automática em cada hora (9h–22h)
-  { const tH = H.map(hh => ({hh, n: datas.reduce((a, d) => a + (cel[d + '|' + hh] ? cel[d + '|' + hh].size : 0), 0)}));
-    const mx = Math.max(...tH.map(x => x.n), 1), tot = tH.reduce((a, x) => a + x.n, 0), med = tot / H.length;
-    h += `<div class="card"><h3 style="margin-bottom:2px;">Artigos repostos na automática por hora</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Das 9h às 22h · total de ${M.nome} (${datas.length} dias) e média por dia</div>
-      <div style="display:grid;grid-template-columns:repeat(${H.length},minmax(0,1fr));gap:3px;align-items:end;height:130px;">${tH.map(x => `<div style="display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;min-width:0;"><span style="font-size:9.5px;font-weight:800;color:${x.n < med * 0.7 ? 'var(--red)' : 'var(--navy)'};">${x.n}</span><div title="${x.hh}h–${x.hh + 1}h: ${x.n} artigos" style="width:100%;height:${(x.n / mx * 100).toFixed(1)}%;min-height:2px;border-radius:4px 4px 0 0;background:${x.n < med * 0.7 ? 'var(--red)' : '#1F7A33'};"></div></div>`).join('')}</div>
-      <div style="display:grid;grid-template-columns:repeat(${H.length},minmax(0,1fr));gap:3px;margin-top:3px;">${tH.map(x => `<div style="text-align:center;font-size:9.5px;line-height:1.2;"><b>${x.hh}h</b><br><span style="color:var(--ink-soft);">${Math.round(x.n / datas.length)}/d</span></div>`).join('')}</div>
-      <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Total: <b>${tot.toLocaleString('pt-PT')}</b> artigos · vermelho = hora abaixo de 70% da média (${Math.round(med)} por hora no mês)</div></div>`; }
+  // automática por hora (9h–22h) e por dia da semana — fácil de ler, com escolha do dia
+  window.__mcHoraSem = {H, datas, cel: Object.fromEntries(Object.entries(cel).map(([k, v]) => [k, v.size])), mes: M.nome};
+  h += `<div class="card" id="mc-hora-sem">${mcHoraSemHtml('todos')}</div>`;
   // grelha dia × hora
   const cumpre = porDia.filter(x => !x.semHoras).length;
   h += `<div class="card"><h3 style="margin-bottom:4px;">Hora a hora (9h–22h)</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Cada quadrado = artigos repostos nessa hora. <span style="background:#FBE3DE;padding:0 5px;border-radius:3px;">rosa</span> = hora sem automáticas. Cumprido em <b style="color:${cumpre === datas.length ? 'var(--green)' : 'var(--red)'};">${cumpre} de ${datas.length} dias</b>.</div>
