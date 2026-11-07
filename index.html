@@ -16131,6 +16131,18 @@ async function reposDados(){
   const nome = n => { const x = nomes[n]; if(!x) return n ? 'Nº ' + n : '—'; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   return {l, nome};
 }
+const MC_SEM_CURTO = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'], MC_SEM_LETRA = ['D','S','T','Q','Q','S','S'];
+const mcDow = d => new Date(d + 'T12:00:00').getDay();
+const mcDiaCurto = d => MC_SEM_CURTO[mcDow(d)] + ' ' + impDDMM(d);
+function mcSemanaDe(d){ const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); const ini = impISO(x); x.setDate(x.getDate() + 6); return {ini, fim: impISO(x)}; }
+const mcSemanaTxt = d => { const w = mcSemanaDe(d); return `semana de ${impDDMM(w.ini)} a ${impDDMM(w.fim)}`; };
+// etiquetas por baixo dos gráficos de dias: número do dia + letra do dia da semana (domingo a vermelho) e traço no início de cada semana
+const mcEtiquetasDias = ds => ds.map(d => { const w = mcDow(d); return `<span style="flex:1;min-width:0;font-size:8px;text-align:center;line-height:1.15;color:${w === 0 ? 'var(--red)' : 'var(--ink-soft)'};${w === 1 ? 'border-left:1px solid #9AA5B1;' : ''}">${d.slice(8, 10)}<br><b>${MC_SEM_LETRA[w]}</b></span>`; }).join('');
+function mcTabelaSemanas(ds, valor, rotulo){
+  const sem = {}; ds.forEach(d => { const w = mcSemanaDe(d); const k = w.ini; (sem[k] = sem[k] || {w, dias: [], v: 0}); sem[k].dias.push(d); sem[k].v += valor(d); });
+  const l = Object.values(sem).sort((a, b) => a.w.ini.localeCompare(b.w.ini)), mx = Math.max(...l.map(x => x.v / x.dias.length), 1);
+  return `<div style="font-weight:800;font-size:12px;color:var(--navy);margin:10px 0 2px;">Por semana (segunda a domingo)</div>` + l.map(x => `<div style="display:grid;grid-template-columns:118px minmax(0,1fr) 64px;gap:8px;align-items:center;padding:3px 0;border-top:1px solid var(--line);font-size:11.5px;"><span><b>${impDDMM(x.w.ini)} a ${impDDMM(x.w.fim)}</b><div style="font-size:10px;color:var(--ink-soft);">${x.dias.length} dia${x.dias.length > 1 ? 's' : ''} com dados</div></span><div style="height:10px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.v / x.dias.length / mx * 100).toFixed(1)}%;background:#2F6DB5;"></div></div><span style="text-align:right;"><b>${Math.round(x.v / x.dias.length)}</b>/dia<div style="font-size:10px;color:var(--ink-soft);">${Math.round(x.v)} ${rotulo}</div></span></div>`).join('');
+}
 const MC_DIAS_SEM = [['1','Seg'],['2','Ter'],['3','Qua'],['4','Qui'],['5','Sex'],['6','Sáb'],['0','Dom']];
 const MC_DIAS_NOME = {'1':'segunda','2':'terça','3':'quarta','4':'quinta','5':'sexta','6':'sábado','0':'domingo'};
 const mcAoDia = k => (k === '6' || k === '0' ? 'ao ' : 'à ') + MC_DIAS_NOME[k];
@@ -16148,6 +16160,7 @@ function mcHoraSemHtml(dia){
   const fracas = [...linhas].sort((a, b) => a.med - b.med).slice(0, 3).map(x => x.hh);
   const totDia = linhas.reduce((a, x) => a + x.med, 0);
   h += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 10px;border-radius:10px;background:#EEF3EF;margin-bottom:8px;"><span style="font-size:12px;">${dia === 'todos' ? 'Média por dia' : 'Média ' + mcAoDia(dia)} <span style="color:var(--ink-soft);">(${dias.length} dia${dias.length > 1 ? 's' : ''})</span></span><b style="font-size:18px;color:var(--navy);">${Math.round(totDia)} artigos</b></div>`;
+  if(dia !== 'todos') h += `<div style="font-size:11px;color:var(--ink-soft);margin:-4px 0 8px;">Dias: ${dias.map(d => impDDMM(d)).join(', ')}</div>`;
   h += linhas.map(x => { const fr = fracas.includes(x.hh); return `<div style="display:grid;grid-template-columns:62px minmax(0,1fr) 52px;gap:8px;align-items:center;padding:3px 0;font-size:12.5px;">
     <span style="font-weight:700;color:${fr ? 'var(--red)' : 'var(--ink)'};">${x.hh}h–${x.hh + 1}h</span>
     <div style="height:14px;border-radius:7px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.med / mx * 100).toFixed(1)}%;background:${fr ? 'var(--red)' : '#1F7A33'};border-radius:7px;"></div></div>
@@ -16179,8 +16192,9 @@ async function blocoReposicaoDia(D){
   const corCel = n => !n ? '#FBE3DE' : n < 5 ? '#D8EBDC' : n < 15 ? '#9FCFAA' : n < 30 ? '#4FA463' : '#1F7A33';
   h += `<div class="card"><h3 style="margin-bottom:6px;">Artigos repostos por dia</h3>
     <div class="rchart" style="height:90px;">${porDia.map(x => `<div class="bars"><div class="bar" title="${impDDMM(x.d)}: ${x.n} artigos" style="height:${(x.n / mxD * 100).toFixed(1)}%;background:${x.semHoras ? '#C77F12' : '#1F7A33'};"></div></div>`).join('')}</div>
-    <div class="rchart-labels">${porDia.map(x => `<span style="font-size:8px;">${x.d.slice(8, 10)}</span>`).join('')}</div>
-    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Média: <b>${Math.round(porDia.reduce((a, x) => a + x.n, 0) / porDia.length)}</b> artigos por dia · verde = todas as horas feitas · laranja = faltou alguma hora</div></div>`;
+    <div style="display:flex;gap:2px;margin-top:2px;">${mcEtiquetasDias(porDia.map(x => x.d))}</div>
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Média: <b>${Math.round(porDia.reduce((a, x) => a + x.n, 0) / porDia.length)}</b> artigos por dia · verde = todas as horas feitas · laranja = faltou alguma hora · <b style="color:var(--red);">D</b> = domingo</div>
+    ${mcTabelaSemanas(porDia.map(x => x.d), d => (porDia.find(x => x.d === d) || {}).n || 0, 'artigos')}</div>`;
   // automática por hora (9h–22h) e por dia da semana — fácil de ler, com escolha do dia
   window.__mcHoraSem = {H, datas, cel: Object.fromEntries(Object.entries(cel).map(([k, v]) => [k, v.size])), mes: M.nome};
   h += `<div class="card" id="mc-hora-sem">${mcHoraSemHtml('todos')}</div>`;
@@ -16188,7 +16202,7 @@ async function blocoReposicaoDia(D){
   const cumpre = porDia.filter(x => !x.semHoras).length;
   h += `<div class="card"><h3 style="margin-bottom:4px;">Hora a hora (9h–22h)</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Cada quadrado = artigos repostos nessa hora. <span style="background:#FBE3DE;padding:0 5px;border-radius:3px;">rosa</span> = hora sem automáticas. Cumprido em <b style="color:${cumpre === datas.length ? 'var(--green)' : 'var(--red)'};">${cumpre} de ${datas.length} dias</b>.</div>
     <div style="overflow-x:auto;"><table style="border-collapse:separate;border-spacing:2px;font-size:10px;"><tr><th></th>${H.map(hh => `<th style="font-weight:600;color:var(--ink-soft);width:20px;">${hh}</th>`).join('')}<th style="color:var(--ink-soft);">falt.</th></tr>
-    ${[...porDia].reverse().map(x => `<tr><td style="white-space:nowrap;color:var(--ink-soft);padding-right:3px;">${impDDMM(x.d)}</td>${H.map(hh => { const n = cel[x.d + '|' + hh] ? cel[x.d + '|' + hh].size : 0; return `<td title="${impDDMM(x.d)} ${hh}h: ${n} artigos" style="width:20px;height:18px;text-align:center;border-radius:3px;background:${corCel(n)};color:${n >= 15 ? '#fff' : '#1d2a22'};">${n || ''}</td>`; }).join('')}<td style="text-align:center;font-weight:800;color:${x.semHoras ? 'var(--red)' : 'var(--green)'};">${x.semHoras || '✓'}</td></tr>`).join('')}
+    ${[...porDia].reverse().map((x, i, arr) => `${i === 0 || mcSemanaDe(x.d).ini !== mcSemanaDe(arr[i - 1].d).ini ? `<tr><td colspan="${H.length + 2}" style="padding:6px 0 1px;font-size:10.5px;font-weight:800;color:var(--navy);">📅 ${mcSemanaTxt(x.d)}</td></tr>` : ''}<tr><td style="white-space:nowrap;color:${mcDow(x.d) === 0 ? 'var(--red)' : 'var(--ink-soft)'};${mcDow(x.d) === 0 ? 'font-weight:800;' : ''}padding-right:3px;">${mcDiaCurto(x.d)}</td>${H.map(hh => { const n = cel[x.d + '|' + hh] ? cel[x.d + '|' + hh].size : 0; return `<td title="${impDDMM(x.d)} ${hh}h: ${n} artigos" style="width:20px;height:18px;text-align:center;border-radius:3px;background:${corCel(n)};color:${n >= 15 ? '#fff' : '#1d2a22'};">${n || ''}</td>`; }).join('')}<td style="text-align:center;font-weight:800;color:${x.semHoras ? 'var(--red)' : 'var(--green)'};">${x.semHoras || '✓'}</td></tr>`).join('')}
     </table></div></div>`;
   // horas mais fracas
   const mediaHora = H.map(hh => ({hh, n: datas.reduce((a, d) => a + (cel[d + '|' + hh] ? cel[d + '|' + hh].size : 0), 0) / datas.length, falta: datas.filter(d => !cel[d + '|' + hh]).length}));
@@ -16217,7 +16231,8 @@ async function blocoReposicaoDia(D){
     const dias = datas.map(d => { const ps = lista.filter(p => p.d === d); const by = {}; ps.forEach(p => { by[p.quem] = (by[p.quem] || 0) + 1; }); return {d, n: ps.length, by}; });
     const mx = Math.max(...dias.map(x => x.n), 1);
     h += `<div class="card"><div style="display:flex;align-items:flex-end;gap:2px;height:130px;">${dias.map(x => `<div title="${impDDMM(x.d)}: ${x.n} paletes" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;"><div style="font-size:8.5px;text-align:center;color:var(--ink-soft);">${x.n || ''}</div>${Object.entries(x.by).map(([k, n]) => `<div title="${rpEsc(nome(k))}: ${n}" style="height:${(n / mx * 112).toFixed(1)}px;background:${cor[k]};"></div>`).join('')}</div>`).join('')}</div>
-      <div style="display:flex;gap:2px;">${dias.map(x => `<span style="flex:1;font-size:8px;text-align:center;color:var(--ink-soft);">${x.d.slice(8, 10)}</span>`).join('')}</div>
+      <div style="display:flex;gap:2px;">${mcEtiquetasDias(dias.map(x => x.d))}</div>
+      ${mcTabelaSemanas(dias.map(x => x.d), d => (dias.find(x => x.d === d) || {}).n || 0, 'paletes')}
       <div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:8px;">${pess.map(([k, o]) => `<span style="font-size:11.5px;display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:${cor[k]};"></span>${rpEsc(nome(k))}</span>`).join('')}</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:10px;"><tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;">Colaborador</th><th>Paletes</th><th>Artigos</th><th>Dias</th><th>Pal./dia</th></tr>
       ${pess.map(([k, o]) => `<tr style="border-top:1px solid var(--line);"><td style="padding:4px 0;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${cor[k]};margin-right:5px;"></span>${rpEsc(nome(k))}</td><td style="text-align:center;font-weight:800;">${o.pal}</td><td style="text-align:center;">${o.art}</td><td style="text-align:center;">${o.dias.size}</td><td style="text-align:center;">${(o.pal / o.dias.size).toLocaleString('pt-PT', {maximumFractionDigits:1})}</td></tr>`).join('')}
