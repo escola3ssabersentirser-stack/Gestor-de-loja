@@ -1858,7 +1858,7 @@ const MENU_GRUPOS = [
 let currentScreen = "dashboard";
 
 function entrarNaTelaInicial(){
-  try{ if(currentUser && currentUser.name) aplicarIconePessoal(currentUser.role === 'demo' ? 'Liderança' : currentUser.name); }catch(e){}
+  try{ if(currentUser && currentUser.name) aplicarIconePessoal(currentUser.role === 'demo' ? '' : currentUser.name); }catch(e){}
   if(currentUser && currentUser.role === 'colaborador'){
     selectMenu('minha-area', 'A Minha Área');
   } else {
@@ -16186,19 +16186,21 @@ function desenharLogo3S(cv, nome, maskable){
   // três pilares: Saber, Sentir, Ser
   [['#D9B25F', -90], ['#F6EFE0', 30], ['#9CC8A8', 150]].forEach(([cor, a]) => { const r = a * Math.PI / 180; g.fillStyle = cor; g.beginPath(); g.arc(c + R * Math.cos(r), c + R * Math.sin(r), S * 0.034, 0, Math.PI * 2); g.fill(); g.lineWidth = S * 0.008; g.strokeStyle = '#123629'; g.stroke(); });
   // monograma 3S
-  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-  g.font = `700 ${S * 0.30}px Georgia, 'Times New Roman', serif`;
-  const w3 = g.measureText('3').width, wS = g.measureText('S').width, x0 = c - (w3 + wS) / 2, yb = c + S * 0.08;
-  g.fillStyle = '#D9B25F'; g.textAlign = 'left'; g.fillText('3', x0, yb);
+  g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  g.font = `700 ${S * 0.27}px Georgia, 'Times New Roman', serif`;
+  const w3 = g.measureText('3').width, wS = g.measureText('S').width, x0 = c - (w3 + wS) / 2, yb = c + S * 0.04;
+  g.fillStyle = '#D9B25F'; g.fillText('3', x0, yb);
   g.fillStyle = '#F6EFE0'; g.fillText('S', x0 + w3, yb);
-  // nome por baixo
-  const t = String(nome || 'LIDERANÇA').toUpperCase();
-  let fs = S * 0.058; g.font = `600 ${fs}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`;
-  const esp = t.length > 9 ? S * 0.004 : S * 0.012;
-  const larg = () => [...t].reduce((a, ch) => a + g.measureText(ch).width + esp, -esp);
-  while(larg() > R * 1.45 && fs > S * 0.03){ fs -= S * 0.002; g.font = `600 ${fs}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`; }
-  let x = c - larg() / 2; g.fillStyle = '#F6EFE0';
-  [...t].forEach(ch => { g.fillText(ch, x, c + S * 0.205); x += g.measureText(ch).width + esp; });
+  // "LIDERANÇA 3S" espaçado
+  const esp = S * 0.010; g.font = `700 ${S * 0.05}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`;
+  const t1 = 'LIDERANÇA 3S'; const l1 = [...t1].reduce((a, ch) => a + g.measureText(ch).width + esp, -esp);
+  let x = c - l1 / 2; g.fillStyle = '#D9B25F'; [...t1].forEach(ch => { g.fillText(ch, x, c + S * 0.135); x += g.measureText(ch).width + esp; });
+  // linha fina e nome (assinatura)
+  g.strokeStyle = 'rgba(217,178,95,.6)'; g.lineWidth = S * 0.003; g.beginPath(); g.moveTo(c - S * 0.09, c + S * 0.165); g.lineTo(c + S * 0.09, c + S * 0.165); g.stroke();
+  const t2 = String(nome || 'Conceição Alves');
+  let fs = S * 0.062; g.font = `italic 400 ${fs}px Georgia, 'Times New Roman', serif`;
+  while(g.measureText(t2).width > R * 1.5 && fs > S * 0.035){ fs -= S * 0.002; g.font = `italic 400 ${fs}px Georgia, 'Times New Roman', serif`; }
+  g.textAlign = 'center'; g.fillStyle = '#F6EFE0'; g.fillText(t2, c, c + S * 0.225);
   g.restore();
   return cv;
 }
@@ -16207,13 +16209,13 @@ function logo3SDataURL(nome, tam, maskable){ const cv = document.createElement('
 function aplicarIconePessoal(nomeCompleto){
   try{
     const ps = String(nomeCompleto || '').trim().split(/\s+/); const primeiro = (/^(maria|ana|jos[eé]|jo[aã]o)$/i.test(ps[0] || '') && ps[1] && !/^(de|da|do|dos|das)$/i.test(ps[1])) ? ps[1] : (ps[0] || '');
-    const nome = primeiro ? primeiro : 'Liderança';
+    const ultimo = ps.length > 1 ? ps[ps.length - 1] : ''; const nome = primeiro ? (primeiro + (ultimo && ultimo !== primeiro ? ' ' + ultimo : '')) : 'Conceição Alves';
     const i512 = logo3SDataURL(nome, 512), i192 = logo3SDataURL(nome, 192), im = logo3SDataURL(nome, 512, true), i180 = logo3SDataURL(nome, 180);
     const set = (rel, href) => { let l = document.querySelector(`link[rel="${rel}"]`); if(!l){ l = document.createElement('link'); l.rel = rel; document.head.appendChild(l); } l.href = href; };
     set('icon', logo3SDataURL(nome, 64)); set('apple-touch-icon', i180);
-    let mt = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(!mt){ mt = document.createElement('meta'); mt.name = 'apple-mobile-web-app-title'; document.head.appendChild(mt); } mt.content = '3S ' + nome;
+    let mt = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(!mt){ mt = document.createElement('meta'); mt.name = 'apple-mobile-web-app-title'; document.head.appendChild(mt); } mt.content = 'Liderança 3S';
     const base = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, '');
-    const man = {name: 'Liderança 3S — ' + (primeiro || 'Gestor de Loja'), short_name: '3S ' + nome, start_url: base, scope: base, display: 'standalone', orientation: 'portrait', background_color: '#123629', theme_color: '#1C4B3E', lang: 'pt-PT',
+    const man = {name: 'Liderança 3S — ' + (primeiro || 'Gestor de Loja'), short_name: 'Liderança 3S', start_url: base, scope: base, display: 'standalone', orientation: 'portrait', background_color: '#123629', theme_color: '#1C4B3E', lang: 'pt-PT',
       icons: [{src: i192, sizes: '192x192', type: 'image/png', purpose: 'any'}, {src: i512, sizes: '512x512', type: 'image/png', purpose: 'any'}, {src: im, sizes: '512x512', type: 'image/png', purpose: 'maskable'}]};
     set('manifest', 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(man)));
   }catch(e){ console.warn('ícone pessoal', e); }
