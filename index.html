@@ -6805,7 +6805,7 @@ const CHECKLIST_TAREFAS = [
 "Rotinas das secções realizadas até às 8h e enviar fotos",
 "Volta à loja e verificar câmaras",
 "Listas de reposição feitas até às 10h da manhã",
-"Garantir automáticas de 2 em 2 horas",
+"Garantir automáticas de hora a hora (9h–22h)",
 "Produtos sem stock analisados (verificar sem stock da padaria e take away)",
 "Garantir a 2.ª igualização e tratamento de roturas",
 "Frentes organizadas e alinhadas do livre serviço (alturas alinhadas)",
@@ -11221,27 +11221,16 @@ async function blocoAutomaticas(){
   const mesNome = impTitulo(IMP_MESES[Number(datas[0].slice(5, 7)) - 1]);
   const porTipo = {}; rows.forEach(r => { porTipo[r.tipo] = (porTipo[r.tipo] || 0) + r.linhas; });
   const tile = (v, t, cor) => `<div style="flex:1;min-width:100px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:19px;font-weight:800;color:${cor || 'var(--ink)'};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
-  // de 2 em 2 horas: entre as 8h e as 22h, horas seguidas sem automáticas
+  // hora a hora: entre as 9h e as 22h, todas as horas com automáticas
   const auto = rows.filter(r => /autom/i.test(r.tipo));
-  const falhas = datas.map(d => { const hs = [...new Set(auto.filter(r => r.data === d).map(r => r.hora))].filter(x => x >= 8 && x <= 22).sort((a, b) => a - b);
-    const marcos = [8, ...hs, 22]; let pior = 0, ini = null; for(let i = 1; i < marcos.length; i++){ const g = marcos[i] - marcos[i - 1]; if(g > pior){ pior = g; ini = marcos[i - 1]; } }
-    return {d, pior, ini, horas: hs.length}; });
-  const cumpre = falhas.filter(f => f.pior <= 2).length;
+  const falhas = datas.map(d => { const hs = new Set(auto.filter(r => r.data === d).map(r => r.hora)); const sem = []; for(let hh = 9; hh <= 21; hh++) if(!hs.has(hh)) sem.push(hh); return {d, sem}; });
+  const cumpre = falhas.filter(f => !f.sem.length).length;
   h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${mesNome} · ${impDDMM(datas[0])} a ${impDDMM(datas[nD - 1])} · ${nD} dias</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;">
       ${tile(tot.toLocaleString('pt-PT'), 'linhas de reposição no mês')}${tile(Math.round(tot / nD).toLocaleString('pt-PT'), 'por dia (média)')}
-      ${tile(Math.round(cumpre / nD * 100) + '%', `dias com automáticas de 2 em 2 horas (${cumpre}/${nD})`, cumpre === nD ? 'var(--green)' : cumpre / nD >= .8 ? 'var(--amber)' : 'var(--red)')}
+      ${tile(Math.round(cumpre / nD * 100) + '%', `dias com automáticas hora a hora, 9h–22h (${cumpre}/${nD})`, cumpre === nD ? 'var(--green)' : cumpre / nD >= .8 ? 'var(--amber)' : 'var(--red)')}
       ${tile(soma(rows, 'rutura').toLocaleString('pt-PT'), 'linhas em rutura', 'var(--red)')}${tile(soma(rows, 'sem_stock').toLocaleString('pt-PT'), 'sem stock', 'var(--amber)')}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${Object.entries(porTipo).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<span style="background:var(--bg-soft,#F6F4EF);border-radius:8px;padding:4px 9px;font-size:12px;"><b>${rpEsc(t)}</b> ${Math.round(n / tot * 100)}% · ${n.toLocaleString('pt-PT')}</span>`).join('')}</div></div>`;
-  // por dia
-  const porDia = datas.map(d => ({d, n: soma(rows.filter(r => r.data === d), 'linhas')})), mx = Math.max(...porDia.map(x => x.n), 1);
-  h += `<div class="card"><h3 style="margin-bottom:8px;">Por dia</h3><div class="rchart" style="height:90px;">${porDia.map(x => { const f = falhas.find(z => z.d === x.d); return `<div class="bars"><div class="bar" title="${impDDMM(x.d)}: ${x.n}" style="height:${(x.n / mx * 100).toFixed(1)}%;background:${f && f.pior > 2 ? 'var(--red)' : 'var(--green)'};"></div></div>`; }).join('')}</div>
-    <div class="rchart-labels">${porDia.map(x => `<span style="font-size:8px;">${x.d.slice(8, 10)}</span>`).join('')}</div><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">Verde = automáticas de 2 em 2 horas cumpridas (8h–22h) · vermelho = houve mais de 2 horas sem automáticas.</div></div>`;
-  const maus = falhas.filter(f => f.pior > 2).sort((a, b) => b.pior - a.pior);
-  if(maus.length) h += `<details class="card"><summary style="cursor:pointer;font-weight:700;color:var(--red);">⏰ Dias com mais de 2 horas sem automáticas (${maus.length})</summary>${maus.map(f => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;"><span>${new Date(f.d + 'T12:00:00').toLocaleDateString('pt-PT', {weekday:'short', day:'2-digit', month:'2-digit'})}</span><b style="color:var(--red);">${f.pior} h sem automáticas a partir das ${f.ini}h</b></div>`).join('')}</details>`;
-  // por hora
-  const porHora = Array.from({length: 18}, (_, i) => i + 6).map(hh => ({hh, n: soma(rows.filter(r => r.hora === hh), 'linhas') / nD})), mxH = Math.max(...porHora.map(x => x.n), 1);
-  h += `<div class="card"><h3 style="margin-bottom:8px;">Por hora (média por dia)</h3><div class="rchart" style="height:80px;">${porHora.map(x => `<div class="bars"><div class="bar" title="${x.hh}h: ${Math.round(x.n)}" style="height:${(x.n / mxH * 100).toFixed(1)}%;background:var(--navy);"></div></div>`).join('')}</div><div class="rchart-labels">${porHora.map(x => `<span style="font-size:8px;">${x.hh}</span>`).join('')}</div></div>`;
   // por pessoa
   const pp = {}; rows.forEach(r => { const k = r.numero || '—'; pp[k] = (pp[k] || 0) + r.linhas; });
   const pessoas = Object.entries(pp).sort((a, b) => b[1] - a[1]), mxP = pessoas[0] ? pessoas[0][1] : 1;
@@ -11289,29 +11278,71 @@ async function reposDados(){
   const nome = n => { const x = nomes[n]; if(!x) return n ? 'Nº ' + n : '—'; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   return {l, nome};
 }
-// quem e quanto por dia: automática (artigos repostos), massiva (paletes, artigos, quem), visível (artigos picados, quem)
+// quadro visual: automáticas hora a hora (9h–22h), horas mais fracas, quem não faz em que horas; massiva com paletes por colaborador; visível
+const MC_CORES = ['#1F7A33','#2F6DB5','#C77F12','#8E44AD','#B4231A','#16A085','#D35400','#2C3E50','#7F8C8D','#E84393','#6C5CE7','#00B894','#FDCB6E','#636E72','#A0522D','#0984E3'];
 async function blocoReposicaoDia(D){
-  D = D || await reposDados(); const {l, nome} = D;
-  let h = `<div class="section-title">📦 Reposição por dia — ${mcMesIntervalo().nome}</div>`;
-  if(!l.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Carregue o relatório de reposição do mês (automáticas / massiva / visível) em "📥 Carregar relatórios".</div></div>`;
-  const datas = [...new Set(l.map(x => x.data))].sort().reverse();
-  const quem = arr => { const o = {}; arr.forEach(x => { o[x.numero] = (o[x.numero] || 0) + 1; }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
-  h += `<div class="card" style="padding:4px 10px;">` + datas.map((d, k) => {
-    const L = l.filter(x => x.data === d);
-    const au = L.filter(x => /autom/i.test(x.tipo || '') && Number(x.reposicao) > 0), ma = L.filter(x => /massiva/i.test(x.tipo || '')), vi = L.filter(x => /vis[ií]vel/i.test(x.tipo || ''));
-    const pal = [...new Set(ma.map(x => x.palete).filter(Boolean))];
-    const artA = new Set(au.map(x => x.material)).size, artM = new Set(ma.map(x => x.material)).size, artV = new Set(vi.map(x => x.material)).size;
-    const qm = quem(ma), qv = quem(vi);
-    return `<details ${k === 0 ? 'open' : ''} style="border-top:${k ? '1px solid var(--line)' : '0'};padding:6px 0;"><summary style="cursor:pointer;list-style:none;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;"><b style="font-size:13px;">${new Date(d + 'T12:00:00').toLocaleDateString('pt-PT', {weekday:'short', day:'2-digit', month:'2-digit'})}</b>
-      <span style="font-size:11.5px;color:var(--ink-soft);">🔁 <b style="color:var(--ink);">${artA}</b> automática · 🚚 <b style="color:var(--ink);">${pal.length}</b> paletes · 👀 <b style="color:var(--ink);">${artV}</b> visível</span></div></summary>
-      <div style="font-size:12px;margin:6px 0 0 4px;line-height:1.6;">
-        <div>🔁 <b>Automática:</b> ${artA} artigos repostos (${au.length} reposições)</div>
-        <div>🚚 <b>Massiva:</b> ${pal.length} palete${pal.length === 1 ? '' : 's'} · ${artM} artigos${qm.length ? ' · repôs: ' + qm.map(([n, c]) => `${rpEsc(nome(n))} (${c})`).join(', ') : ''}</div>
-        <div>👀 <b>Visível:</b> ${artV} artigos picados${qv.length ? ' · por: ' + qv.map(([n, c]) => `${rpEsc(nome(n))} (${c})`).join(', ') : ''}</div>
-      </div></details>`; }).join('') + `</div>`;
+  D = D || await reposDados(); const {l, nome} = D; const M = mcMesIntervalo();
+  let h = `<div class="section-title">🔁 Automáticas hora a hora — ${M.nome}</div>`;
+  if(!l.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda sem dados de ${M.nome}. Carregue o relatório de reposição em "📥 Carregar relatórios".</div></div>`;
+  const H = Array.from({length: 13}, (_, i) => i + 9);   // 9h … 21h (a última hora vai até às 22h)
+  const hr = x => parseInt(String(x.hora || '').slice(0, 2), 10);
+  const datas = [...new Set(l.map(x => x.data))].sort();
+  const au = l.filter(x => /autom/i.test(x.tipo || '') && Number(x.reposicao) > 0);
+  // artigos repostos por dia e por hora
+  const cel = {}; au.forEach(x => { const k = x.data + '|' + hr(x); (cel[k] = cel[k] || new Set()).add(x.material); });
+  const porDia = datas.map(d => ({d, n: new Set(au.filter(x => x.data === d).map(x => x.material)).size, semHoras: H.filter(hh => !cel[d + '|' + hh]).length}));
+  const mxD = Math.max(...porDia.map(x => x.n), 1);
+  const corCel = n => !n ? '#FBE3DE' : n < 5 ? '#D8EBDC' : n < 15 ? '#9FCFAA' : n < 30 ? '#4FA463' : '#1F7A33';
+  h += `<div class="card"><h3 style="margin-bottom:6px;">Artigos repostos por dia</h3>
+    <div class="rchart" style="height:90px;">${porDia.map(x => `<div class="bars"><div class="bar" title="${impDDMM(x.d)}: ${x.n} artigos" style="height:${(x.n / mxD * 100).toFixed(1)}%;background:${x.semHoras ? '#C77F12' : '#1F7A33'};"></div></div>`).join('')}</div>
+    <div class="rchart-labels">${porDia.map(x => `<span style="font-size:8px;">${x.d.slice(8, 10)}</span>`).join('')}</div>
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Média: <b>${Math.round(porDia.reduce((a, x) => a + x.n, 0) / porDia.length)}</b> artigos por dia · verde = todas as horas feitas · laranja = faltou alguma hora</div></div>`;
+  // grelha dia × hora
+  const cumpre = porDia.filter(x => !x.semHoras).length;
+  h += `<div class="card"><h3 style="margin-bottom:4px;">Hora a hora (9h–22h)</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Cada quadrado = artigos repostos nessa hora. <span style="background:#FBE3DE;padding:0 5px;border-radius:3px;">rosa</span> = hora sem automáticas. Cumprido em <b style="color:${cumpre === datas.length ? 'var(--green)' : 'var(--red)'};">${cumpre} de ${datas.length} dias</b>.</div>
+    <div style="overflow-x:auto;"><table style="border-collapse:separate;border-spacing:2px;font-size:10px;"><tr><th></th>${H.map(hh => `<th style="font-weight:600;color:var(--ink-soft);width:20px;">${hh}</th>`).join('')}<th style="color:var(--ink-soft);">falt.</th></tr>
+    ${[...porDia].reverse().map(x => `<tr><td style="white-space:nowrap;color:var(--ink-soft);padding-right:3px;">${impDDMM(x.d)}</td>${H.map(hh => { const n = cel[x.d + '|' + hh] ? cel[x.d + '|' + hh].size : 0; return `<td title="${impDDMM(x.d)} ${hh}h: ${n} artigos" style="width:20px;height:18px;text-align:center;border-radius:3px;background:${corCel(n)};color:${n >= 15 ? '#fff' : '#1d2a22'};">${n || ''}</td>`; }).join('')}<td style="text-align:center;font-weight:800;color:${x.semHoras ? 'var(--red)' : 'var(--green)'};">${x.semHoras || '✓'}</td></tr>`).join('')}
+    </table></div></div>`;
+  // horas mais fracas
+  const mediaHora = H.map(hh => ({hh, n: datas.reduce((a, d) => a + (cel[d + '|' + hh] ? cel[d + '|' + hh].size : 0), 0) / datas.length, falta: datas.filter(d => !cel[d + '|' + hh]).length}));
+  const mxH = Math.max(...mediaHora.map(x => x.n), 1), fracas = [...mediaHora].sort((a, b) => a.n - b.n).slice(0, 3).map(x => x.hh);
+  h += `<div class="card"><h3 style="margin-bottom:6px;">Em que horas se repõem menos artigos</h3>${mediaHora.map(x => `<div style="display:grid;grid-template-columns:38px minmax(0,1fr) 92px;gap:8px;align-items:center;margin:4px 0;font-size:12px;">
+      <b style="color:${fracas.includes(x.hh) ? 'var(--red)' : 'var(--ink)'};">${x.hh}h</b><div style="height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.n / mxH * 100).toFixed(1)}%;background:${fracas.includes(x.hh) ? 'var(--red)' : '#1F7A33'};"></div></div>
+      <span style="text-align:right;color:var(--ink-soft);">${Math.round(x.n)}/dia${x.falta ? ` · <b style="color:var(--red);">${x.falta}× sem</b>` : ''}</span></div>`).join('')}
+    <div style="font-size:11.5px;margin-top:6px;">🔻 Horas mais fracas: <b style="color:var(--red);">${fracas.map(x => x + 'h').join(', ')}</b></div></div>`;
+  // quem não faz em que horas: colaborador × hora (dias em que fez automáticas nessa hora)
+  const pp = {}; au.forEach(x => { const k = x.numero || '—'; const o = pp[k] = pp[k] || {dias: new Set(), hora: {}}; o.dias.add(x.data); (o.hora[hr(x)] = o.hora[hr(x)] || new Set()).add(x.data); });
+  const pessoas = Object.entries(pp).filter(([k, o]) => o.dias.size >= 3).sort((a, b) => b[1].dias.size - a[1].dias.size).slice(0, 14);
+  h += `<div class="card"><h3 style="margin-bottom:4px;">👥 Em que horas cada colaborador faz (e não faz) as automáticas</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Número de dias em que a pessoa fez automáticas nessa hora. Vazio = nunca fez nessa hora.</div>
+    <div style="overflow-x:auto;"><table style="border-collapse:separate;border-spacing:2px;font-size:10px;"><tr><th></th>${H.map(hh => `<th style="font-weight:600;color:var(--ink-soft);width:20px;">${hh}</th>`).join('')}<th style="color:var(--ink-soft);">dias</th></tr>
+    ${pessoas.map(([k, o]) => { const mx = o.dias.size; return `<tr><td style="white-space:nowrap;padding-right:4px;font-size:11px;">${rpEsc(nome(k))}</td>${H.map(hh => { const n = o.hora[hh] ? o.hora[hh].size : 0, f = n / mx; return `<td title="${rpEsc(nome(k))} · ${hh}h: ${n} dias" style="width:20px;height:18px;text-align:center;border-radius:3px;background:${!n ? '#F3F1EA' : f < .25 ? '#D8EBDC' : f < .5 ? '#9FCFAA' : '#4FA463'};">${n || ''}</td>`; }).join('')}<td style="text-align:center;color:var(--ink-soft);">${mx}</td></tr>`; }).join('')}
+    </table></div>
+    ${pessoas.map(([k, o]) => { const nunca = H.filter(hh => !o.hora[hh]); return nunca.length && nunca.length < H.length ? `<div style="font-size:11.5px;margin-top:3px;">• <b>${rpEsc(nome(k))}</b> não faz às ${nunca.map(x => x + 'h').join(', ')}</div>` : ''; }).join('')}</div>`;
+  // massiva: paletes por dia, por colaborador (a palete conta para quem repôs mais linhas dela)
+  const ma = l.filter(x => /massiva/i.test(x.tipo || '') && x.palete);
+  h += `<div class="section-title">🚚 Massiva — paletes por dia e por colaborador</div>`;
+  if(!ma.length) h += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem paletes neste mês.</div></div>`;
+  else {
+    const pal = {}; ma.forEach(x => { const k = x.data + '|' + x.palete; const o = pal[k] = pal[k] || {d: x.data, por: {}, artigos: new Set()}; o.por[x.numero] = (o.por[x.numero] || 0) + 1; o.artigos.add(x.material); });
+    const lista = Object.values(pal).map(o => ({...o, quem: Object.entries(o.por).sort((a, b) => b[1] - a[1])[0][0]}));
+    const tot = {}; lista.forEach(p => { const o = tot[p.quem] = tot[p.quem] || {pal: 0, art: 0, dias: new Set()}; o.pal++; o.art += p.artigos.size; o.dias.add(p.d); });
+    const pess = Object.entries(tot).sort((a, b) => b[1].pal - a[1].pal), cor = {}; pess.forEach(([k], i) => cor[k] = MC_CORES[i % MC_CORES.length]);
+    const dias = datas.map(d => { const ps = lista.filter(p => p.d === d); const by = {}; ps.forEach(p => { by[p.quem] = (by[p.quem] || 0) + 1; }); return {d, n: ps.length, by}; });
+    const mx = Math.max(...dias.map(x => x.n), 1);
+    h += `<div class="card"><div style="display:flex;align-items:flex-end;gap:2px;height:130px;">${dias.map(x => `<div title="${impDDMM(x.d)}: ${x.n} paletes" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;"><div style="font-size:8.5px;text-align:center;color:var(--ink-soft);">${x.n || ''}</div>${Object.entries(x.by).map(([k, n]) => `<div title="${rpEsc(nome(k))}: ${n}" style="height:${(n / mx * 112).toFixed(1)}px;background:${cor[k]};"></div>`).join('')}</div>`).join('')}</div>
+      <div style="display:flex;gap:2px;">${dias.map(x => `<span style="flex:1;font-size:8px;text-align:center;color:var(--ink-soft);">${x.d.slice(8, 10)}</span>`).join('')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:8px;">${pess.map(([k, o]) => `<span style="font-size:11.5px;display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:${cor[k]};"></span>${rpEsc(nome(k))}</span>`).join('')}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:10px;"><tr style="color:var(--ink-soft);font-size:11px;"><th style="text-align:left;">Colaborador</th><th>Paletes</th><th>Artigos</th><th>Dias</th><th>Pal./dia</th></tr>
+      ${pess.map(([k, o]) => `<tr style="border-top:1px solid var(--line);"><td style="padding:4px 0;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${cor[k]};margin-right:5px;"></span>${rpEsc(nome(k))}</td><td style="text-align:center;font-weight:800;">${o.pal}</td><td style="text-align:center;">${o.art}</td><td style="text-align:center;">${o.dias.size}</td><td style="text-align:center;">${(o.pal / o.dias.size).toLocaleString('pt-PT', {maximumFractionDigits:1})}</td></tr>`).join('')}
+      </table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Total: <b>${lista.length}</b> paletes · média ${(lista.length / datas.length).toLocaleString('pt-PT', {maximumFractionDigits:1})} por dia. Cada palete conta para quem repôs mais artigos dela.</div></div>`;
+  }
+  // visível
+  const vi = l.filter(x => /vis[ií]vel/i.test(x.tipo || ''));
+  if(vi.length){ const pv = {}; vi.forEach(x => { pv[x.numero] = (pv[x.numero] || 0) + 1; }); const lv = Object.entries(pv).sort((a, b) => b[1] - a[1]), mv = lv[0][1];
+    h += `<div class="section-title">👀 Visível — quem picou</div><div class="card">${lv.slice(0, 10).map(([k, n]) => `<div style="display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px;align-items:center;margin:4px 0;font-size:12.5px;"><div>${rpEsc(nome(k))}<div style="height:7px;border-radius:5px;background:var(--line);margin-top:3px;overflow:hidden;"><div style="height:100%;width:${(n / mv * 100).toFixed(1)}%;background:#2F6DB5;"></div></div></div><b style="text-align:right;">${n}</b></div>`).join('')}<div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">${vi.length} artigos picados no mês.</div></div>`; }
   return h;
 }
+
 // ruturas × reposição: se está em rutura mas foi reposto, falta dar entrada (descarga/receção)
 async function blocoRuturasReposicao(D){
   D = D || await reposDados(); const {l, nome} = D;
