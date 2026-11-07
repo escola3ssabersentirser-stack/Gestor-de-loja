@@ -11407,7 +11407,7 @@ function logo3SDataURL(nome, tam, maskable){ const cv = document.createElement('
 // ícone pessoal: quem entra vê o seu nome no ícone; ao instalar ("Adicionar ao ecrã principal") fica com esse ícone
 function aplicarIconePessoal(nomeCompleto){
   try{
-    const primeiro = String(nomeCompleto || '').trim().split(/\s+/)[0] || '';
+    const ps = String(nomeCompleto || '').trim().split(/\s+/); const primeiro = (/^(maria|ana|jos[eé]|jo[aã]o)$/i.test(ps[0] || '') && ps[1] && !/^(de|da|do|dos|das)$/i.test(ps[1])) ? ps[1] : (ps[0] || '');
     const nome = primeiro ? primeiro : 'Liderança';
     const i512 = logo3SDataURL(nome, 512), i192 = logo3SDataURL(nome, 192), im = logo3SDataURL(nome, 512, true), i180 = logo3SDataURL(nome, 180);
     const set = (rel, href) => { let l = document.querySelector(`link[rel="${rel}"]`); if(!l){ l = document.createElement('link'); l.rel = rel; document.head.appendChild(l); } l.href = href; };
