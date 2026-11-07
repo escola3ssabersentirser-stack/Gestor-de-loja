@@ -16231,6 +16231,36 @@ async function blocoReposicaoDia(D){
 }
 
 // ruturas × reposição: se está em rutura mas foi reposto, falta dar entrada (descarga/receção)
+async function rutEnviarEmail(tipo){
+  if(!soDona('enviar mensagens')) return;
+  tipo = tipo || 'chegaram';
+  const R0 = window.__rutEmail; const R = R0 && {...R0, itens: R0[tipo] || []}; if(!R || !R.itens.length){ alert('Não há artigos para enviar.'); return; }
+  const dm = d => impDDMM(d), nome = R.nome;
+  const ult = a => a.length ? a.reduce((m, x) => (x.data + String(x.hora || '')) > (m.data + String(m.hora || '')) ? x : m) : null;
+  const linhas = R.itens.map(x => { const ua = ult(x.auOk), uv = ult(x.vi), us = ult(x.ss);
+    return {cod: x.artigo_cod, artigo: x.artigo || '', divisao: x.area || '',
+      paletes: [...new Set(x.ma.map(y => y.data))].sort().map(dm).join(', '),
+      auto: x.au.length ? `${x.au.length}× na lista${ua ? ` · reposto a ${dm(ua.data)} por ${nome(ua.numero)}` : ' · não reposto'}` : '',
+      visivel: uv ? `${x.vi.length}× · último a ${dm(uv.data)} às ${String(uv.hora || '').slice(0, 5)} por ${nome(uv.numero)}` : '',
+      semstock: us ? `${x.ss.length}× · último a ${dm(us.data)}` : ''}; });
+  const sv = tipo === 'semvisivel';
+  const assunto = sv ? `Ruturas — artigos em rutura que não foram picados na visível (${dm(R.kpi)})` : `Ruturas — artigos que chegaram à loja e estão em rutura (${dm(R.kpi)})`;
+  const corpo = (sv ? `Bom dia,\n\nEstes ${linhas.length} artigos estão em rutura no KPI de ${dm(R.kpi)} e não foram picados na lista visível no mês.\nÉ preciso passar a visível nestes artigos e confirmar o stock.\n\n` : `Bom dia,\n\nEstes ${linhas.length} artigos estão em rutura no KPI de ${dm(R.kpi)}, mas chegaram à loja (palete ou lista automática reposta) e foram picados na visível ou saíram na lista automática.\nÉ preciso verificar a descarga / receção e o stock teórico.\n\n`) +
+    linhas.map((x, i) => `${i + 1}. ${x.artigo} (${x.cod}) — ${x.divisao}${x.paletes ? `\n   🚚 palete: ${x.paletes}` : ''}${x.auto ? `\n   🔁 automática: ${x.auto}` : ''}${x.visivel ? `\n   👀 visível: ${x.visivel}` : ''}${x.semstock ? `\n   📦 sem stock: ${x.semstock}` : ''}`).join('\n') + `\n\nObrigada,\nConceição`;
+  let file = null;
+  try{ const ws = XLSX.utils.json_to_sheet(linhas.map(x => ({'Código': x.cod, 'Artigo': x.artigo, 'Divisão': x.divisao, 'Palete chegou': x.paletes, 'Lista automática': x.auto, 'Visível': x.visivel, 'Sem stock': x.semstock})));
+    ws['!cols'] = [{wch:10},{wch:40},{wch:24},{wch:22},{wch:40},{wch:40},{wch:18}];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Ruturas');
+    const buf = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+    file = new File([buf], `${sv ? 'ruturas-sem-visivel' : 'ruturas-chegaram-loja'}-${R.kpi}.xlsx`, {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); }catch(e){ console.warn('excel', e); }
+  if(file && navigator.canShare && navigator.canShare({files: [file]})){
+    try{ await navigator.share({files: [file], title: assunto, text: corpo}); return; }catch(e){ if(e && e.name === 'AbortError') return; }
+  }
+  if(file){ const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); }
+  const max = 1800, txt = corpo.length > max ? corpo.slice(0, max) + '\n…\n(lista completa no Excel em anexo)' : corpo;
+  setTimeout(() => { location.href = `mailto:?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(txt)}`; }, 400);
+  if(file) alert('O Excel com a lista foi guardado (' + file.name + '). Anexe-o ao email que vai abrir.');
+}
 async function blocoRuturasReposicao(D){
   D = D || await reposDados(); const {l, nome} = D;
   let rut = []; try{ const u = await sb('loja_ruturas?select=data&order=data.desc&limit=1'); if(u && u[0]) rut = await sb(`loja_ruturas?data=eq.${u[0].data}&select=data,artigo_cod,artigo,area,pa`) || []; }catch(e){}
@@ -16254,11 +16284,17 @@ async function blocoRuturasReposicao(D){
     const cat = uSS && (!uRep || chave(uSS) >= chave(uRep)) ? 'semstock' : uRep ? 'descarga' : vi.length ? 'visivel' : 'nunca';
     return {...r, au, auOk, ss, ma, vi, uRep, uSS, cat, nLista: au.length}; });
   const n = k => itens.filter(x => x.cat === k).length, tot = itens.length;
+  // para o email: em rutura, chegou à loja (palete ou automática reposta) e foi picado na visível ou saiu na automática
+  const paraEmail = itens.filter(x => (x.ma.length || x.auOk.length) && (x.vi.length || x.au.length));
+  const semVisivel = itens.filter(x => !x.vi.length);
+  window.__rutEmail = {chegaram: paraEmail, semvisivel: semVisivel, nome, kpi: rut[0].data};
   const naLista = itens.filter(x => x.nLista).length;
   // resumo
   h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${tot} artigos em rutura no KPI de ${dm(rut[0].data)}, cruzados com as listas de ${dm(l.reduce((m, x) => x.data < m ? x.data : m, l[0].data))} a ${dm(l.reduce((m, x) => x.data > m ? x.data : m, l[0].data))}.</div>
     <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 10px;border-radius:10px;background:#EEF3EF;margin-bottom:10px;"><span style="font-size:12.5px;">Saíram na lista automática</span><b style="font-size:18px;color:var(--navy);">${naLista} de ${tot} <span style="font-size:12px;color:var(--ink-soft);">(${Math.round(naLista / tot * 100)}%)</span></b></div>
     <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;margin-bottom:8px;">${Object.entries(GR).map(([k, g]) => n(k) ? `<div title="${g[3]}: ${n(k)}" style="width:${(n(k) / tot * 100).toFixed(1)}%;background:${g[2]};"></div>` : '').join('')}</div>
+    ${paraEmail.length ? `<button type="button" class="btn-primary" style="margin:0 0 6px;background:#1F7A33;" onclick="rutEnviarEmail('chegaram')">✉️ Enviar por email: ${paraEmail.length} em rutura que chegaram à loja</button>` : ''}
+    ${semVisivel.length ? `<button type="button" class="btn-primary" style="margin:0 0 10px;background:#C77F12;" onclick="rutEnviarEmail('semvisivel')">✉️ Enviar por email: ${semVisivel.length} em rutura não picados na visível</button>` : ''}
     ${Object.entries(GR).map(([k, g]) => `<div onclick="const d=document.getElementById('rutl-${k}');if(d){d.open=true;d.scrollIntoView({behavior:'smooth',block:'start'});}" style="cursor:pointer;display:grid;grid-template-columns:14px minmax(0,1fr) 34px;gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;"><span style="width:12px;height:12px;border-radius:3px;background:${g[2]};"></span><span>${g[3]}<div style="font-size:10.5px;color:var(--ink-soft);">${g[1]}</div></span><b style="text-align:right;font-size:15px;color:${g[2]};">${n(k)}</b></div>`).join('')}</div>`;
   // por divisão
   const divs = {}; itens.forEach(x => { const k = x.area || '—'; (divs[k] = divs[k] || {k, t: 0, c: {}}); divs[k].t++; divs[k].c[x.cat] = (divs[k].c[x.cat] || 0) + 1; });
@@ -16274,6 +16310,10 @@ async function blocoRuturasReposicao(D){
       if(x.ma.length) linhas.push(`🚚 palete chegou: <b style="color:var(--ink);">${[...new Set(x.ma.map(y => y.data))].map(dm).join(', ')}</b>`);
       if(x.vi.length){ const u = ultimo(x.vi); linhas.push(`👀 visível ${x.vi.length}× · último ${dm(u.data)} por ${rpEsc(nome(u.numero))}`); }
       return `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;"><div><b>${rpEsc(x.artigo || x.artigo_cod)}</b> <span style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod} · ${rpEsc(x.area || '')}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</span></div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.55;">${linhas.join('<br>')}</div></div>`; }).join('') + `</details>`; });
+  // em rutura e não picados na visível
+  if(semVisivel.length){ const pv = {}; semVisivel.forEach(x => { const k = x.area || '—'; (pv[k] = pv[k] || []).push(x); });
+    h += `<details class="card"><summary style="cursor:pointer;font-weight:800;color:#C77F12;font-size:13px;">🙈 Em rutura e não picados na visível (${semVisivel.length} de ${tot})</summary><div style="font-size:11.5px;color:var(--ink-soft);margin:4px 0 2px;">Ninguém passou a visível nestes artigos no mês. Por divisão:</div>` +
+      Object.entries(pv).sort((a, b) => b[1].length - a[1].length).map(([d, a]) => `<div style="font-weight:800;font-size:12px;color:var(--navy);margin:8px 0 2px;">${rpEsc(d)} (${a.length})</div>` + a.map(x => `<div style="padding:4px 0 4px 8px;border-top:1px dashed var(--line);font-size:12px;"><b>${rpEsc(x.artigo || x.artigo_cod)}</b> <span style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</span><div style="font-size:10.5px;color:var(--ink-soft);">${x.ma.length ? '🚚 palete ' + [...new Set(x.ma.map(y => y.data))].map(dm).join(', ') + ' · ' : ''}${x.au.length ? '🔁 ' + x.au.length + '× na lista automática' : '🔁 não saiu na automática'}</div></div>`).join('')).join('') + `</details>`; }
   // o que as listas do mês mostram (todas as ruturas e faltas de stock, não só as do KPI)
   const ssMes = l.filter(x => (/autom/i.test(x.tipo || '') && !(Number(x.reposicao) > 0)) || /sem stock/i.test(x.tipo || ''));
   const viRut = l.filter(x => /vis[ií]vel/i.test(x.tipo || '') && x.rutura);
