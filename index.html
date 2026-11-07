@@ -655,10 +655,12 @@
   .rel-info small{display:block;font-size:12px;color:var(--ink-soft);}
   .rel-novo{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
   .rel-novo input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;}
-.mc-sep-barra{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:8px 0;margin:4px 0 2px;background:var(--bg, #F4F1EA);}
+.mc-sep-barra{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:8px 0;margin:4px 0 2px;background:var(--bg, #F4F1EA);}
 .mc-sep-barra button{min-width:0;border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:12px;padding:7px 2px;font-size:11.5px;font-weight:700;cursor:pointer;line-height:1.25;}
 .mc-sep-barra button.ativo{background:var(--navy);color:#fff;border-color:var(--navy);}
 .mc-sep-painel > .section-title:first-child{margin-top:6px;}
+.mc-mais > summary{cursor:pointer;list-style:none;text-align:center;font-size:12.5px;font-weight:700;color:var(--navy);background:#fff;border:1px dashed var(--line);border-radius:12px;padding:10px;margin:8px 0;}
+.mc-mais[open] > summary{background:#EEF3EF;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -15755,7 +15757,7 @@ async function renderMelhoriaContinua(){
   try{ const RD = await reposDados();
     try{ const M = mcMesIntervalo(); const ag = await impTodos(`loja_automaticas_agg?data=gte.${M.ini}&data=lte.${M.fim}&select=linhas`); const esp = (ag || []).reduce((a, x) => a + (Number(x.linhas) || 0), 0);
       if(esp && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
-    html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
+    html += blocoEquipaRanking(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
 
   content.innerHTML = html; mcOrganizarSeparadores(content);
 }
@@ -16153,14 +16155,14 @@ async function impAutomaticas(wb){
 }
 // mês escolhido na Melhoria Contínua: 'atual' ou 'anterior'
 let mcMesSel = 'atual';
-let mcSep = 'auto';
-const MC_SEPS = [['auto', '🔁<br>Automáticas'], ['massiva', '🚚<br>Massiva'], ['visivel', '👀<br>Visível'], ['ruturas', '🔗<br>Ruturas']];
+let mcSep = 'equipa';
+const MC_SEPS = [['equipa', '🏆<br>Equipa'], ['auto', '🔁<br>Automát.'], ['massiva', '🚚<br>Massiva'], ['visivel', '👀<br>Visível'], ['ruturas', '🔗<br>Ruturas']];
 // arruma o cartão em separadores: o resumo do mês fica sempre em cima, o resto vai para Automáticas / Massiva / Visível / Ruturas
 function mcOrganizarSeparadores(content){
   const nos = [...content.childNodes]; if(!nos.length) return;
   const titulos = nos.filter(n => n.nodeType === 1 && n.classList.contains('section-title'));
   if(titulos.length < 2) return;
-  const tipo = t => /Massiva/i.test(t) ? 'massiva' : /Vis[ií]vel/i.test(t) ? 'visivel' : /Rutura/i.test(t) ? 'ruturas' : 'auto';
+  const tipo = t => /trabalha mais/i.test(t) ? 'equipa' : /Massiva/i.test(t) ? 'massiva' : /Vis[ií]vel/i.test(t) ? 'visivel' : /Rutura/i.test(t) ? 'ruturas' : 'auto';
   const topo = document.createElement('div'), barra = document.createElement('div'), paineis = {};
   MC_SEPS.forEach(([k]) => { const d = document.createElement('div'); d.className = 'mc-sep-painel'; d.dataset.sep = k; paineis[k] = d; });
   // em cima fica só o título e o primeiro cartão (o resumo do mês); o resto vai para os separadores
@@ -16175,7 +16177,13 @@ function mcOrganizarSeparadores(content){
   barra.innerHTML = MC_SEPS.filter(([k]) => paineis[k].childNodes.length).map(([k, t]) => `<button type="button" data-sep="${k}" onclick="mcMudarSep('${k}')">${t}</button>`).join('');
   content.innerHTML = ''; content.appendChild(topo); content.appendChild(barra);
   MC_SEPS.forEach(([k]) => { if(paineis[k].childNodes.length) content.appendChild(paineis[k]); });
-  if(!paineis[mcSep] || !paineis[mcSep].childNodes.length) mcSep = 'auto';
+  // nas Automáticas ficam à vista só os 2 gráficos principais; o resto fica em «Ver mais detalhe»
+  const pa = paineis.auto; if(pa && pa.childNodes.length){
+    const principais = [...pa.querySelectorAll(':scope > .card')].filter(c => /repostos por dia|artigos repostos por hora/i.test(c.textContent.slice(0, 200)));
+    const resto = [...pa.childNodes].filter(n => !principais.includes(n));
+    if(principais.length && resto.length){ const det = document.createElement('details'); det.className = 'mc-mais'; det.innerHTML = '<summary>➕ Ver mais detalhe (quem fez as listas, horas, grelha, divisões)</summary>'; resto.forEach(n => det.appendChild(n)); pa.innerHTML = ''; principais.forEach(c => pa.appendChild(c)); pa.appendChild(det); }
+  }
+  if(!paineis[mcSep] || !paineis[mcSep].childNodes.length) mcSep = paineis.equipa && paineis.equipa.childNodes.length ? 'equipa' : 'auto';
   mcMudarSep(mcSep, true);
 }
 function mcMudarSep(k, semScroll){
@@ -16262,6 +16270,33 @@ async function reposDados(){
   let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
   const nome = n => { const x = nomes[n]; if(!x) return n ? 'Nº ' + n : '—'; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   return {l, nome};
+}
+// quem trabalha mais na reposição: artigos repostos (automática + massiva) e artigos picados na visível, por pessoa
+function blocoEquipaRanking(RD){
+  const {l, nome} = RD; if(!l || !l.length) return '';
+  const P = {};
+  l.forEach(x => { const k = String(x.numero || '').replace(/^0+/, ''); if(!k) return;
+    const p = P[k] = P[k] || {k, auto: 0, mas: 0, pal: new Set(), vis: 0, dias: new Set()};
+    const t = String(x.tipo || '');
+    if(/autom/i.test(t)){ if(Number(x.reposicao) > 0) p.auto++; else return; }
+    else if(/massiva/i.test(t)){ p.mas++; if(x.palete) p.pal.add(x.data + '|' + x.palete); }
+    else if(/vis[ií]vel/i.test(t)) p.vis++;
+    else return;
+    p.dias.add(x.data); });
+  const L = Object.values(P).map(p => ({...p, tot: p.auto + p.mas + p.vis, nd: p.dias.size})).filter(p => p.tot > 0).map(p => ({...p, med: p.tot / p.nd})).sort((a, b) => b.tot - a.tot);
+  if(!L.length) return '';
+  const mx = L[0].tot, medEq = L.reduce((a, p) => a + p.med, 0) / L.length;
+  const medalha = i => ['🥇', '🥈', '🥉'][i] || `<span style="display:inline-block;width:18px;text-align:center;font-size:11px;color:var(--ink-soft);">${i + 1}</span>`;
+  let h = `<div class="section-title">🏆 Quem trabalha mais na reposição</div><div class="card">
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Artigos repostos no mês por pessoa. <span style="color:#1F7A33;">■</span> automática · <span style="color:#2F6DB5;">■</span> massiva · <span style="color:#C77F12;">■</span> visível</div>`;
+  const linhaP = (p, i) => `<div style="padding:7px 0;border-top:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><span style="font-size:13px;min-width:0;">${medalha(i)} <b>${rpEsc(nome(p.k))}</b></span><b style="font-size:16px;color:var(--navy);white-space:nowrap;">${p.tot.toLocaleString('pt-PT')}</b></div>
+      <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:4px 0 3px;width:${Math.max(4, p.tot / mx * 100).toFixed(1)}%;">${p.auto ? `<div style="flex:${p.auto};background:#1F7A33;"></div>` : ''}${p.mas ? `<div style="flex:${p.mas};background:#2F6DB5;"></div>` : ''}${p.vis ? `<div style="flex:${p.vis};background:#C77F12;"></div>` : ''}</div>
+      <div style="font-size:10.5px;color:var(--ink-soft);">${[p.auto ? `🔁 ${p.auto} automática` : '', p.mas ? `🚚 ${p.mas} massiva (${p.pal.size} palete${p.pal.size === 1 ? '' : 's'})` : '', p.vis ? `👀 ${p.vis} visível` : ''].filter(Boolean).join(' · ')} · ${p.nd} dia${p.nd === 1 ? '' : 's'} · <b style="color:${p.med >= medEq ? '#1F7A33' : 'var(--red)'};">${Math.round(p.med)} por dia</b></div></div>`;
+  h += L.slice(0, 10).map(linhaP).join('') + (L.length > 10 ? `<details><summary style="cursor:pointer;text-align:center;font-size:12px;font-weight:700;color:var(--navy);padding:8px;border-top:1px solid var(--line);">Ver as outras ${L.length - 10} pessoas</summary>${L.slice(10).map((p, i) => linhaP(p, i + 10)).join('')}</details>` : '');
+  const porDia = [...L].sort((a, b) => b.med - a.med);
+  h += `<div style="font-size:11.5px;margin-top:8px;padding:7px 10px;border-radius:10px;background:#EEF3EF;">Mais artigos por dia de trabalho: <b>${porDia.slice(0, 3).map(p => rpEsc(nome(p.k)) + ' (' + Math.round(p.med) + ')').join(', ')}</b>. Média da equipa: ${Math.round(medEq)} por dia. A verde quem está acima da média, a vermelho quem está abaixo.</div></div>`;
+  return h;
 }
 const MC_SEM_CURTO = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'], MC_SEM_LETRA = ['D','S','T','Q','Q','S','S'];
 const mcDow = d => new Date(d + 'T12:00:00').getDay();
