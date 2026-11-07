@@ -2588,6 +2588,7 @@ function impTipo(wb){
     const R = impLinhas(wb.Sheets[n]);
     if(impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','PRODUÇÃO','QUEBRAS UN','QUEBRA SUGESTÃO'])) return 'mapasproducao';
     if(impCabecalho(R, ['Codigo do Artigo','Descricao Artigo','PA'])) return 'ruturas';
+    if(impCabecalho(R, ['Hora','Txt.brv.material','Tipo Repos','Data'])) return 'automaticas';
     if(impCabecalho(R, ['Nome Operador','Vendas Operador'])) return 'vendasugestiva';
     if(impCabecalho(R, ['Numero Factura','Valor Fact']) || impCabecalho(R, ['Loja','Numero Factura','Numero da Transaccao'])) return 'notascredito';
   }
@@ -3210,7 +3211,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {automaticas:'Listas automáticas do mês → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3334,7 +3335,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -4182,7 +4183,8 @@ async function renderObjetivos2027(){
   let rutN = null; try{ if(rutUlt && rutUlt[0]){ const l = await sb(`loja_ruturas?data=eq.${rutUlt[0].data}&select=artigo_cod`); rutN = (l || []).length; } }catch(e){}
   const guardado = (guardadoRows || [])[0];
   const meses = r.meses || [];
-  const v25 = meses.reduce((s,m) => s + (Number(m.v_ant)||0), 0);
+  const v25calc = meses.reduce((s,m) => s + (Number(m.v_ant)||0), 0);
+  const v25 = (guardadoRows && guardadoRows[0] && guardadoRows[0].dados && guardadoRows[0].dados.metas && Number(guardadoRows[0].dados.metas.base_2025)) || v25calc;
   const v26 = meses.reduce((s,m) => s + (Number(m.v) > 0 ? Number(m.v) : (Number(m.budget) || Number(m.v_ant) || 0)), 0);
   const secs = (r.secoes || []).filter(x => Number(x.real) > 0);
   const somaReal = secs.reduce((s,x) => s + Number(x.real), 0) || 1;
@@ -4214,7 +4216,7 @@ function objDesenhar(){
     <div style="font-size:12px;color:${falta > 0 ? 'var(--red)' : 'var(--ink-soft)'};margin-top:6px;">${falta > 0 ? `⚠️ Abaixo do mínimo de ${objEur(OBJ_MINIMO)} (faltam ${objEur(falta)})` : `Mínimo: ${objEur(OBJ_MINIMO)}`}</div>
   </div>
   <div class="vs-detail-grid" style="margin-bottom:12px;">
-    <div class="vs-box"><div class="vs-label">vs 2025 (${objEur(e.v25)})</div><div class="vs-value" style="font-size:20px;color:${e.total>=e.v25?'var(--green)':'var(--red)'};">${objPct(e.total/e.v25-1)}</div></div>
+    <div class="vs-box"><div class="vs-label">vs 2025 (${objEur(e.v25)})${souDona() ? ' <span style="cursor:pointer;" onclick="objMudar2025()">✏️</span>' : ''}</div><div class="vs-value" style="font-size:20px;color:${e.total>=e.v25?'var(--green)':'var(--red)'};">${objPct(e.total/e.v25-1)}</div></div>
     <div class="vs-box"><div class="vs-label">vs 2026 estimado (${objEur(e.v26)})</div><div class="vs-value" style="font-size:20px;color:${e.total>=e.v26?'var(--green)':'var(--red)'};">${objPct(e.total/e.v26-1)}</div></div>
     <div class="vs-box"><div class="vs-label">Por semana</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${objEur(e.total/52)}</div></div>
     <div class="vs-box"><div class="vs-label">Por dia (363 dias)</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${objEur(e.total/363)}</div></div>
@@ -4291,6 +4293,13 @@ function objFolhaHtml(){
     td{padding:6px 8px;border-bottom:1px solid #e3e0d6} .n{text-align:right;font-variant-numeric:tabular-nums} tfoot td{font-weight:800;border-top:2px solid #1F5C2E;background:#F6F3EC}
     .nota{font-size:10.5px;color:#6b746e;margin-top:8px} .ass{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px} .ass div{border-top:1px solid #1d2a22;padding-top:4px;font-size:11px;color:#5b665e}
   </style></head><body>${pag('Loja — total', e.total)}${secs.map(x => pag(impTitulo(x.sec), x.obj)).join('')}</body></html>`;
+}
+async function objMudar2025(){
+  if(!soDona('mudar objetivos') || !objEstado) return;
+  const v = prompt('Vendas reais de 2025 (total do ano, em euros):', Math.round(objEstado.v25).toLocaleString('pt-PT'));
+  if(v === null) return; const n = objLerNum(v); if(!n || n < 1000000){ alert('Valor inválido.'); return; }
+  objEstado.metas = objEstado.metas || {}; objEstado.metas.base_2025 = n; objEstado.v25 = n;
+  await objGuardar();
 }
 async function objFolhaImprimir(){
   if(!objEstado){ alert('Abra primeiro os Objetivos 2027.'); return; }
@@ -15539,6 +15548,7 @@ async function renderMelhoriaContinua(){
   let html = `<div class="vs-detail-grid" style="margin-bottom:16px;grid-template-columns:1fr;">
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
   </div>` + listasFormHtml();
+  try{ html += await blocoAutomaticas(); }catch(e){ console.error('automáticas', e); }
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
 
   const porDiaListas = {};
@@ -15955,6 +15965,84 @@ async function blocoPlanoProducao(){
   return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">Toque na ação para ver como fazer. ● vermelho = prioridade alta.</div></div>`;
 }
 // ---------- QUEBRA SEM ETIQUETA DE MARKDOWN (mês em vigor) ----------
+
+// ===================== LISTAS AUTOMÁTICAS (relatório mensal de propostas de reposição) =====================
+const AUTO_DIVS = {'2002':'Mercearia salgada','2003':'Mercearia doce','2006':'Take-Away','2007':'Peixaria','2009':'Talho','2010':'Padaria/Pastelaria','2011':'Frutas e Vegetais','2015':'Charcutaria','2016':'Congelados','2017':'Leite','2018':'Iogurtes e Lácteos','2021':'Refrigerantes e Sumos','2022':'Cervejas e Sidras','2023':'Vinhos','2027':'Detergentes','2028':'Limpeza e Casa','2031':'Higiene','2032':'Cosmética','2036':'Bazar','2074':'Pet Food','2301':'Queijos'};
+const autoDiv = c => AUTO_DIVS[c] || (c ? 'Divisão ' + c : '—');
+function autoLerExcel(wb){
+  const agg = {};
+  for(const n of wb.SheetNames){
+    const R = impLinhas(wb.Sheets[n]);
+    const h = impCabecalho(R, ['Hora', 'Txt.brv.material', 'Tipo Repos', 'Data']);
+    if(!h) continue;
+    const row = (R[h.i] || []).map(impTxt); const c = t => row.findIndex(x => impNorm(x) === impNorm(t));
+    const cC = c('Centro'), cH = c('Hora'), cDv = c('Div.de Neg'), cU = c('Usuário'), cN = c('Nº pess.'), cSS = c('Sem Stock'), cRu = c('Rutura'), cT = c('Tipo Repos'), cD = c('Data');
+    for(let i = h.i + 1; i < R.length; i++){
+      const r = R[i] || []; if(cC >= 0 && impTxt(r[cC]).replace(/\.0$/, '') !== IMP_LOJA) continue;
+      const data = impData(r[cD]); if(!data) continue;
+      let hr = r[cH]; let hora = typeof hr === 'number' ? Math.floor((hr % 1) * 24 + 1e-6) : parseInt(String(hr || '').split(':')[0], 10); if(isNaN(hora)) continue;
+      const div = impTxt(r[cDv]).replace(/\.0$/, ''), tipo = impTxt(r[cT]) || '—', num = impTxt(r[cN]).replace(/\.0$/, '').replace(/^0+/, '');
+      const k = [data, hora, div, tipo, num].join('|');
+      const o = agg[k] = agg[k] || {data, hora, divisao: div, tipo, numero: num, utilizador: impTxt(r[cU]) || null, linhas: 0, rutura: 0, sem_stock: 0};
+      o.linhas++; if(impTxt(r[cRu]).toUpperCase() === 'X') o.rutura++; if(impTxt(r[cSS]).toUpperCase() === 'X') o.sem_stock++;
+    }
+    break;
+  }
+  return Object.values(agg);
+}
+async function impAutomaticas(wb){
+  const l = autoLerExcel(wb);
+  if(!l.length) throw new Error('não encontrei linhas de reposição da loja ' + IMP_LOJA);
+  const datas = [...new Set(l.map(x => x.data))].sort();
+  await sb(`loja_automaticas_agg?data=gte.${datas[0]}&data=lte.${datas[datas.length - 1]}`, {method:'DELETE'});
+  for(let i = 0; i < l.length; i += 500) await sb('loja_automaticas_agg', {method:'POST', body: JSON.stringify(l.slice(i, i + 500))});
+  const tot = l.reduce((a, x) => a + x.linhas, 0);
+  return `${tot.toLocaleString('pt-PT')} linhas de reposição de ${impDDMM(datas[0])} a ${impDDMM(datas[datas.length - 1])} (${datas.length} dias)`;
+}
+async function blocoAutomaticas(){
+  let rows = [];
+  try{ const u = await sb('loja_automaticas_agg?select=data&order=data.desc&limit=1'); if(u && u[0]){ const ini = u[0].data.slice(0, 8) + '01'; rows = await impTodos(`loja_automaticas_agg?data=gte.${ini}&select=data,hora,divisao,tipo,numero,linhas,rutura,sem_stock&order=data.asc`); } }catch(e){ rows = []; }
+  let h = `<div class="section-title">🔁 Listas automáticas e reposição — mês</div>`;
+  if(!rows.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o relatório mensal das automáticas em "📥 Carregar relatórios".</div></div>`;
+  let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
+  const nomeCurto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : (p[0] || ''); };
+  const soma = (l, k) => l.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+  const datas = [...new Set(rows.map(r => r.data))].sort(), nD = datas.length, tot = soma(rows, 'linhas');
+  const mesNome = impTitulo(IMP_MESES[Number(datas[0].slice(5, 7)) - 1]);
+  const porTipo = {}; rows.forEach(r => { porTipo[r.tipo] = (porTipo[r.tipo] || 0) + r.linhas; });
+  const tile = (v, t, cor) => `<div style="flex:1;min-width:100px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:19px;font-weight:800;color:${cor || 'var(--ink)'};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
+  // de 2 em 2 horas: entre as 8h e as 22h, horas seguidas sem automáticas
+  const auto = rows.filter(r => /autom/i.test(r.tipo));
+  const falhas = datas.map(d => { const hs = [...new Set(auto.filter(r => r.data === d).map(r => r.hora))].filter(x => x >= 8 && x <= 22).sort((a, b) => a - b);
+    const marcos = [8, ...hs, 22]; let pior = 0, ini = null; for(let i = 1; i < marcos.length; i++){ const g = marcos[i] - marcos[i - 1]; if(g > pior){ pior = g; ini = marcos[i - 1]; } }
+    return {d, pior, ini, horas: hs.length}; });
+  const cumpre = falhas.filter(f => f.pior <= 2).length;
+  h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${mesNome} · ${impDDMM(datas[0])} a ${impDDMM(datas[nD - 1])} · ${nD} dias</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${tile(tot.toLocaleString('pt-PT'), 'linhas de reposição no mês')}${tile(Math.round(tot / nD).toLocaleString('pt-PT'), 'por dia (média)')}
+      ${tile(Math.round(cumpre / nD * 100) + '%', `dias com automáticas de 2 em 2 horas (${cumpre}/${nD})`, cumpre === nD ? 'var(--green)' : cumpre / nD >= .8 ? 'var(--amber)' : 'var(--red)')}
+      ${tile(soma(rows, 'rutura').toLocaleString('pt-PT'), 'linhas em rutura', 'var(--red)')}${tile(soma(rows, 'sem_stock').toLocaleString('pt-PT'), 'sem stock', 'var(--amber)')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${Object.entries(porTipo).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<span style="background:var(--bg-soft,#F6F4EF);border-radius:8px;padding:4px 9px;font-size:12px;"><b>${rpEsc(t)}</b> ${Math.round(n / tot * 100)}% · ${n.toLocaleString('pt-PT')}</span>`).join('')}</div></div>`;
+  // por dia
+  const porDia = datas.map(d => ({d, n: soma(rows.filter(r => r.data === d), 'linhas')})), mx = Math.max(...porDia.map(x => x.n), 1);
+  h += `<div class="card"><h3 style="margin-bottom:8px;">Por dia</h3><div class="rchart" style="height:90px;">${porDia.map(x => { const f = falhas.find(z => z.d === x.d); return `<div class="bars"><div class="bar" title="${impDDMM(x.d)}: ${x.n}" style="height:${(x.n / mx * 100).toFixed(1)}%;background:${f && f.pior > 2 ? 'var(--red)' : 'var(--green)'};"></div></div>`; }).join('')}</div>
+    <div class="rchart-labels">${porDia.map(x => `<span style="font-size:8px;">${x.d.slice(8, 10)}</span>`).join('')}</div><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">Verde = automáticas de 2 em 2 horas cumpridas (8h–22h) · vermelho = houve mais de 2 horas sem automáticas.</div></div>`;
+  const maus = falhas.filter(f => f.pior > 2).sort((a, b) => b.pior - a.pior);
+  if(maus.length) h += `<details class="card"><summary style="cursor:pointer;font-weight:700;color:var(--red);">⏰ Dias com mais de 2 horas sem automáticas (${maus.length})</summary>${maus.map(f => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;"><span>${new Date(f.d + 'T12:00:00').toLocaleDateString('pt-PT', {weekday:'short', day:'2-digit', month:'2-digit'})}</span><b style="color:var(--red);">${f.pior} h sem automáticas a partir das ${f.ini}h</b></div>`).join('')}</details>`;
+  // por hora
+  const porHora = Array.from({length: 18}, (_, i) => i + 6).map(hh => ({hh, n: soma(rows.filter(r => r.hora === hh), 'linhas') / nD})), mxH = Math.max(...porHora.map(x => x.n), 1);
+  h += `<div class="card"><h3 style="margin-bottom:8px;">Por hora (média por dia)</h3><div class="rchart" style="height:80px;">${porHora.map(x => `<div class="bars"><div class="bar" title="${x.hh}h: ${Math.round(x.n)}" style="height:${(x.n / mxH * 100).toFixed(1)}%;background:var(--navy);"></div></div>`).join('')}</div><div class="rchart-labels">${porHora.map(x => `<span style="font-size:8px;">${x.hh}</span>`).join('')}</div></div>`;
+  // por pessoa
+  const pp = {}; rows.forEach(r => { const k = r.numero || '—'; pp[k] = (pp[k] || 0) + r.linhas; });
+  const pessoas = Object.entries(pp).sort((a, b) => b[1] - a[1]), mxP = pessoas[0] ? pessoas[0][1] : 1;
+  const barra = (t, n, m, cor) => `<div style="display:grid;grid-template-columns:minmax(0,1fr) 60px;gap:8px;align-items:center;margin:5px 0;font-size:12.5px;"><div><div>${t}</div><div style="height:7px;border-radius:5px;background:var(--line);margin-top:3px;overflow:hidden;"><div style="height:100%;width:${(n / m * 100).toFixed(1)}%;background:${cor};"></div></div></div><b style="text-align:right;">${n.toLocaleString('pt-PT')}</b></div>`;
+  h += `<div class="card"><h3 style="margin-bottom:6px;">👥 Quem fez as listas</h3>${pessoas.slice(0, 12).map(([k, n]) => barra(rpEsc(nomes[k] ? nomeCurto(nomes[k]) : 'Nº ' + k) + ` <span style="font-size:10.5px;color:var(--ink-soft);">${Math.round(n / tot * 100)}%</span>`, n, mxP, '#1F7A33')).join('')}</div>`;
+  // por divisão
+  const pd = {}; rows.forEach(r => { const k = autoDiv(r.divisao); pd[k] = pd[k] || {n: 0, ru: 0}; pd[k].n += r.linhas; pd[k].ru += r.rutura; });
+  const divs = Object.entries(pd).sort((a, b) => b[1].n - a[1].n), mxD = divs[0] ? divs[0][1].n : 1;
+  h += `<details class="card"><summary style="cursor:pointer;font-weight:700;">🏷️ Por divisão</summary>${divs.map(([k, o]) => barra(rpEsc(k) + (o.ru ? ` <span style="font-size:10.5px;color:var(--red);">${o.ru} em rutura</span>` : ''), o.n, mxD, 'var(--navy)')).join('')}</details>`;
+  return h;
+}
 
 // ===================== RUTURAS DE STOCK TEÓRICO (KPI 01.09.01 — sortido da loja) =====================
 // Substitui o antigo cartão de Markdown.
