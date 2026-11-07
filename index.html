@@ -2967,12 +2967,12 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   const lista = [];
   for(let i=h.i+1;i<R.length;i++){
     const r = R[i]||[]; const ac = impNum(r[c('Venda AC')]), aa = impNum(r[c('Venda AA')]);
-    if(!impTxt(r[c('Categoria')]) || !(aa >= 100) || !(ac > 0)) continue;
+    if(!impTxt(r[c('Categoria')]) || !((aa||0) >= 100 || (ac||0) >= 100)) continue;
     const qp = impNum(r[c('Quebra AC %')]);
-    lista.push({divisao: impTitulo(r[c('Divisao')]), categoria: impTitulo(r[c('Categoria')]), venda_ac: impR2(ac), venda_aa: impR2(aa), delta_pct: impR2((ac-aa)/aa*100), quebra_ac: impR2(impNum(r[c('Quebra € AC')]) || 0), quebra_ac_pct: impR2((qp||0)*100), delta_quebra_pp: impR2(impNum(r[c('Delta Quebra pp.')]) || 0)});
+    lista.push({divisao: impTitulo(r[c('Divisao')]), familia: c('Familia') != null && c('Familia') >= 0 ? impTitulo(r[c('Familia')]) : null, categoria: impTitulo(r[c('Categoria')]), venda_ac: impR2(ac||0), venda_aa: impR2(aa||0), delta_pct: aa ? impR2(((ac||0)-aa)/aa*100) : null, quebra_ac: impR2(impNum(r[c('Quebra € AC')]) || 0), quebra_ac_pct: impR2((qp||0)*100), delta_quebra_pp: impR2(impNum(r[c('Delta Quebra pp.')]) || 0)});
   }
   if(!lista.length) throw new Error('sem categorias');
-  lista.sort((a,b)=>a.delta_pct-b.delta_pct);
+  lista.sort((a,b)=>(a.delta_pct ?? 9999)-(b.delta_pct ?? 9999));
   let totalLoja = 0;
   const S = impLinhas(wb.Sheets['Sumario por loja']);
   const hs = impCabecalho(S, ['Area','Venda AC']) || impCabecalho(S, ['Area','Venda AC'.trim()]);
@@ -2986,7 +2986,7 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   await impVerificarData('categorias', dataRef);
   // guarda as 10 que mais perdem em € e as 10 que mais perdem em % (sem repetir)
   const porEuro = [...lista].sort((a,b) => (b.venda_aa - b.venda_ac) - (a.venda_aa - a.venda_ac)).slice(0,10);
-  const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro, ...lista.filter(x => x.venda_aa > x.venda_ac)].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
+  const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro, ...lista].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
   await sb('loja_categorias_perda_vendas?id=gt.0', {method:'DELETE'});
   for(let i = 0; i < top.length; i += 300) await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top.slice(i, i + 300))});
   await impGuardarData('categorias', dataRef);
@@ -13245,6 +13245,8 @@ async function renderPainelVendas(){
   html += `</div>`;
 
   try{ html += vendasPerdaPorDivisao(categoriasPerda || []); }catch(e){ console.error('perda por divisão', e); }
+  try{ html += vendasCrescemPorDivisao(categoriasPerda || []); }catch(e){ console.error('crescem por divisão', e); }
+  try{ html += vendasComparacoesBalcao(categoriasPerda || []); }catch(e){ console.error('comparações', e); }
 
   content.innerHTML = html;
 }
@@ -13268,6 +13270,88 @@ function vendasPerdaPorDivisao(cats){
       <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;">${cs.length} categoria${cs.length > 1 ? 's' : ''} a perder · pior: ${rpEsc(cs[0].categoria)}</div></summary>
       ${cs.slice(0, 5).map(linha).join('')}${cs.length > 5 ? `<details><summary style="cursor:pointer;font-size:11.5px;padding:4px 10px;color:var(--ink-soft);">mais ${cs.length - 5}</summary>${cs.slice(5).map(linha).join('')}</details>` : ''}</details>`; }).join('');
   return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Perda = venda do ano passado − venda deste ano. Atualiza ao carregar o relatório "Vendas e Quebras".</div></div>`;
+}
+
+// categorias que mais crescem (€), agrupadas por divisão
+function vendasCrescemPorDivisao(cats){
+  const eur = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const l = cats.map(c => ({...c, ganho: Number(c.venda_ac) - Number(c.venda_aa)})).filter(c => c.ganho > 0);
+  let h = `<div class="section-title">📈 Categorias que mais crescem — por divisão</div><div class="card">`;
+  if(!l.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados. Carregue de novo o relatório "Vendas e Quebras" para a app guardar também as categorias que crescem.</div></div>`;
+  const top = [...l].sort((a, b) => b.ganho - a.ganho).slice(0, 10);
+  h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Mês até ${l[0].data_referencia ? new Date(l[0].data_referencia + 'T12:00:00').toLocaleDateString('pt-PT') : '—'} vs ano passado</div>`;
+  h += `<div style="font-size:12px;font-weight:800;color:var(--navy);margin:2px 0 4px;">Top 10 que mais crescem</div>` + top.map((c, i) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid var(--line);font-size:12px;"><span style="min-width:0;"><b>${i+1}.</b> ${rpEsc(c.categoria)}<span style="color:var(--ink-soft);font-size:10.5px;"> · ${rpEsc(c.divisao || '')} · ${eur(c.venda_ac)} vs ${eur(c.venda_aa)}</span></span><b style="color:var(--green);white-space:nowrap;">+${eur(c.ganho)}</b></div>`).join('');
+  const div = {};
+  l.forEach(c => { const k = c.divisao || '—'; (div[k] = div[k] || {nome: k, ganho: 0, cats: []}); div[k].ganho += c.ganho; div[k].cats.push(c); });
+  const lista = Object.values(div).sort((a, b) => b.ganho - a.ganho); const max = lista[0].ganho;
+  const linha = c => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0 4px 10px;border-top:1px dashed var(--line);font-size:12px;"><span style="min-width:0;">${rpEsc(c.categoria)}<span style="color:var(--ink-soft);font-size:10.5px;"> · ${eur(c.venda_ac)} vs ${eur(c.venda_aa)}${c.delta_pct != null ? ` (+${Number(c.delta_pct).toLocaleString('pt-PT', {maximumFractionDigits:1})}%)` : ' (novo)'}</span></span><b style="color:var(--green);white-space:nowrap;">+${eur(c.ganho)}</b></div>`;
+  h += `<div style="font-size:12px;font-weight:800;color:var(--navy);margin:12px 0 2px;">Por divisão</div>` + lista.map(d => { const cs = d.cats.sort((a, b) => b.ganho - a.ganho);
+    return `<details style="border-top:1px solid var(--line);padding:6px 0;"><summary style="cursor:pointer;list-style:none;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;"><b>${rpEsc(d.nome)}</b><b style="color:var(--green);">+${eur(d.ganho)}</b></div>
+      <div style="height:6px;border-radius:4px;background:var(--line);margin-top:4px;overflow:hidden;"><div style="height:100%;width:${(d.ganho / max * 100).toFixed(1)}%;background:var(--green);"></div></div>
+      <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;">${cs.length} categoria${cs.length > 1 ? 's' : ''} a crescer · melhor: ${rpEsc(cs[0].categoria)}</div></summary>
+      ${cs.slice(0, 8).map(linha).join('')}${cs.length > 8 ? `<details><summary style="cursor:pointer;font-size:11.5px;padding:4px 10px;color:var(--ink-soft);">mais ${cs.length - 8}</summary>${cs.slice(8).map(linha).join('')}</details>` : ''}</details>`; }).join('');
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Crescimento = venda deste ano − venda do ano passado.</div></div>`;
+}
+
+// serviços de balcão que fecharam (ou balcão vs livre serviço): para onde foram as vendas
+const VND_NORM = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+const VND_BALC = /BALC|_BC\b/;
+const VND_LS = /\bLS\b|_LS\b|LIVRE SERV/;
+const VND_COMPARA = [
+  {titulo: '☕ Café e bolos (cafetaria)', a: 'Cafetaria (balcão)', ma: c => /RESTAURA/.test(c.d),
+    b: [['Pastelaria individual', c => /PASTELARIA INDIVIDUAL/.test(c.f) || (!c.f && /PASTELARIA (DOCE|SALGADA)/.test(c.c) && /PADARIA/.test(c.d))],
+        ['Sandes e Grab&Go (Take-Away)', c => /TAKE/.test(c.d) && (/SANDES|GRAB/.test(c.f) || (!c.f && /SANDES|GRAB/.test(c.c)))],
+        ['Café embalado', c => /BEBIDAS QUENTES/.test(c.f) || (!c.f && /^CAFES/.test(c.c))]]},
+  {titulo: '🥓 Charcutaria', a: 'Charcutaria balcão', ma: c => /CHARCUT/.test(c.d) && VND_BALC.test(c.f + ' ' + c.c),
+    b: [['Charcutaria livre serviço', c => /CHARCUT/.test(c.d) && !VND_BALC.test(c.f + ' ' + c.c)]]},
+  {titulo: '🧀 Queijos', a: 'Queijos balcão', ma: c => /QUEIJ/.test(c.d) && VND_BALC.test(c.f + ' ' + c.c),
+    b: [['Queijos livre serviço', c => /QUEIJ/.test(c.d) && !VND_BALC.test(c.f + ' ' + c.c)]]},
+  {titulo: '🍗 Churrascaria', a: 'Churrascaria balcão', ma: c => /CHURRASC/.test(c.f + ' ' + c.c) && /BALC/.test(c.c),
+    b: [['Piccolo Churrascaria', c => /PIC+OLO/.test(c.c)], ['Leitão assado', c => /LEITAO ASSADO/.test(c.f + ' ' + c.c) && /TAKE/.test(c.d)]]},
+  {titulo: '🥩 Talho · Bovino', a: 'Bovino balcão', ma: c => /TALHO/.test(c.d) && /BOVINO|NOVILHO/.test(c.c) && VND_BALC.test(c.c),
+    b: [['Bovino livre serviço', c => /TALHO/.test(c.d) && /BOVINO|NOVILHO/.test(c.c) && VND_LS.test(c.c)]]},
+  {titulo: '🐔 Talho · Aves', a: 'Aves balcão', ma: c => /TALHO/.test(c.d) && /AVES/.test(c.c) && VND_BALC.test(c.c),
+    b: [['Aves livre serviço', c => /TALHO/.test(c.d) && /AVES/.test(c.c) && VND_LS.test(c.c)]]},
+  {titulo: '🐖 Talho · Porco', a: 'Porco balcão', ma: c => /TALHO/.test(c.d) && /PORCO|SUINO/.test(c.c) && VND_BALC.test(c.c),
+    b: [['Porco livre serviço', c => /TALHO/.test(c.d) && /PORCO|SUINO/.test(c.c) && VND_LS.test(c.c)]]},
+  {titulo: '🐑 Talho · Ovino/Caprino', a: 'Ovino/Caprino balcão', ma: c => /TALHO/.test(c.d) && /\bOVINO|CAPRINO/.test(c.c) && VND_BALC.test(c.c),
+    b: [['Ovino/Caprino livre serviço', c => /TALHO/.test(c.d) && /\bOVINO|CAPRINO/.test(c.c) && VND_LS.test(c.c)]]}
+];
+function vendasComparacoesBalcao(cats){
+  const eur = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const sinal = v => (v >= 0 ? '+' : '−') + eur(Math.abs(v));
+  const L = cats.map(x => ({x, d: VND_NORM(x.divisao), f: VND_NORM(x.familia), c: VND_NORM(x.categoria), ac: Number(x.venda_ac) || 0, aa: Number(x.venda_aa) || 0}));
+  const soma = fn => { const g = L.filter(fn); return {ac: g.reduce((t, c) => t + c.ac, 0), aa: g.reduce((t, c) => t + c.aa, 0), cats: g}; };
+  let h = `<div class="section-title">⚖️ Balcão vs livre serviço — para onde foram as vendas</div><div class="card">`;
+  if(!L.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados. Carregue o relatório "Vendas e Quebras".</div></div>`;
+  h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Mês até ${cats[0].data_referencia ? new Date(cats[0].data_referencia + 'T12:00:00').toLocaleDateString('pt-PT') : '—'} vs ano passado. Mostra quanto se perdeu nos serviços de balcão e quanto as alternativas ganharam.</div>`;
+  const barra = (lbl, g, max) => { const dv = g.ac - g.aa;
+    return `<div style="margin-top:6px;"><div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;"><span>${rpEsc(lbl)}</span><b style="color:${dv >= 0 ? 'var(--green)' : 'var(--red)'};white-space:nowrap;">${sinal(dv)}${g.aa ? ` (${dv >= 0 ? '+' : ''}${(dv / g.aa * 100).toLocaleString('pt-PT', {maximumFractionDigits:0})}%)` : ''}</b></div>
+      <div style="display:flex;gap:4px;align-items:center;margin-top:2px;font-size:10.5px;color:var(--ink-soft);"><span style="width:34px;">2026</span><div style="flex:1;height:7px;background:var(--line);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${(g.ac / max * 100).toFixed(1)}%;background:var(--navy);"></div></div><span style="width:62px;text-align:right;">${eur(g.ac)}</span></div>
+      <div style="display:flex;gap:4px;align-items:center;font-size:10.5px;color:var(--ink-soft);"><span style="width:34px;">2025</span><div style="flex:1;height:7px;background:var(--line);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${(g.aa / max * 100).toFixed(1)}%;background:#9AA5B1;"></div></div><span style="width:62px;text-align:right;">${eur(g.aa)}</span></div></div>`; };
+  let mostrados = 0;
+  VND_COMPARA.forEach(cmp => {
+    const A = soma(cmp.ma); const B = cmp.b.map(([n, fn]) => [n, soma(c => fn(c) && !cmp.ma(c))]);
+    if(!A.ac && !A.aa && B.every(([, g]) => !g.ac && !g.aa)) return;
+    mostrados++;
+    const max = Math.max(A.ac, A.aa, ...B.map(([, g]) => Math.max(g.ac, g.aa)), 1);
+    const perdaA = A.aa - A.ac; const ganhoB = B.reduce((t, [, g]) => t + (g.ac - g.aa), 0); const saldo = (A.ac + B.reduce((t, [, g]) => t + g.ac, 0)) - (A.aa + B.reduce((t, [, g]) => t + g.aa, 0));
+    let concl = '';
+    if(perdaA > 0 && ganhoB >= perdaA) concl = `O balcão perdeu ${eur(perdaA)}; as alternativas ganharam ${eur(ganhoB)} → <b>recuperámos tudo</b> e ainda mais ${eur(ganhoB - perdaA)}.`;
+    else if(perdaA > 0 && ganhoB > 0) concl = `O balcão perdeu ${eur(perdaA)}; as alternativas ganharam ${eur(ganhoB)} → recuperámos <b>${Math.min(100, Math.round(ganhoB / perdaA * 100))}%</b>.`;
+    else if(perdaA > 0) concl = `O balcão perdeu ${eur(perdaA)} e as alternativas também não cresceram (${sinal(ganhoB)}): <b>estas vendas não passaram para o livre serviço</b>.`;
+    else if(ganhoB < 0) concl = `O balcão aguenta (${sinal(-perdaA)}), mas o livre serviço perde ${eur(-ganhoB)}.`;
+    else concl = `Balcão e livre serviço a crescer.`;
+    const det = [['', A], ...B].flatMap(([, g]) => g.cats).sort((a, b) => (b.ac - b.aa) - (a.ac - a.aa)).map(c => `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0 3px 10px;border-top:1px dashed var(--line);font-size:11.5px;"><span>${rpEsc(c.x.categoria)}<span style="color:var(--ink-soft);font-size:10.5px;"> · ${eur(c.ac)} vs ${eur(c.aa)}</span></span><b style="color:${c.ac - c.aa >= 0 ? 'var(--green)' : 'var(--red)'};white-space:nowrap;">${sinal(c.ac - c.aa)}</b></div>`).join('');
+    h += `<div style="border-top:1px solid var(--line);padding:8px 0;">
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:13px;"><b>${cmp.titulo}</b><b style="color:${saldo >= 0 ? 'var(--green)' : 'var(--red)'};white-space:nowrap;">saldo ${sinal(saldo)}</b></div>
+      ${barra(cmp.a, A, max)}${B.map(([n, g]) => barra(n, g, max)).join('')}
+      <div style="font-size:11.5px;margin-top:6px;padding:6px 8px;border-radius:8px;background:${saldo >= 0 ? '#E8F4EA' : '#FBEAEA'};">${concl}</div>
+      <details style="margin-top:4px;"><summary style="cursor:pointer;font-size:11px;color:var(--ink-soft);">ver categorias</summary>${det}</details></div>`;
+  });
+  if(!mostrados) h += `<div style="font-size:12.5px;color:var(--ink-soft);">Sem dados destas categorias.</div>`;
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Saldo = vendas do balcão + alternativas este ano − o mesmo no ano passado. Atualiza ao carregar o relatório "Vendas e Quebras".</div></div>`;
 }
 
 // ===================== CUSTOS DA LOJA (luz, água, pessoal, economato) =====================
