@@ -3211,7 +3211,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {automaticas:'Listas automáticas do mês → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -15549,6 +15549,7 @@ async function renderMelhoriaContinua(){
     <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
   </div>` + listasFormHtml();
   try{ html += await blocoAutomaticas(); }catch(e){ console.error('automáticas', e); }
+  try{ const RD = await reposDados(); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
 
   const porDiaListas = {};
@@ -15997,6 +15998,7 @@ async function impAutomaticas(wb){
   await sb(`loja_automaticas_agg?data=gte.${datas[0]}&data=lte.${datas[datas.length - 1]}`, {method:'DELETE'});
   for(let i = 0; i < l.length; i += 500) await sb('loja_automaticas_agg', {method:'POST', body: JSON.stringify(l.slice(i, i + 500))});
   const tot = l.reduce((a, x) => a + x.linhas, 0);
+  try{ await reposGuardarLinhas(wb); }catch(e){ console.warn('linhas de reposição', e); }
   return `${tot.toLocaleString('pt-PT')} linhas de reposição de ${impDDMM(datas[0])} a ${impDDMM(datas[datas.length - 1])} (${datas.length} dias)`;
 }
 async function blocoAutomaticas(){
@@ -16041,6 +16043,91 @@ async function blocoAutomaticas(){
   const pd = {}; rows.forEach(r => { const k = autoDiv(r.divisao); pd[k] = pd[k] || {n: 0, ru: 0}; pd[k].n += r.linhas; pd[k].ru += r.rutura; });
   const divs = Object.entries(pd).sort((a, b) => b[1].n - a[1].n), mxD = divs[0] ? divs[0][1].n : 1;
   h += `<details class="card"><summary style="cursor:pointer;font-weight:700;">🏷️ Por divisão</summary>${divs.map(([k, o]) => barra(rpEsc(k) + (o.ru ? ` <span style="font-size:10.5px;color:var(--red);">${o.ru} em rutura</span>` : ''), o.n, mxD, 'var(--navy)')).join('')}</details>`;
+  return h;
+}
+
+// ---------- REPOSIÇÃO ARTIGO A ARTIGO (para ligar com as ruturas): automática, massiva (paletes) e visível ----------
+function reposLinhasExcel(wb){
+  const out = [];
+  for(const n of wb.SheetNames){
+    const R = impLinhas(wb.Sheets[n]);
+    const h = impCabecalho(R, ['Hora', 'Txt.brv.material', 'Tipo Repos', 'Data']);
+    if(!h) continue;
+    const row = (R[h.i] || []).map(impTxt); const c = t => row.findIndex(x => impNorm(x) === impNorm(t));
+    const cC = c('Centro'), cH = c('Hora'), cM = c('Material'), cA = c('Txt.brv.material'), cDv = c('Div.de Neg'), cN = c('Nº pess.'), cRu = c('Rutura'), cP = c('Palete WPMS'), cT = c('Tipo Repos'), cD = c('Data'), cR = c('Reposição'), cQ = c('Qtd. Calc.');
+    for(let i = h.i + 1; i < R.length; i++){
+      const r = R[i] || []; if(cC >= 0 && impTxt(r[cC]).replace(/\.0$/, '') !== IMP_LOJA) continue;
+      const data = impData(r[cD]), mat = impTxt(r[cM]).replace(/\.0$/, '').replace(/^0+/, ''); if(!data || !mat) continue;
+      const hr = r[cH]; const hora = typeof hr === 'number' ? new Date(Math.round((hr % 1) * 86400) * 1000).toISOString().slice(11, 16) : impTxt(hr).slice(0, 5);
+      out.push({data, hora, material: mat, artigo: impTitulo(r[cA]), divisao: impTxt(r[cDv]).replace(/\.0$/, ''), tipo: impTxt(r[cT]) || null, numero: impTxt(r[cN]).replace(/\.0$/, '').replace(/^0+/, ''),
+        palete: cP >= 0 ? impTxt(r[cP]).replace(/\.0$/, '') || null : null, reposicao: cR >= 0 ? impNum(r[cR]) : null, qtd_calc: cQ >= 0 ? impNum(r[cQ]) : null, rutura: impTxt(r[cRu]).toUpperCase() === 'X'});
+    }
+    break;
+  }
+  return out;
+}
+async function reposGuardarLinhas(wb){
+  const l = reposLinhasExcel(wb); if(!l.length) return 0;
+  const ds = l.map(x => x.data).sort();
+  await sb(`loja_reposicao_linhas?data=gte.${ds[0]}&data=lte.${ds[ds.length - 1]}`, {method:'DELETE'});
+  for(let i = 0; i < l.length; i += 500) await sb('loja_reposicao_linhas', {method:'POST', body: JSON.stringify(l.slice(i, i + 500))});
+  return l.length;
+}
+async function reposDados(){
+  let l = [];
+  try{ const u = await sb('loja_reposicao_linhas?select=data&order=data.desc&limit=1'); if(u && u[0]){ const ini = u[0].data.slice(0, 8) + '01'; l = await impTodos(`loja_reposicao_linhas?data=gte.${ini}&select=data,hora,material,artigo,tipo,numero,palete,reposicao,rutura&order=data.asc,hora.asc`); } }catch(e){ l = []; }
+  let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
+  const nome = n => { const x = nomes[n]; if(!x) return n ? 'Nº ' + n : '—'; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
+  return {l, nome};
+}
+// quem e quanto por dia: automática (artigos repostos), massiva (paletes, artigos, quem), visível (artigos picados, quem)
+async function blocoReposicaoDia(D){
+  D = D || await reposDados(); const {l, nome} = D;
+  let h = `<div class="section-title">📦 Reposição por dia — automática, massiva e visível</div>`;
+  if(!l.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Carregue o relatório de reposição do mês (automáticas / massiva / visível) em "📥 Carregar relatórios".</div></div>`;
+  const datas = [...new Set(l.map(x => x.data))].sort().reverse();
+  const quem = arr => { const o = {}; arr.forEach(x => { o[x.numero] = (o[x.numero] || 0) + 1; }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
+  h += `<div class="card" style="padding:4px 10px;">` + datas.map((d, k) => {
+    const L = l.filter(x => x.data === d);
+    const au = L.filter(x => /autom/i.test(x.tipo || '') && Number(x.reposicao) > 0), ma = L.filter(x => /massiva/i.test(x.tipo || '')), vi = L.filter(x => /vis[ií]vel/i.test(x.tipo || ''));
+    const pal = [...new Set(ma.map(x => x.palete).filter(Boolean))];
+    const artA = new Set(au.map(x => x.material)).size, artM = new Set(ma.map(x => x.material)).size, artV = new Set(vi.map(x => x.material)).size;
+    const qm = quem(ma), qv = quem(vi);
+    return `<details ${k === 0 ? 'open' : ''} style="border-top:${k ? '1px solid var(--line)' : '0'};padding:6px 0;"><summary style="cursor:pointer;list-style:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;"><b style="font-size:13px;">${new Date(d + 'T12:00:00').toLocaleDateString('pt-PT', {weekday:'short', day:'2-digit', month:'2-digit'})}</b>
+      <span style="font-size:11.5px;color:var(--ink-soft);">🔁 <b style="color:var(--ink);">${artA}</b> automática · 🚚 <b style="color:var(--ink);">${pal.length}</b> paletes · 👀 <b style="color:var(--ink);">${artV}</b> visível</span></div></summary>
+      <div style="font-size:12px;margin:6px 0 0 4px;line-height:1.6;">
+        <div>🔁 <b>Automática:</b> ${artA} artigos repostos (${au.length} reposições)</div>
+        <div>🚚 <b>Massiva:</b> ${pal.length} palete${pal.length === 1 ? '' : 's'} · ${artM} artigos${qm.length ? ' · repôs: ' + qm.map(([n, c]) => `${rpEsc(nome(n))} (${c})`).join(', ') : ''}</div>
+        <div>👀 <b>Visível:</b> ${artV} artigos picados${qv.length ? ' · por: ' + qv.map(([n, c]) => `${rpEsc(nome(n))} (${c})`).join(', ') : ''}</div>
+      </div></details>`; }).join('') + `</div>`;
+  return h;
+}
+// ruturas × reposição: se está em rutura mas foi reposto, falta dar entrada (descarga/receção)
+async function blocoRuturasReposicao(D){
+  D = D || await reposDados(); const {l, nome} = D;
+  let rut = []; try{ const u = await sb('loja_ruturas?select=data&order=data.desc&limit=1'); if(u && u[0]) rut = await sb(`loja_ruturas?data=eq.${u[0].data}&select=data,artigo_cod,artigo,area,pa`) || []; }catch(e){}
+  let h = `<div class="section-title">🔗 Ruturas × reposição — o que chegou e o que falta</div>`;
+  if(!rut.length || !l.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Precisa do KPI de Ruturas e do relatório de reposição do mês carregados.</div></div>`;
+  const por = {}; l.forEach(x => { (por[x.material] = por[x.material] || []).push(x); });
+  const dm = d => impDDMM(d);
+  const ult = (arr, re, f) => { const a = arr.filter(x => re.test(x.tipo || '') && (!f || f(x))); return a.length ? a[a.length - 1] : null; };
+  const itens = rut.map(r => { const L = por[String(r.artigo_cod).replace(/^0+/, '')] || [];
+    const ma = ult(L, /massiva/i), au = ult(L, /autom/i, x => Number(x.reposicao) > 0), vi = ult(L, /vis[ií]vel/i), ss = ult(L, /sem stock/i);
+    const paletes = [...new Set(L.filter(x => /massiva/i.test(x.tipo || '')).map(x => x.data))];
+    const cat = (ma || au) ? 'descarga' : vi ? 'visivel' : 'sem';
+    return {...r, ma, au, vi, ss, paletes, cat}; });
+  const grupos = [['descarga', '⚠️ Em rutura mas foi reposto — falta dar entrada (descarga / receção)', '#B4231A'], ['visivel', '👀 Picado na visível, sem reposição', '#C77F12'], ['sem', '📭 Sem nenhum movimento no mês — rutura real', '#5b665e']];
+  h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Ruturas de ${impDDMM(rut[0].data)} cruzadas com a reposição de ${dm(l[0].data)} a ${dm(l[l.length - 1].data)}.</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${grupos.map(([k, t, cor]) => `<span style="border:1.5px solid ${cor};color:${cor};border-radius:10px;padding:4px 10px;font-size:12px;font-weight:700;">${itens.filter(x => x.cat === k).length} ${k === 'descarga' ? 'falta descarga' : k === 'visivel' ? 'só visível' : 'sem movimento'}</span>`).join('')}</div></div>`;
+  grupos.forEach(([k, t, cor]) => { const g = itens.filter(x => x.cat === k); if(!g.length) return;
+    h += `<details class="card" ${k === 'descarga' ? 'open' : ''}><summary style="cursor:pointer;font-weight:800;color:${cor};font-size:13px;">${t} (${g.length})</summary>` + g.map(x => `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;">
+      <div><b>${rpEsc(x.artigo || x.artigo_cod)}</b> <span style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod} · ${rpEsc(x.area || '')}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</span></div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.5;">
+        ${x.paletes.length ? `🚚 palete chegou: <b style="color:var(--ink);">${x.paletes.map(dm).join(', ')}</b>${x.ma ? ' · última reposta por ' + rpEsc(nome(x.ma.numero)) : ''}<br>` : ''}
+        ${x.au ? `🔁 automática reposta a <b style="color:var(--ink);">${dm(x.au.data)}</b> por ${rpEsc(nome(x.au.numero))}<br>` : ''}
+        ${x.vi ? `👀 picado na visível a <b style="color:var(--ink);">${dm(x.vi.data)}</b> às ${x.vi.hora || ''} por ${rpEsc(nome(x.vi.numero))}` : '👀 não foi picado na visível'}
+        ${x.ss ? `<br>🚫 dado sem stock a ${dm(x.ss.data)} por ${rpEsc(nome(x.ss.numero))}` : ''}
+      </div></div>`).join('') + `</details>`; });
   return h;
 }
 
