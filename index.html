@@ -655,6 +655,10 @@
   .rel-info small{display:block;font-size:12px;color:var(--ink-soft);}
   .rel-novo{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
   .rel-novo input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;}
+.mc-sep-barra{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:8px 0;margin:4px 0 2px;background:var(--bg, #F4F1EA);}
+.mc-sep-barra button{min-width:0;border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:12px;padding:7px 2px;font-size:11.5px;font-weight:700;cursor:pointer;line-height:1.25;}
+.mc-sep-barra button.ativo{background:var(--navy);color:#fff;border-color:var(--navy);}
+.mc-sep-painel > .section-title:first-child{margin-top:6px;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -15623,54 +15627,12 @@ async function renderMelhoriaContinua(){
   const content = document.getElementById('melhoria-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
 
-  const [plano, listasHoje, listas7dias] = await Promise.all([
-    sb('loja_plano_acao?select=*&order=area.asc'),
-    sb(`loja_listas_automaticas?data=eq.${hojeISO()}&select=numero_listas,secao`),
-    sb(`loja_listas_automaticas?select=data,numero_listas&order=data.asc&limit=60`)
-  ]);
-
-  const totalListas = listasHoje.reduce((s,l)=>s+(l.numero_listas||0),0);
-
   const editavel = currentUser && souDona();
   let html = '';
   try{ html += await blocoAutomaticas(); }catch(e){ console.error('automáticas', e); }
   try{ const RD = await reposDados(); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
-  try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
 
-  const indicadores = await sb('loja_indicadores_melhoria_continua?select=*&order=valor_pct.desc');
-  if(indicadores.length){
-    html += `<div class="section-title">Indicadores de Melhoria Contínua</div>`;
-    html += `<div class="mc-grid">`;
-    indicadores.forEach(i=>{
-      html += `<div class="mc-card" ${editavel?`onclick="editarIndicadorMC(${i.id})"`:'style="cursor:default;"'}>
-        <div class="mc-name">${i.indicador}${editavel?' ✏️':''}</div>
-        <div class="mc-pct">${i.valor_pct}%</div>
-      </div>`;
-    });
-    html += `</div>`;
-  }
-
-  const grupos = {};
-  plano.forEach(p=>{
-    if(!grupos[p.area]) grupos[p.area] = [];
-    grupos[p.area].push(p);
-  });
-
-  html += `<div class="section-title">Plano de Ação</div>`;
-  Object.keys(grupos).sort().forEach(area=>{
-    html += `<div class="plano-acao-group"><div class="pa-titulo">${area}</div>`;
-    grupos[area].forEach(p=>{
-      const cls = p.estado === 'Pendente' ? 'pendente' : 'em-controlo';
-      html += `<div class="pa-item">
-        <div class="pa-ponto">${p.ponto}</div>
-        <div class="pa-acao">${p.acao}</div>
-        <span class="pa-estado ${cls}">${p.estado}</span>
-      </div>`;
-    });
-    html += `</div>`;
-  });
-
-  content.innerHTML = html; listasMostrarAtual();
+  content.innerHTML = html; mcOrganizarSeparadores(content);
 }
 
 function buildSparkline(rows){
@@ -16064,6 +16026,37 @@ async function impAutomaticas(wb){
 }
 // mês escolhido na Melhoria Contínua: 'atual' ou 'anterior'
 let mcMesSel = 'atual';
+let mcSep = 'auto';
+const MC_SEPS = [['auto', '🔁<br>Automáticas'], ['massiva', '🚚<br>Massiva'], ['visivel', '👀<br>Visível'], ['ruturas', '🔗<br>Ruturas']];
+// arruma o cartão em separadores: o resumo do mês fica sempre em cima, o resto vai para Automáticas / Massiva / Visível / Ruturas
+function mcOrganizarSeparadores(content){
+  const nos = [...content.childNodes]; if(!nos.length) return;
+  const titulos = nos.filter(n => n.nodeType === 1 && n.classList.contains('section-title'));
+  if(titulos.length < 2) return;
+  const tipo = t => /Massiva/i.test(t) ? 'massiva' : /Vis[ií]vel/i.test(t) ? 'visivel' : /Rutura/i.test(t) ? 'ruturas' : 'auto';
+  const topo = document.createElement('div'), barra = document.createElement('div'), paineis = {};
+  MC_SEPS.forEach(([k]) => { const d = document.createElement('div'); d.className = 'mc-sep-painel'; d.dataset.sep = k; paineis[k] = d; });
+  // em cima fica só o título e o primeiro cartão (o resumo do mês); o resto vai para os separadores
+  let atual = null, n = 0, cartoesTopo = 0;
+  nos.forEach(no => {
+    const el = no.nodeType === 1;
+    if(el && no.classList.contains('section-title')){ n++; atual = n === 1 ? null : tipo(no.textContent); }
+    else if(!atual && el && n >= 1 && /\bcard\b/.test(no.className || '')){ cartoesTopo++; if(cartoesTopo > 1) atual = 'auto'; }
+    (atual ? paineis[atual] : topo).appendChild(no);
+  });
+  barra.className = 'mc-sep-barra';
+  barra.innerHTML = MC_SEPS.filter(([k]) => paineis[k].childNodes.length).map(([k, t]) => `<button type="button" data-sep="${k}" onclick="mcMudarSep('${k}')">${t}</button>`).join('');
+  content.innerHTML = ''; content.appendChild(topo); content.appendChild(barra);
+  MC_SEPS.forEach(([k]) => { if(paineis[k].childNodes.length) content.appendChild(paineis[k]); });
+  if(!paineis[mcSep] || !paineis[mcSep].childNodes.length) mcSep = 'auto';
+  mcMudarSep(mcSep, true);
+}
+function mcMudarSep(k, semScroll){
+  mcSep = k;
+  document.querySelectorAll('.mc-sep-painel').forEach(d => d.style.display = d.dataset.sep === k ? '' : 'none');
+  document.querySelectorAll('.mc-sep-barra button').forEach(b => b.classList.toggle('ativo', b.dataset.sep === k));
+  if(!semScroll){ const b = document.querySelector('.mc-sep-barra'); if(b) b.scrollIntoView({behavior:'smooth', block:'start'}); }
+}
 function mcMesIntervalo(sel){ const d = new Date(); if((sel || mcMesSel) === 'anterior') d.setMonth(d.getMonth() - 1, 1); else d.setDate(1);
   const ini = impISO(d), fim = impISO(new Date(d.getFullYear(), d.getMonth() + 1, 0)); return {ini, fim, nome: impTitulo(IMP_MESES[d.getMonth()])}; }
 function mcMesBotoes(){ const a = mcMesIntervalo('anterior'), b = mcMesIntervalo('atual');
@@ -16220,7 +16213,7 @@ async function blocoRuturasReposicao(D){
   const grupos = [['descarga', '⚠️ Em rutura mas foi reposto — falta dar entrada (descarga / receção)', '#B4231A'], ['visivel', '👀 Picado na visível, sem reposição', '#C77F12'], ['sem', '📭 Sem nenhum movimento no mês — rutura real', '#5b665e']];
   h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Ruturas de ${impDDMM(rut[0].data)} cruzadas com a reposição de ${dm(l[0].data)} a ${dm(l[l.length - 1].data)}.</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${grupos.map(([k, t, cor]) => `<span style="border:1.5px solid ${cor};color:${cor};border-radius:10px;padding:4px 10px;font-size:12px;font-weight:700;">${itens.filter(x => x.cat === k).length} ${k === 'descarga' ? 'falta descarga' : k === 'visivel' ? 'só visível' : 'sem movimento'}</span>`).join('')}</div></div>`;
   grupos.forEach(([k, t, cor]) => { const g = itens.filter(x => x.cat === k); if(!g.length) return;
-    h += `<details class="card" ${k === 'descarga' ? 'open' : ''}><summary style="cursor:pointer;font-weight:800;color:${cor};font-size:13px;">${t} (${g.length})</summary>` + g.map(x => `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;">
+    h += `<details class="card"><summary style="cursor:pointer;font-weight:800;color:${cor};font-size:13px;">${t} (${g.length})</summary>` + g.map(x => `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;">
       <div><b>${rpEsc(x.artigo || x.artigo_cod)}</b> <span style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod} · ${rpEsc(x.area || '')}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</span></div>
       <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.5;">
         ${x.paletes.length ? `🚚 palete chegou: <b style="color:var(--ink);">${x.paletes.map(dm).join(', ')}</b>${x.ma ? ' · última reposta por ' + rpEsc(nome(x.ma.numero)) : ''}<br>` : ''}
