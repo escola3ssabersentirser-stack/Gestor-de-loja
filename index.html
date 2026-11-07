@@ -16001,11 +16001,18 @@ async function impAutomaticas(wb){
   try{ await reposGuardarLinhas(wb); }catch(e){ console.warn('linhas de reposição', e); }
   return `${tot.toLocaleString('pt-PT')} linhas de reposição de ${impDDMM(datas[0])} a ${impDDMM(datas[datas.length - 1])} (${datas.length} dias)`;
 }
+// mês escolhido na Melhoria Contínua: 'atual' ou 'anterior'
+let mcMesSel = 'atual';
+function mcMesIntervalo(sel){ const d = new Date(); if((sel || mcMesSel) === 'anterior') d.setMonth(d.getMonth() - 1, 1); else d.setDate(1);
+  const ini = impISO(d), fim = impISO(new Date(d.getFullYear(), d.getMonth() + 1, 0)); return {ini, fim, nome: impTitulo(IMP_MESES[d.getMonth()])}; }
+function mcMesBotoes(){ const a = mcMesIntervalo('anterior'), b = mcMesIntervalo('atual');
+  return `<div style="display:flex;gap:6px;margin:4px 0 10px;">${[['anterior', 'Mês anterior · ' + a.nome], ['atual', 'Mês atual · ' + b.nome]].map(([k, t]) => `<button class="econ-btn" style="margin:0;flex:1;${mcMesSel === k ? 'background:var(--navy);color:#fff;' : ''}" onclick="mcMesSel='${k}';renderMelhoriaContinua()">${t}</button>`).join('')}</div>`; }
 async function blocoAutomaticas(){
   let rows = [];
-  try{ const u = await sb('loja_automaticas_agg?select=data&order=data.desc&limit=1'); if(u && u[0]){ const ini = u[0].data.slice(0, 8) + '01'; rows = await impTodos(`loja_automaticas_agg?data=gte.${ini}&select=data,hora,divisao,tipo,numero,linhas,rutura,sem_stock&order=data.asc`); } }catch(e){ rows = []; }
-  let h = `<div class="section-title">🔁 Listas automáticas e reposição — mês</div>`;
-  if(!rows.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue o relatório mensal das automáticas em "📥 Carregar relatórios".</div></div>`;
+  const M = mcMesIntervalo();
+  try{ rows = await impTodos(`loja_automaticas_agg?data=gte.${M.ini}&data=lte.${M.fim}&select=data,hora,divisao,tipo,numero,linhas,rutura,sem_stock&order=data.asc`); }catch(e){ rows = []; }
+  let h = mcMesBotoes() + `<div class="section-title">🔁 Listas automáticas e reposição — ${M.nome}</div>`;
+  if(!rows.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda sem dados de ${M.nome}. Carregue o relatório de reposição (automáticas / massiva / visível) em "📥 Carregar relatórios" — a app junta os dias e vai atualizando.</div></div>`;
   let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
   const nomeCurto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : (p[0] || ''); };
   const soma = (l, k) => l.reduce((a, x) => a + (Number(x[k]) || 0), 0);
@@ -16075,7 +16082,8 @@ async function reposGuardarLinhas(wb){
 }
 async function reposDados(){
   let l = [];
-  try{ const u = await sb('loja_reposicao_linhas?select=data&order=data.desc&limit=1'); if(u && u[0]){ const ini = u[0].data.slice(0, 8) + '01'; l = await impTodos(`loja_reposicao_linhas?data=gte.${ini}&select=data,hora,material,artigo,tipo,numero,palete,reposicao,rutura&order=data.asc,hora.asc`); } }catch(e){ l = []; }
+  const M = mcMesIntervalo();
+  try{ l = await impTodos(`loja_reposicao_linhas?data=gte.${M.ini}&data=lte.${M.fim}&select=data,hora,material,artigo,tipo,numero,palete,reposicao,rutura&order=data.asc,hora.asc`); }catch(e){ l = []; }
   let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
   const nome = n => { const x = nomes[n]; if(!x) return n ? 'Nº ' + n : '—'; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   return {l, nome};
@@ -16083,7 +16091,7 @@ async function reposDados(){
 // quem e quanto por dia: automática (artigos repostos), massiva (paletes, artigos, quem), visível (artigos picados, quem)
 async function blocoReposicaoDia(D){
   D = D || await reposDados(); const {l, nome} = D;
-  let h = `<div class="section-title">📦 Reposição por dia — automática, massiva e visível</div>`;
+  let h = `<div class="section-title">📦 Reposição por dia — ${mcMesIntervalo().nome}</div>`;
   if(!l.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Carregue o relatório de reposição do mês (automáticas / massiva / visível) em "📥 Carregar relatórios".</div></div>`;
   const datas = [...new Set(l.map(x => x.data))].sort().reverse();
   const quem = arr => { const o = {}; arr.forEach(x => { o[x.numero] = (o[x.numero] || 0) + 1; }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
