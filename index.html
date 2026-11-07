@@ -15548,36 +15548,10 @@ async function renderMelhoriaContinua(){
   const totalListas = listasHoje.reduce((s,l)=>s+(l.numero_listas||0),0);
 
   const editavel = currentUser && souDona();
-  let html = `<div class="vs-detail-grid" style="margin-bottom:16px;grid-template-columns:1fr;">
-    <div class="vs-box"><div class="vs-label">📋 Listas Automáticas — Hoje</div><div class="vs-value" style="font-size:20px;color:var(--navy);">${totalListas}</div></div>
-  </div>` + listasFormHtml();
+  let html = '';
   try{ html += await blocoAutomaticas(); }catch(e){ console.error('automáticas', e); }
   try{ const RD = await reposDados(); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
   try{ html += await blocoReposicaoColaboradores(); }catch(e){ console.error('reposição', e); }
-
-  const porDiaListas = {};
-  listas7dias.forEach(l=>{
-    porDiaListas[l.data] = (porDiaListas[l.data]||0) + (l.numero_listas||0);
-  });
-  const diasListas = Object.keys(porDiaListas).sort();
-  if(diasListas.length){
-    const maxListas = Math.max(...diasListas.map(d=>porDiaListas[d]), 1);
-    html += `<div class="section-title">📋 Listas Automáticas — Por Dia</div>`;
-    html += `<div class="card"><div class="rchart" style="height:90px;">`;
-    diasListas.forEach(d=>{
-      html += `<div class="bars"><div class="bar" style="height:${(porDiaListas[d]/maxListas*100).toFixed(1)}%;background:var(--navy);"></div></div>`;
-    });
-    html += `</div><div class="rchart-labels">`;
-    diasListas.forEach(d=> html += `<span style="font-size:8px;">${new Date(d+'T00:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})}</span>`);
-    html += `</div>`;
-    diasListas.slice().reverse().forEach(d=>{
-      html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--line);font-size:12px;">
-        <span style="color:var(--ink-soft);">${new Date(d+'T00:00:00').toLocaleDateString('pt-PT')}</span>
-        <span style="font-weight:700;color:var(--ink);">${porDiaListas[d]}</span>
-      </div>`;
-    });
-    html += `</div>`;
-  }
 
   const indicadores = await sb('loja_indicadores_melhoria_continua?select=*&order=valor_pct.desc');
   if(indicadores.length){
