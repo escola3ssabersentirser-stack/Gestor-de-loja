@@ -15893,7 +15893,7 @@ async function renderMelhoriaContinua(){
   try{ const RD = await reposDados();
     try{ const M = mcMesIntervalo(); const ag = await impTodos(`loja_automaticas_agg?data=gte.${M.ini}&data=lte.${M.fim}&select=linhas`); const esp = (ag || []).reduce((a, x) => a + (Number(x.linhas) || 0), 0);
       if(esp && !mcColSel && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
-    html += blocoEquipaRanking(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
+    html += blocoEquipaRanking(RD); html += blocoResumoReposicao(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
 
   content.innerHTML = html; mcOrganizarSeparadores(content);
 }
@@ -16316,7 +16316,7 @@ function mcOrganizarSeparadores(content){
   // nas Automáticas ficam à vista só os 2 gráficos principais; o resto fica em «Ver mais detalhe»
   const pa = paineis.auto; if(pa && pa.childNodes.length){
     // nas listas fica só: quem fez, artigos por hora e artigos por dia (o resto era informação a mais)
-    const ordem = [/quem fez as listas/i, /artigos repostos por hora/i, /artigos repostos por dia/i];
+    const ordem = [/resumo da reposição/i, /quem fez as listas/i, /artigos repostos por hora/i, /artigos repostos por dia/i];
     const cards = [...pa.querySelectorAll(':scope > .card')];
     const principais = ordem.map(re => cards.find(c => re.test(c.textContent.slice(0, 120)))).filter(Boolean);
     if(principais.length){ pa.innerHTML = '<div class="section-title">🔁 Listas automáticas</div>'; principais.forEach(c => pa.appendChild(c)); }
@@ -16509,6 +16509,35 @@ function mcMontarExcel(l, rut, nomes, M, col){
   });
   linhas.sort((a, b) => (a['Data entrada'].split('/').reverse().join('') + a['Hora']).localeCompare(b['Data entrada'].split('/').reverse().join('') + b['Hora']));
   return {linhas};
+}
+// resumo da reposição hora a hora (9h–22h): artigos da automática, dias em que a lista falhou nessa hora e artigos picados na visível
+function blocoResumoReposicao(RD){
+  const {l} = RD; if(!l || !l.length) return '';
+  const H = []; for(let x = 9; x < 22; x++) H.push(x);
+  const hr = x => parseInt(String(x.hora || '').slice(0, 2), 10);
+  const datas = [...new Set(l.map(x => x.data))].sort(); const nd = datas.length;
+  const au = l.filter(x => /autom/i.test(x.tipo || '')), vi = l.filter(x => /vis[ií]vel/i.test(x.tipo || ''));
+  const temLista = new Set(au.map(x => x.data + '|' + hr(x)));
+  const HV = [...new Set([...vi.map(hr).filter(n => !isNaN(n)), ...H])].sort((a, b) => a - b);
+  const L = HV.map(h => { const aOk = au.filter(x => hr(x) === h && Number(x.reposicao) > 0).length; const v = vi.filter(x => hr(x) === h).length;
+    const dentro = h >= 9 && h < 22; const falhou = dentro ? datas.filter(d => !temLista.has(d + '|' + h)) : []; return {h, aOk, v, falhou, dentro}; });
+  const mxA = Math.max(...L.map(x => x.aOk), 1), mxV = Math.max(...L.map(x => x.v), 1);
+  const totF = L.reduce((a, x) => a + x.falhou.length, 0), totV = L.reduce((a, x) => a + x.v, 0), totA = L.reduce((a, x) => a + x.aOk, 0);
+  const piores = [...L].sort((a, b) => b.falhou.length - a.falhou.length).filter(x => x.falhou.length).slice(0, 3);
+  const corF = n => !n ? '#1F7A33' : n / nd >= 0.3 ? 'var(--red)' : '#C77F12';
+  let h = `<div class="section-title">📋 Resumo da reposição</div><div class="card"><h3 style="margin:0 0 8px;">📋 Resumo da reposição</h3>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:10px;">
+      <div style="background:#E8F4EA;border-radius:12px;padding:8px;text-align:center;"><div style="font-size:20px;font-weight:800;color:#1F5C3A;">${totA.toLocaleString('pt-PT')}</div><div style="font-size:10.5px;color:var(--ink-soft);">artigos repostos<br>na automática</div></div>
+      <div style="background:${totF ? '#FBEAEA' : '#E8F4EA'};border-radius:12px;padding:8px;text-align:center;"><div style="font-size:20px;font-weight:800;color:${totF ? 'var(--red)' : '#1F5C3A'};">${totF}</div><div style="font-size:10.5px;color:var(--ink-soft);">horas em que<br>a lista falhou</div></div>
+      <div style="background:#FFF4DC;border-radius:12px;padding:8px;text-align:center;"><div style="font-size:20px;font-weight:800;color:#8A5A00;">${totV.toLocaleString('pt-PT')}</div><div style="font-size:10.5px;color:var(--ink-soft);">artigos picados<br>na visível</div></div></div>
+    ${piores.length ? `<div style="font-size:12px;margin-bottom:8px;padding:7px 10px;border-radius:10px;background:#FBEAEA;">🔻 Horas em que a lista mais falhou: <b style="color:var(--red);">${piores.map(x => `${x.h}h (${x.falhou.length} dia${x.falhou.length > 1 ? 's' : ''})`).join(', ')}</b></div>` : `<div style="font-size:12px;margin-bottom:8px;padding:7px 10px;border-radius:10px;background:#E8F4EA;">✓ Houve lista automática em todas as horas, das 9h às 22h.</div>`}
+    <table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#F4F1EA;"><th style="text-align:left;padding:5px 4px;">Hora</th><th style="text-align:left;padding:5px 4px;">🔁 Automática<br><span style="font-weight:400;font-size:10px;">artigos repostos</span></th><th style="padding:5px 2px;">❌ Lista<br><span style="font-weight:400;font-size:10px;">falhou</span></th><th style="text-align:left;padding:5px 4px;">👀 Visível<br><span style="font-weight:400;font-size:10px;">artigos</span></th></tr></thead><tbody>` +
+    L.map(x => `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 4px;font-weight:700;white-space:nowrap;">${x.h}h–${x.h + 1}h</td>
+      <td style="padding:5px 4px;"><div style="display:flex;align-items:center;gap:5px;"><div style="flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.aOk / mxA * 100).toFixed(1)}%;background:#1F7A33;"></div></div><b style="min-width:30px;text-align:right;">${x.aOk}</b></div></td>
+      <td style="padding:5px 2px;text-align:center;"><b style="color:${x.dentro ? corF(x.falhou.length) : '#C5C9CF'};">${!x.dentro ? '—' : x.falhou.length ? x.falhou.length + '×' : '✓'}</b>${x.falhou.length && x.falhou.length <= 4 ? `<div style="font-size:9.5px;color:var(--ink-soft);">${x.falhou.map(d => impDDMM(d)).join(' ')}</div>` : ''}</td>
+      <td style="padding:5px 4px;"><div style="display:flex;align-items:center;gap:5px;"><div style="flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.v / mxV * 100).toFixed(1)}%;background:#C77F12;"></div></div><b style="min-width:26px;text-align:right;">${x.v}</b></div></td></tr>`).join('') +
+    `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">${nd} dia${nd > 1 ? 's' : ''} com dados. «Lista falhou» = número de dias em que não houve nenhuma lista automática nessa hora (só conta das 9h às 22h). A visível aparece em todas as horas em que foi feita.</div></div>`;
+  return h;
 }
 // quem trabalha mais na reposição: artigos repostos (automática + massiva) e artigos picados na visível, por pessoa
 function blocoEquipaRanking(RD){
