@@ -14324,7 +14324,7 @@ function alrMensagem(p, tema){
   if(so('assin') && p.porAssinar) L.push(`✍️ *Assinatura de horário:* tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} de horário por assinar.`);
   if(so('bh') && p.bh > 0) L.push(`⏳ *Banco de horas:* tem ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhDias.length ? `. Dias marcados para gozar: ${p.bhDias.map(d => impDDMM(d)).join(', ')}` : ', ainda sem dias marcados'}.`);
   if(so('bh') && p.bhn < 0) L.push(`⏳ *Banco de horas:* tem ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar.`);
-  if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:* ${p.falta.join(', ')}.`);
+  if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:* ${p.falta.join(', ')}. Conclua até ao fim da semana.`);
   return `Olá ${pn},\n\nPara sua informação:\n\n${L.join('\n\n')}\n\nQualquer dúvida, fale comigo.\nObrigada,\nConceição Alves`;
 }
 async function alrEnviar(k, modo, tema){
