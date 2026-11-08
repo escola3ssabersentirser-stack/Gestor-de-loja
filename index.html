@@ -4861,6 +4861,26 @@ function renderHome3S(){
 }
 
 let currentLabel = 'Dashboard';
+// botão «voltar» do telemóvel: volta ao ecrã anterior da app em vez de sair da app
+(function(){
+  let navPop = false;
+  const orig = selectMenu;
+  selectMenu = function(id, label){
+    const r = orig.apply(this, arguments);
+    if(!navPop){ try{ const st = history.state;
+      if(id === 'dashboard'){ if(!st || st.menu !== 'dashboard') history.replaceState({menu: 'dashboard', label: label || 'Dashboard'}, ''); }
+      else if(!st || st.menu !== id) history.pushState({menu: id, label: label || ''}, '');
+    }catch(e){} }
+    return r;
+  };
+  window.addEventListener('popstate', e => {
+    if(typeof currentUser === 'undefined' || !currentUser) return;
+    const ov = document.getElementById('pic-rev'); if(ov){ ov.remove(); }
+    navPop = true;
+    try{ const st = e.state; if(st && st.menu) selectMenu(st.menu, st.label); else selectMenu('dashboard', 'Dashboard'); }
+    finally{ navPop = false; }
+  });
+})();
 function selectMenu(id, label){
   currentScreen = id; currentLabel = label || currentLabel;
   setTimeout(aplicarDatasAuto, 0);
