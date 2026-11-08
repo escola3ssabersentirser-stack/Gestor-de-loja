@@ -15908,7 +15908,7 @@ async function renderMelhoriaContinua(){
   try{ const RD = await reposDados();
     try{ const M = mcMesIntervalo(); const ag = await impTodos(`loja_automaticas_agg?data=gte.${M.ini}&data=lte.${M.fim}&select=linhas`); const esp = (ag || []).reduce((a, x) => a + (Number(x.linhas) || 0), 0);
       if(esp && !mcColSel && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
-    html += blocoEquipaRanking(RD); html += blocoResumoReposicao(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
+    html += blocoEquipaRanking(RD); try{ html += await blocoSemanasReposicao(); }catch(e){ console.error('semanas', e); } html += blocoResumoReposicao(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
 
   content.innerHTML = html; mcOrganizarSeparadores(content);
 }
@@ -16331,7 +16331,7 @@ function mcOrganizarSeparadores(content){
   // nas Automáticas ficam à vista só os 2 gráficos principais; o resto fica em «Ver mais detalhe»
   const pa = paineis.auto; if(pa && pa.childNodes.length){
     // nas listas fica só: quem fez, artigos por hora e artigos por dia (o resto era informação a mais)
-    const ordem = [/resumo da reposição/i, /quem fez as listas/i, /artigos repostos por hora/i, /artigos repostos por dia/i];
+    const ordem = [/resumo por semana/i, /resumo da reposição/i, /quem fez as listas/i, /artigos repostos por hora/i, /artigos repostos por dia/i];
     const cards = [...pa.querySelectorAll(':scope > .card')];
     const principais = ordem.map(re => cards.find(c => re.test(c.textContent.slice(0, 120)))).filter(Boolean);
     if(principais.length){ pa.innerHTML = '<div class="section-title">🔁 Listas automáticas</div>'; principais.forEach(c => pa.appendChild(c)); }
@@ -16565,6 +16565,81 @@ function blocoResumoReposicao(RD){
     <div style="font-weight:800;font-size:13px;color:var(--red);margin:14px 0 4px;">🔴 Top 10 ruturas prolongadas (mais de 3 dias)</div>
     ${top10.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#FBEAEA;"><th style="text-align:left;padding:5px 4px;">Artigo</th><th style="padding:5px 2px;">Dias</th><th style="padding:5px 2px;">Desde</th><th style="padding:5px 2px;">Picado</th></tr></thead><tbody>` + top10.map((x, i) => `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 4px;"><b>${i + 1}.</b> ${rpEsc(x.artigo)}<div style="font-size:9.5px;color:var(--ink-soft);">${x.k} · picado por ${rpEsc(String(x.quem || '').split(' ')[0])}</div></td><td style="text-align:center;"><b style="color:var(--red);font-size:14px;">${x.dias}</b></td><td style="text-align:center;white-space:nowrap;">${impDDMM(x.desde)}</td><td style="text-align:center;white-space:nowrap;">${impDDMM(x.picado)}</td></tr>`).join('') + `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">Dias entre a última vez que alguém mexeu no artigo e o dia em que foi picado com rutura.</div>` : `<div style="font-size:12px;color:var(--ink-soft);">✓ Nenhuma rutura com mais de 3 dias neste período.</div>`}</div>`;
   return h;
+}
+// ===== Resumo por semana (últimas 4 semanas, segunda a domingo) e por dia, com imagem para enviar =====
+let mcSemIdx = 0;
+const MC_DIA_LONGO = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+function mcResumoDia(linhas, d){
+  const hr = x => parseInt(String(x.hora || '').slice(0, 2), 10);
+  const L = linhas.filter(x => x.data === d); if(!L.length) return null;
+  const au = L.filter(x => /autom/i.test(x.tipo || '')), auOk = au.filter(x => Number(x.reposicao) > 0), vi = L.filter(x => /vis[ií]vel/i.test(x.tipo || '')), ma = L.filter(x => /massiva/i.test(x.tipo || ''));
+  const agora = new Date(); const ate = d === impISO(agora) ? Math.min(22, agora.getHours()) : 22; // hoje: só as horas que já passaram
+  const comLista = new Set(au.map(hr)); const falhou = []; for(let h = 9; h < ate; h++) if(!comLista.has(h)) falhou.push(h);
+  const horas = []; for(let h = 5; h < 24; h++){ const a = auOk.filter(x => hr(x) === h).length, v = vi.filter(x => hr(x) === h).length; if(a || v || (h >= 9 && h < ate)) horas.push({h, a, v, falhou: h >= 9 && h < ate && !comLista.has(h)}); }
+  return {d, auOk: auOk.length, vi: vi.length, ma: ma.length, falhou, horas};
+}
+async function blocoSemanasReposicao(){
+  const hoje = new Date(); const seg = new Date(hoje); seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7)); seg.setDate(seg.getDate() - 21);
+  const ini = impISO(seg);
+  let l = []; try{ l = await impTodos(`loja_reposicao_linhas?data=gte.${ini}&select=data,hora,tipo,reposicao&order=data.asc,hora.asc`) || []; }catch(e){ l = []; }
+  window.__mcSemLinhas = l;
+  return `<div class="section-title">🗓️ Resumo por semana</div><div class="card" id="mc-semanas">${mcSemanasHtml()}</div>`;
+}
+function mcSemanas(){ const hoje = new Date(); const seg = new Date(hoje); seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7)); const out = [];
+  for(let i = 0; i < 4; i++){ const a = new Date(seg); a.setDate(a.getDate() - 7 * i); const dias = []; for(let k = 0; k < 7; k++){ const x = new Date(a); x.setDate(x.getDate() + k); dias.push(impISO(x)); } out.push({ini: dias[0], fim: dias[6], dias}); }
+  return out; }
+function mcSemanasHtml(){
+  const l = window.__mcSemLinhas || []; const S = mcSemanas(); const w = S[mcSemIdx] || S[0];
+  const hojeI = impISO(new Date());
+  let h = `<h3 style="margin:0 0 8px;">🗓️ Resumo por semana</h3><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin-bottom:10px;">${S.map((x, i) => `<button type="button" onclick="mcSemIdx=${i};document.getElementById('mc-semanas').innerHTML=mcSemanasHtml()" style="border:1px solid ${i === mcSemIdx ? 'var(--navy)' : 'var(--line)'};background:${i === mcSemIdx ? 'var(--navy)' : '#fff'};color:${i === mcSemIdx ? '#fff' : 'var(--navy)'};border-radius:10px;padding:6px 2px;font-size:10.5px;font-weight:700;line-height:1.25;cursor:pointer;">${i === 0 ? 'Esta semana' : i === 1 ? 'Semana passada' : `Há ${i} semanas`}<br><span style="font-weight:400;">${impDDMM(x.ini)}–${impDDMM(x.fim)}</span></button>`).join('')}</div>`;
+  const R = w.dias.map(d => ({d, r: mcResumoDia(l, d)}));
+  const tA = R.reduce((a, x) => a + (x.r ? x.r.auOk : 0), 0), tF = R.reduce((a, x) => a + (x.r ? x.r.falhou.length : 0), 0), tV = R.reduce((a, x) => a + (x.r ? x.r.vi : 0), 0);
+  h += `<div style="font-size:12px;margin-bottom:6px;"><b>Semana de ${impDDMM(w.ini)} a ${impDDMM(w.fim)}:</b> 🔁 ${tA} artigos repostos · ❌ ${tF} hora${tF === 1 ? '' : 's'} falhada${tF === 1 ? '' : 's'} · 👀 ${tV} na visível</div>`;
+  h += R.map(({d, r}) => { const dn = MC_DIA_LONGO[mcDow(d)];
+    if(!r) return `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);"><b style="color:var(--ink);">${dn} ${impDDMM(d)}</b> · ${d > hojeI ? 'ainda não chegou' : 'sem dados carregados'}</div>`;
+    return `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center;"><b>${dn} ${impDDMM(d)}</b><button type="button" onclick="mcImagemDia('${d}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:3px 8px;font-size:11px;cursor:pointer;">📷 Dia</button></div>
+      <div style="margin-top:2px;line-height:1.5;">${r.falhou.length ? `<span style="color:var(--red);font-weight:700;">❌ Falhou: lista das ${r.falhou.map(x => x + 'h').join(', ')}</span>` : '<span style="color:#1F7A33;font-weight:700;">✓ Listas em todas as horas</span>'}<br>🔁 ${r.auOk} artigos repostos na automática · 👀 ${r.vi} na visível${r.ma ? ` · 🚚 ${r.ma} da massiva` : ''}</div></div>`; }).join('');
+  h += `<button type="button" onclick="mcImagemSemana()" style="width:100%;margin-top:10px;border:0;background:#25D366;color:#fff;border-radius:12px;padding:10px;font-size:14px;font-weight:800;cursor:pointer;">📷 Imagem da semana para enviar</button>
+    <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Guarda as últimas 4 semanas. «Falhou» = hora entre as 9h e as 22h sem nenhuma lista automática.</div>`;
+  return h;
+}
+// desenha uma imagem simples (para WhatsApp) com título e linhas de texto
+async function mcDesenharImagem(titulo, sub, blocos, nomeF){
+  const W = 1080, P = 56; const c = document.createElement('canvas'); const g = c.getContext('2d');
+  const fonte = (t, b) => `${b ? '700' : '400'} ${t}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  const quebrar = (txt, t, b, larg) => { g.font = fonte(t, b); const pal = String(txt).split(' '); const out = []; let lin = ''; pal.forEach(p => { const tst = lin ? lin + ' ' + p : p; if(g.measureText(tst).width > larg && lin){ out.push(lin); lin = p; } else lin = tst; }); if(lin) out.push(lin); return out; };
+  // medir
+  let H = 210 + 60; blocos.forEach(b => { H += 20 + 18; b.linhas.forEach(x => { H += quebrar(x.t, x.s || 30, x.b, W - 2 * P - 40).length * ((x.s || 30) * 1.35); }); H += 20; }); H += 70;
+  c.width = W; c.height = H;
+  g.fillStyle = '#F4F1EA'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#1F5C3A'; g.fillRect(0, 0, W, 170);
+  g.fillStyle = '#fff'; g.font = fonte(46, true); g.fillText(titulo, P, 80); g.font = fonte(28); g.fillStyle = '#D6E8DA'; g.fillText(sub, P, 130);
+  let y = 210;
+  blocos.forEach(b => { const ini = y; let hB = 20; b.linhas.forEach(x => { hB += quebrar(x.t, x.s || 30, x.b, W - 2 * P - 40).length * ((x.s || 30) * 1.35); }); hB += 20;
+    g.fillStyle = b.fundo || '#fff'; const r = 22; g.beginPath(); g.moveTo(P + r, ini); g.arcTo(W - P, ini, W - P, ini + hB, r); g.arcTo(W - P, ini + hB, P, ini + hB, r); g.arcTo(P, ini + hB, P, ini, r); g.arcTo(P, ini, W - P, ini, r); g.closePath(); g.fill();
+    y = ini + 20; b.linhas.forEach(x => { const t = x.s || 30; quebrar(x.t, t, x.b, W - 2 * P - 40).forEach(lin => { y += t * 1.35; g.font = fonte(t, x.b); g.fillStyle = x.c || '#1F2937'; g.fillText(lin, P + 20, y - t * 0.3); }); });
+    y = ini + hB + 18; });
+  g.font = fonte(24); g.fillStyle = '#6B7280'; g.fillText('Liderança 3S · Loja 747 Portuzelo', P, H - 30);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  const file = new File([blob], nomeF, {type: 'image/png'});
+  if(navigator.canShare && navigator.canShare({files: [file]})){ try{ await navigator.share({files: [file], title: titulo}); return; }catch(e){ if(e && e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nomeF; document.body.appendChild(a); a.click(); a.remove();
+}
+async function mcImagemSemana(){
+  const l = window.__mcSemLinhas || []; const w = mcSemanas()[mcSemIdx]; const hojeI = impISO(new Date());
+  const R = w.dias.map(d => ({d, r: mcResumoDia(l, d)}));
+  const tA = R.reduce((a, x) => a + (x.r ? x.r.auOk : 0), 0), tF = R.reduce((a, x) => a + (x.r ? x.r.falhou.length : 0), 0), tV = R.reduce((a, x) => a + (x.r ? x.r.vi : 0), 0);
+  const blocos = [{fundo: '#fff', linhas: [{t: `🔁 ${tA} artigos repostos na automática`, b: true, s: 32, c: '#1F5C3A'}, {t: `❌ ${tF} horas em que a lista falhou`, b: true, s: 32, c: tF ? '#B4231A' : '#1F5C3A'}, {t: `👀 ${tV} artigos picados na visível`, b: true, s: 32, c: '#8A5A00'}]}];
+  R.forEach(({d, r}) => { const dn = `${MC_DIA_LONGO[mcDow(d)]} ${impDDMM(d)}`;
+    if(!r) blocos.push({fundo: '#ECEAE4', linhas: [{t: `${dn} — ${d > hojeI ? 'ainda não chegou' : 'sem dados'}`, s: 28, c: '#6B7280'}]});
+    else blocos.push({fundo: '#fff', linhas: [{t: dn, b: true, s: 32}, {t: r.falhou.length ? `❌ Falhou: lista das ${r.falhou.map(x => x + 'h').join(', ')}` : '✓ Listas em todas as horas', b: true, s: 28, c: r.falhou.length ? '#B4231A' : '#1F7A33'}, {t: `🔁 ${r.auOk} artigos repostos · 👀 ${r.vi} na visível${r.ma ? ` · 🚚 ${r.ma} massiva` : ''}`, s: 28}]}); });
+  await mcDesenharImagem('Resumo da reposição', `Semana de ${impDDMM(w.ini)} a ${impDDMM(w.fim)}`, blocos, `resumo-semana-${w.ini}.png`);
+}
+async function mcImagemDia(d){
+  const r = mcResumoDia(window.__mcSemLinhas || [], d); if(!r){ alert('Sem dados neste dia.'); return; }
+  const blocos = [{fundo: '#fff', linhas: [{t: r.falhou.length ? `❌ Falhou: lista das ${r.falhou.map(x => x + 'h').join(', ')}` : '✓ Houve lista automática em todas as horas', b: true, s: 32, c: r.falhou.length ? '#B4231A' : '#1F7A33'}, {t: `🔁 ${r.auOk} artigos repostos na automática`, b: true, s: 30, c: '#1F5C3A'}, {t: `👀 ${r.vi} artigos picados na visível${r.ma ? ` · 🚚 ${r.ma} da massiva` : ''}`, s: 30, c: '#8A5A00'}]}];
+  blocos.push({fundo: '#fff', linhas: [{t: 'Hora a hora', b: true, s: 30}].concat(r.horas.map(x => ({t: `${String(x.h).padStart(2, '0')}h–${String(x.h + 1).padStart(2, '0')}h   ${x.falhou ? '❌ lista falhou · ' : ''}🔁 ${x.a} repostos${x.v ? ` · 👀 ${x.v} visível` : ''}`, s: 27, c: x.falhou ? '#B4231A' : '#1F2937', b: x.falhou})))});
+  await mcDesenharImagem('Resumo do dia', `${MC_DIA_LONGO[mcDow(d)]} ${impDDMM(d)}`, blocos, `resumo-dia-${d}.png`);
 }
 function mcResumoTexto(){
   const R = window.__resumoRep; if(!R) return '';
