@@ -16307,15 +16307,12 @@ async function mcExportarExcel(btn){
     let rut = []; try{ rut = await impTodos(`loja_ruturas?data=gte.${M.ini}&data=lte.${mais(M.fim)}&select=data,artigo_cod,artigo,area`) || []; }catch(e){}
     let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
     const res = mcMontarExcel(l, rut, nomes, M, mcColSel);
-    if(!res.paletes.length && !res.rut.length){ alert('Não há paletes nem ruturas neste período.'); return; }
+    if(!res.linhas.length){ alert('Não há paletes neste período.'); return; }
     const nomeF = `reposicao-ruturas-${M.ini}-a-${M.fim}${mcColSel ? '-n' + mcColSel : ''}.xlsx`;
     let feito = false;
     try{ await mcCarregarExcelJS(); await mcExcelBonito(res, M, nomeF); feito = true; }catch(e){ console.warn('ExcelJS', e); }
-    if(!feito){ const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.paletes), 'Paletes e reposição');
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.rut.length ? res.rut : [{'Info': 'Sem ruturas'}]), 'Ruturas sem picar');
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.pessoas.length ? res.pessoas : [{'Info': 'Sem dados'}]), 'Quem não tratou');
-      XLSX.writeFile(wb, nomeF); }
+    if(!feito){ const wb = XLSX.utils.book_new(); const ws = XLSX.utils.json_to_sheet(res.linhas); ws['!cols'] = MC_XL_COLS.map(([, w]) => ({wch: w})); ws['!autofilter'] = {ref: ws['!ref']};
+      XLSX.utils.book_append_sheet(wb, ws, 'Reposição e ruturas'); XLSX.writeFile(wb, nomeF); }
   }catch(e){ console.error(e); alert('Não consegui preparar o Excel.'); }
   finally{ if(btn){ btn.disabled = false; btn.textContent = '📊 Excel: paletes, reposição e ruturas'; } }
 }
@@ -16324,100 +16321,56 @@ function mcCarregarExcelJS(){
   return new Promise((ok, falha) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'; sc.onload = () => window.ExcelJS ? ok() : falha(new Error('ExcelJS')); sc.onerror = falha; document.head.appendChild(sc); });
 }
 // Excel com cores, cabeçalhos fixos, filtros e uma folha de resumo — fácil de ler
+// Excel só com uma tabela: cada artigo de cada palete e o que lhe aconteceu a seguir (sem informação repetida)
 async function mcExcelBonito(res, M, nomeF){
   const wb = new ExcelJS.Workbook(); wb.creator = 'Liderança 3S';
-  const VERDE = 'FF1F5C3A', VERDE_CL = 'FFE8F4EA', AMAR = 'FFFFF1CC', VERM = 'FFF8D7D3', VERM_F = 'FFB4231A', CINZA = 'FF6B7280', LINHA = 'FFF7F5F0';
-  const borda = {bottom: {style: 'thin', color: {argb: 'FFE3DED3'}}};
+  const VERDE = 'FF1F5C3A', VERDE_CL = 'FFE8F4EA', AMAR = 'FFFFF1CC', VERM = 'FFF8D7D3', VERM_F = 'FFB4231A', LINHA = 'FFF7F5F0';
   const corDias = n => n === '' || n == null ? null : n <= 1 ? VERDE_CL : n <= 3 ? AMAR : VERM;
-  const folha = (nome, linhas, cols, cor) => {
-    const ws = wb.addWorksheet(nome, {views: [{state: 'frozen', ySplit: 1}], properties: {tabColor: {argb: cor || VERDE}}});
-    ws.columns = cols.map(([k, w]) => ({header: k, key: k, width: w}));
-    linhas.forEach(r => ws.addRow(r));
-    const h = ws.getRow(1); h.height = 32;
-    h.eachCell(c => { c.font = {bold: true, color: {argb: 'FFFFFFFF'}, size: 11}; c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: cor || VERDE}}; c.alignment = {vertical: 'middle', horizontal: 'center', wrapText: true}; });
-    ws.eachRow((row, n) => { if(n === 1) return; row.alignment = {vertical: 'top', wrapText: true}; row.eachCell({includeEmpty: true}, c => { c.border = borda; if(n % 2 === 0) c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: LINHA}}; c.font = {size: 10}; }); });
-    ws.autoFilter = {from: {row: 1, column: 1}, to: {row: 1, column: cols.length}};
-    return ws;
-  };
-  const pinta = (ws, chave, fn) => { const ci = ws.columns.findIndex(c => c.key === chave) + 1; if(!ci) return; ws.eachRow((row, n) => { if(n === 1) return; const c = row.getCell(ci); const f = fn(c.value); if(f){ if(f.fill) c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: f.fill}}; c.font = {size: 10, bold: !!f.bold, italic: !!f.italic, color: {argb: f.cor || 'FF1F2937'}}; c.alignment = {vertical: 'top', horizontal: f.centro ? 'center' : 'left', wrapText: true}; } }); };
-  // RESUMO
-  const R = wb.addWorksheet('Resumo', {properties: {tabColor: {argb: VERDE}}, views: [{showGridLines: false}]});
-  R.columns = [{width: 4}, {width: 46}, {width: 16}, {width: 16}, {width: 30}];
-  R.mergeCells('B2:E2'); R.getCell('B2').value = 'Reposição e ruturas — Loja 747 Portuzelo'; R.getCell('B2').font = {bold: true, size: 18, color: {argb: VERDE}};
-  R.mergeCells('B3:E3'); R.getCell('B3').value = `${M.semana ? M.nome : 'Mês de ' + M.nome} · ${impDDMM(M.ini)} a ${impDDMM(M.fim)}`; R.getCell('B3').font = {size: 11, color: {argb: CINZA}};
-  const dS = res.rut.map(r => r['Dias sem picar']).filter(v => v !== '' && v != null);
-  const caixas = [['Artigos de paletes repostos', res.paletes.length, VERDE_CL, VERDE], ['Ruturas registadas (KPI e picadas com rutura)', res.rut.length, AMAR, 'FF8A5A00'], ['Ruturas com 3 dias ou mais sem picar', dS.filter(v => v >= 3).length, VERM, VERM_F], ['Paletes recebidas', new Set(res.paletes.map(p => p['Data entrada'] + '|' + p['Nº palete'])).size, LINHA, CINZA]];
-  let lr = 5; caixas.forEach(([t, v, bg, fg]) => { R.getCell(`B${lr}`).value = t; R.getCell(`C${lr}`).value = v; [`B${lr}`, `C${lr}`].forEach(k => { R.getCell(k).fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: bg}}; R.getCell(k).border = {top: {style: 'thin', color: {argb: 'FFFFFFFF'}}, bottom: {style: 'medium', color: {argb: 'FFFFFFFF'}}}; }); R.getCell(`B${lr}`).font = {size: 11, color: {argb: fg}}; R.getCell(`C${lr}`).font = {size: 18, bold: true, color: {argb: fg}}; R.getCell(`C${lr}`).alignment = {horizontal: 'center'}; R.getRow(lr).height = 28; lr++; });
-  lr++; R.getCell(`B${lr}`).value = '🔴 As 10 piores ruturas (mais dias sem picar)'; R.getCell(`B${lr}`).font = {bold: true, size: 13, color: {argb: VERM_F}}; lr++;
-  ['Artigo', 'Dias sem picar', 'Picado em', 'Picado por'].forEach((t, i) => { const c = R.getCell(lr, i + 2); c.value = t; c.font = {bold: true, color: {argb: 'FFFFFFFF'}}; c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: VERM_F}}; }); lr++;
-  res.rut.slice(0, 10).forEach(r => { [r['Artigo'], r['Dias sem picar'], r['Picado em'], r['Picado por']].forEach((v, i) => { const c = R.getCell(lr, i + 2); c.value = v; c.border = borda; c.font = {size: 10, bold: i === 1}; if(i === 1){ c.alignment = {horizontal: 'center'}; const f = corDias(v); if(f) c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: f}}; } }); lr++; });
-  lr++; R.getCell(`B${lr}`).value = '👥 Quem fez listas nos dias em que as ruturas ficaram por tratar'; R.getCell(`B${lr}`).font = {bold: true, size: 13, color: {argb: VERDE}}; lr++;
-  ['Colaborador', 'Ruturas', 'Dias somados', ''].forEach((t, i) => { const c = R.getCell(lr, i + 2); c.value = t; c.font = {bold: true, color: {argb: 'FFFFFFFF'}}; c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: VERDE}}; }); lr++;
-  const mxP = Math.max(...res.pessoas.map(p => p['Dias de rutura somados']), 1);
-  res.pessoas.slice(0, 15).forEach(p => { const v = p['Dias de rutura somados']; R.getCell(`B${lr}`).value = p['Colaborador']; R.getCell(`C${lr}`).value = p['Ruturas não tratadas']; R.getCell(`D${lr}`).value = v; R.getCell(`E${lr}`).value = '█'.repeat(Math.max(1, Math.round(v / mxP * 20))); R.getCell(`E${lr}`).font = {color: {argb: v / mxP > 0.66 ? VERM_F : v / mxP > 0.33 ? 'FFC77F12' : VERDE}}; [`B${lr}`, `C${lr}`, `D${lr}`].forEach(k => { R.getCell(k).border = borda; R.getCell(k).font = {size: 10}; }); lr++; });
-  lr++; R.mergeCells(`B${lr}:E${lr}`); R.getCell(`B${lr}`).value = 'Cores dos dias: verde = 0 a 1 dia · amarelo = 2 a 3 dias · vermelho = 4 dias ou mais. «Quem fez listas» inclui todos os que fizeram listas da mesma divisão nesses dias: quem trabalha mais dias aparece mais vezes.'; R.getCell(`B${lr}`).alignment = {wrapText: true}; R.getCell(`B${lr}`).font = {size: 9, italic: true, color: {argb: CINZA}}; R.getRow(lr).height = 42;
-  // PALETES
-  const wsP = folha('Paletes e reposição', res.paletes, [['Data entrada', 11], ['Hora', 7], ['Nº palete', 17], ['Código', 9], ['Artigo', 36], ['Divisão', 8], ['Reposto por (massiva)', 24], ['Visível — 1.º dia e quem', 26], ['Visível — todos os dias', 34], ['Automática — 1.º dia e quem', 26], ['Automática — todos os dias', 40], ['Sem stock na lista', 14], ['Rutura no KPI', 10], ['Picado com rutura (dia e quem)', 26], ['Dias até picar com rutura', 12]]);
-  const semNada = v => v === 'não picado' || v === 'não saiu' ? {italic: true, cor: 'FF9CA3AF'} : null;
-  pinta(wsP, 'Visível — 1.º dia e quem', semNada); pinta(wsP, 'Automática — 1.º dia e quem', semNada);
-  pinta(wsP, 'Dias até picar com rutura', v => v === '' || v == null ? null : {fill: corDias(v), bold: true, centro: true});
-  pinta(wsP, 'Sem stock na lista', v => v ? {fill: AMAR} : null); pinta(wsP, 'Picado com rutura (dia e quem)', v => v ? {fill: VERM, cor: VERM_F} : null);
-  // RUTURAS
-  const wsR = folha('Ruturas sem picar', res.rut.length ? res.rut : [{'Observação': 'Sem ruturas neste período'}], [['Código', 9], ['Artigo', 36], ['Divisão', 8], ['Tipo', 24], ['Desde / último toque', 14], ['Picado em', 11], ['Dias sem picar', 11], ['Picado por', 26], ['Listas feitas nesses dias por (não trataram)', 46], ['Observação', 40]], VERM_F);
-  pinta(wsR, 'Dias sem picar', v => v === '' || v == null ? null : {fill: corDias(v), bold: true, centro: true});
-  pinta(wsR, 'Picado em', v => v === 'ainda não' ? {fill: VERM, bold: true, cor: VERM_F} : null);
-  // PESSOAS
-  const wsQ = folha('Quem não tratou', res.pessoas.length ? res.pessoas : [{'Colaborador': 'Sem dados'}], [['Colaborador', 34], ['Ruturas não tratadas', 14], ['Dias de rutura somados', 16]], 'FFC77F12');
-  pinta(wsQ, 'Dias de rutura somados', v => typeof v === 'number' ? {fill: v / mxP > 0.66 ? VERM : v / mxP > 0.33 ? AMAR : VERDE_CL, bold: true, centro: true} : null);
-  wb.worksheets.forEach((w, i) => { w.pageSetup = {orientation: i === 0 ? 'portrait' : 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, margins: {left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2}}; if(i > 0) w.pageSetup.printTitlesRow = '1:1'; });
+  const ws = wb.addWorksheet('Reposição e ruturas', {views: [{state: 'frozen', ySplit: 1, xSplit: 5}]});
+  ws.columns = MC_XL_COLS.map(([k, w]) => ({header: k, key: k, width: w}));
+  res.linhas.forEach(r => ws.addRow(r));
+  const h = ws.getRow(1); h.height = 34;
+  h.eachCell(c => { c.font = {bold: true, color: {argb: 'FFFFFFFF'}, size: 11}; c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: VERDE}}; c.alignment = {vertical: 'middle', horizontal: 'center', wrapText: true}; });
+  const ci = k => MC_XL_COLS.findIndex(c => c[0] === k) + 1;
+  ws.eachRow((row, n) => { if(n === 1) return; row.alignment = {vertical: 'top', wrapText: true};
+    row.eachCell({includeEmpty: true}, c => { c.border = {bottom: {style: 'thin', color: {argb: 'FFE3DED3'}}}; if(n % 2 === 0) c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: LINHA}}; c.font = {size: 10}; });
+    const d = row.getCell(ci('Dias em rutura sem picar')); const f = corDias(d.value); if(f){ d.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: f}}; d.font = {size: 10, bold: true}; d.alignment = {horizontal: 'center', vertical: 'top'}; }
+    const r = row.getCell(ci('Picado com rutura')); if(r.value){ r.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: VERM}}; r.font = {size: 10, color: {argb: VERM_F}}; }
+    const s = row.getCell(ci('Sem stock na lista')); if(s.value) s.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: AMAR}};
+    ['Visível (dia e quem)', 'Automática (dia e quem)'].forEach(k => { const c = row.getCell(ci(k)); if(!c.value){ c.value = '—'; c.font = {size: 10, color: {argb: 'FF9CA3AF'}}; } }); });
+  ws.autoFilter = {from: {row: 1, column: 1}, to: {row: 1, column: MC_XL_COLS.length}};
+  ws.pageSetup = {orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, printTitlesRow: '1:1'};
   const buf = await wb.xlsx.writeBuffer();
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})); a.download = nomeF; document.body.appendChild(a); a.click(); a.remove();
 }
+const MC_XL_COLS = [['Data entrada', 11], ['Hora', 7], ['Nº palete', 17], ['Código', 9], ['Artigo', 34], ['Divisão', 8], ['Reposto por (massiva)', 18], ['Visível (dia e quem)', 30], ['Automática (dia e quem)', 34], ['Sem stock na lista', 13], ['Rutura no KPI', 10], ['Picado com rutura', 22], ['Dias em rutura sem picar', 12], ['Não trataram (fizeram listas nesses dias)', 40]];
 function mcMontarExcel(l, rut, nomes, M, col){
-  const nm = n => { const k = String(n || '').replace(/^0+/, ''); return k ? (nomes[k] || 'Nº ' + k) : ''; };
+  const nm = n => { const k = String(n || '').replace(/^0+/, ''); if(!k) return ''; const x = nomes[k]; if(!x) return 'Nº ' + k; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   const cod = x => String(x || '').replace(/^0+/, '');
   const dm = d => d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '';
   const dias = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
+  const chave = x => x.data + String(x.hora || '').padStart(5, '0');
   const por = {}; l.forEach(x => { (por[cod(x.material)] = por[cod(x.material)] || []).push(x); });
+  Object.keys(por).forEach(k => por[k].sort((a, b) => chave(a).localeCompare(chave(b))));
   const T = (x, re) => re.test(String(x.tipo || ''));
   const AU = /autom/i, MA = /massiva/i, VI = /vis[ií]vel/i, SS = /sem stock/i;
-  const listaQuem = a => { const g = {}; a.forEach(x => { const k = x.data; (g[k] = g[k] || new Set()).add(nm(x.numero)); }); return Object.keys(g).sort().map(d => `${dm(d)} ${[...g[d]].join(', ')}`).join(' | '); };
-  // 1) uma linha por artigo de cada palete
-  const paletes = [];
-  l.filter(x => T(x, MA) && x.data >= M.ini && x.data <= M.fim && (!col || cod(x.numero) === col)).forEach(x => {
-    const ev = [...(por[cod(x.material)] || [])].sort((p1, p2) => (p1.data + String(p1.hora || '').padStart(5, '0')).localeCompare(p2.data + String(p2.hora || '').padStart(5, '0'))).filter(y => (y.data + String(y.hora || '').padStart(5, '0')) > (x.data + String(x.hora || '').padStart(5, '0')));
-    const vi = ev.filter(y => T(y, VI)), au = ev.filter(y => T(y, AU) && Number(y.reposicao) > 0), ss = ev.filter(y => (T(y, AU) && !(Number(y.reposicao) > 0)) || T(y, SS));
-    const r1 = ev.find(y => y.rutura) || null; const k1 = rut.find(r => cod(r.artigo_cod) === cod(x.material) && r.data >= x.data);
-    paletes.push({'Data entrada': dm(x.data), 'Hora': String(x.hora || '').slice(0, 5), 'Nº palete': x.palete || '', 'Código': cod(x.material), 'Artigo': x.artigo || '', 'Divisão': x.divisao || '',
-      'Reposto por (massiva)': nm(x.numero), 'Visível — 1.º dia e quem': vi[0] ? `${dm(vi[0].data)} ${nm(vi[0].numero)}` : 'não picado', 'Visível — todos os dias': listaQuem(vi),
-      'Automática — 1.º dia e quem': au[0] ? `${dm(au[0].data)} ${nm(au[0].numero)}` : 'não saiu', 'Automática — todos os dias': listaQuem(au), 'Sem stock na lista': ss.map(y => dm(y.data)).filter((v, i, a) => a.indexOf(v) === i).join(', '),
-      'Rutura no KPI': k1 ? dm(k1.data) : '', 'Picado com rutura (dia e quem)': r1 ? `${dm(r1.data)} ${nm(r1.numero)}` : '', 'Dias até picar com rutura': r1 ? dias(x.data, r1.data) : ''});
-  });
-  paletes.sort((a, b) => (a['Data entrada'].split('/').reverse().join('') + a['Hora']).localeCompare(b['Data entrada'].split('/').reverse().join('') + b['Hora']));
-  // 2) ruturas: (a) KPI — dias desde o KPI até alguém picar; (b) picado com «Rutura» — dias desde a última vez que alguém lhe mexeu
-  const ord = a => [...a].sort((x, y) => (x.data + String(x.hora || '').padStart(5, '0')).localeCompare(y.data + String(y.hora || '').padStart(5, '0')));
-  Object.keys(por).forEach(k => { por[k] = ord(por[k]); });
   const mexe = y => T(y, VI) || T(y, MA) || (T(y, AU) && Number(y.reposicao) > 0);
+  const listaQuem = a => { const g = {}; a.forEach(x => { (g[x.data] = g[x.data] || new Set()).add(nm(x.numero)); }); const ks = Object.keys(g).sort(); return ks.slice(0, 5).map(d => `${dm(d)} ${[...g[d]].join(', ')}`).join('\n') + (ks.length > 5 ? `\n… e mais ${ks.length - 5} dias` : ''); };
   const listasDia = {}, listasDiaTodas = {}; l.filter(x => T(x, AU) || T(x, VI)).forEach(x => { const k = x.data + '|' + String(x.divisao || ''); (listasDia[k] = listasDia[k] || new Set()).add(nm(x.numero)); (listasDiaTodas[x.data] = listasDiaTodas[x.data] || new Set()).add(nm(x.numero)); });
-  const ultimoDia = l.length ? l.reduce((m, x) => x.data > m ? x.data : m, l[0].data) : M.fim;
   const quemFezListas = (de, ate, div) => { const q = new Set(); if(!de || de >= ate) return q; const x = new Date(de + 'T12:00:00'); x.setDate(x.getDate() + 1); while(impISO(x) < ate){ const d = impISO(x); (listasDia[d + '|' + div] || listasDiaTodas[d] || new Set()).forEach(v => q.add(v)); x.setDate(x.getDate() + 1); } return q; };
-  const rutL = [], culpa = {}, vistos = new Set();
-  const junta = (q, n) => q.forEach(v => { culpa[v] = culpa[v] || {n: 0, dias: 0}; culpa[v].n++; culpa[v].dias += n; });
-  rut.filter(r => r.data >= M.ini && r.data <= M.fim).forEach(r => { const k = cod(r.artigo_cod); const ev = por[k] || [];
-    const p = ev.find(y => y.data >= r.data && mexe(y)); const fim = p ? p.data : ultimoDia; const n = Math.max(0, dias(r.data, fim)); const div = (ev[0] || {}).divisao || '';
-    const q = quemFezListas(impISO(new Date(new Date(r.data + 'T12:00:00').getTime() - 86400000)), fim, div); junta(q, n);
-    if(col && !(p && cod(p.numero) === col) && !q.has(nm(col))) return;
-    rutL.push({'Código': k, 'Artigo': r.artigo || (ev[0] || {}).artigo || '', 'Divisão': div || r.area || '', 'Tipo': 'Rutura no KPI', 'Desde / último toque': dm(r.data), 'Picado em': p ? dm(p.data) : 'ainda não', 'Dias sem picar': n,
-      'Picado por': p ? `${nm(p.numero)} (${p.tipo || ''})` : '', 'Listas feitas nesses dias por (não trataram)': [...q].join(', '), 'Observação': p ? (n === 0 ? 'tratado no próprio dia' : `${n} dia${n > 1 ? 's' : ''} em rutura no sistema sem picar`) : `continua sem picar até ${dm(ultimoDia)}`}); });
-  l.filter(x => x.rutura && mexe(x) && x.data >= M.ini && x.data <= M.fim).forEach(x => { const k = cod(x.material), chave = k + '|' + x.data; if(vistos.has(chave)) return; vistos.add(chave);
-    const ev = por[k] || []; const antes = ev.filter(y => mexe(y) && y.data < x.data); const u = antes[antes.length - 1] || null;
-    const n = u ? dias(u.data, x.data) : null; const q = u ? quemFezListas(u.data, x.data, x.divisao || '') : new Set(); if(n) junta(q, n);
-    if(col && cod(x.numero) !== col && !q.has(nm(col))) return;
-    rutL.push({'Código': k, 'Artigo': x.artigo || '', 'Divisão': x.divisao || '', 'Tipo': `Picado com rutura (${x.tipo || ''})`, 'Desde / último toque': u ? dm(u.data) : 'antes do período', 'Picado em': dm(x.data), 'Dias sem picar': n == null ? '' : n,
-      'Picado por': nm(x.numero), 'Listas feitas nesses dias por (não trataram)': [...q].join(', '), 'Observação': u ? (n <= 1 ? 'prateleira vazia apanhada logo' : `${n} dias sem ninguém lhe mexer até verem a rutura`) : 'sem registo anterior no período'}); });
-  rutL.sort((a, b) => (Number(b['Dias sem picar']) || 0) - (Number(a['Dias sem picar']) || 0));
-  const pessoas = Object.entries(culpa).map(([q, v]) => ({'Colaborador': q, 'Ruturas não tratadas': v.n, 'Dias de rutura somados': v.dias})).sort((a, b) => b['Dias de rutura somados'] - a['Dias de rutura somados']);
-  return {paletes, rut: rutL, pessoas};
+  const linhas = [];
+  l.filter(x => T(x, MA) && x.data >= M.ini && x.data <= M.fim && (!col || cod(x.numero) === col)).forEach(x => {
+    const todos = por[cod(x.material)] || []; const ev = todos.filter(y => chave(y) > chave(x));
+    const vi = ev.filter(y => T(y, VI)), au = ev.filter(y => T(y, AU) && Number(y.reposicao) > 0), ss = ev.filter(y => (T(y, AU) && !(Number(y.reposicao) > 0)) || T(y, SS));
+    const r1 = ev.find(y => y.rutura && mexe(y)) || null; const k1 = rut.find(r => cod(r.artigo_cod) === cod(x.material) && r.data >= x.data);
+    let nDias = '', naoTrat = '';
+    if(r1){ const antes = todos.filter(y => mexe(y) && chave(y) < chave(r1) && chave(y) >= chave(x)); const u = antes[antes.length - 1] || x; nDias = dias(u.data, r1.data); naoTrat = [...quemFezListas(u.data, r1.data, x.divisao || '')].join(', '); }
+    linhas.push({'Data entrada': dm(x.data), 'Hora': String(x.hora || '').slice(0, 5), 'Nº palete': x.palete || '', 'Código': cod(x.material), 'Artigo': x.artigo || '', 'Divisão': x.divisao || '', 'Reposto por (massiva)': nm(x.numero),
+      'Visível (dia e quem)': listaQuem(r1 ? vi.filter(y => y.data <= r1.data) : vi), 'Automática (dia e quem)': listaQuem(r1 ? au.filter(y => y.data <= r1.data) : au), 'Sem stock na lista': [...new Set(ss.map(y => dm(y.data)))].join(', '), 'Rutura no KPI': k1 ? dm(k1.data) : '',
+      'Picado com rutura': r1 ? `${dm(r1.data)} ${nm(r1.numero)}` : '', 'Dias em rutura sem picar': nDias, 'Não trataram (fizeram listas nesses dias)': naoTrat});
+  });
+  linhas.sort((a, b) => (a['Data entrada'].split('/').reverse().join('') + a['Hora']).localeCompare(b['Data entrada'].split('/').reverse().join('') + b['Hora']));
+  return {linhas};
 }
 // quem trabalha mais na reposição: artigos repostos (automática + massiva) e artigos picados na visível, por pessoa
 function blocoEquipaRanking(RD){
