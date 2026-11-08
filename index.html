@@ -3304,6 +3304,15 @@ async function impExtraCorrer(tipo, f){
 }
 
 let impResHTML = '';
+// depois de carregar, cada ficheiro tem um botão para abrir a área onde ficou (e enviar as mensagens dessa área)
+const _RH = ['formacoes', 'Banco de Horas, Horários e Formação', 'Recursos Humanos'];
+const IMP_DESTINO = {trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
+  automaticas: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], reposicao: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], ruturas: ['markdown', 'Ruturas', 'Ruturas'],
+  mapasproducao: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'], validades: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'],
+  categorias: ['painel-vendas', 'Vendas', 'Vendas'], bomdia: ['painel-vendas', 'Vendas', 'Vendas'], resumo: ['painel-vendas', 'Vendas', 'Vendas'],
+  vendasugestiva: ['area:vendasugestiva', 'Venda Sugestiva', 'Venda Sugestiva'], lflarea: ['area:lflarea', 'Loja vs Área', 'Loja vs Área'],
+  scorevalidades: ['area:validades', 'Gestão de Validades', 'Gestão de Validades'], vozcliente: ['dash:gestao:avaliacao-cliente', 'Avaliação do Cliente', 'Avaliação do Cliente'],
+  auditoria: ['area:relatorios', 'Relatórios das auditorias', 'Auditorias']};
 function colarAbrir(abrir){ const c = document.getElementById('colar-caixa'); if(!c) return; const ver = abrir === false ? false : c.style.display === 'none'; c.style.display = ver ? 'block' : 'none'; if(ver){ const t = document.getElementById('colar-texto'); if(t) t.focus(); } }
 async function colarLer(){
   if(!soDona('carregar resultados')) return;
@@ -3329,7 +3338,7 @@ async function importarFicheirosDia(input){
   if(typeof XLSX === 'undefined'){ alert('Não foi possível ler o Excel (sem ligação à internet?). Tente de novo.'); return; }
   const linhas = [];
   const mostrar = (fim) => {
-    impResHTML = `<div class="rp-graf-tit">${fim ? 'Ficheiros carregados' : 'A carregar ficheiros…'}</div>` + linhas.map(l => `<div class="rp-imp-linha ${l.ok === true ? 'ok' : l.ok === false ? 'erro' : ''}"><span>${l.ok === true ? '✓' : l.ok === false ? '✕' : l.ok === 'skip' ? '–' : '…'}</span><div><b>${rpEsc(l.tipo)}</b> <span class="rp-mini-sub">${rpEsc(l.nome)}</span><div>${rpEsc(l.msg)}</div></div></div>`).join('');
+    impResHTML = `<div class="rp-graf-tit">${fim ? 'Ficheiros carregados' : 'A carregar ficheiros…'}</div>` + linhas.map(l => `<div class="rp-imp-linha ${l.ok === true ? 'ok' : l.ok === false ? 'erro' : ''}"><span>${l.ok === true ? '✓' : l.ok === false ? '✕' : l.ok === 'skip' ? '–' : '…'}</span><div style="flex:1;min-width:0;"><b>${rpEsc(l.tipo)}</b> <span class="rp-mini-sub">${rpEsc(l.nome)}</span><div>${rpEsc(l.msg)}</div>${l.ok === true && IMP_DESTINO[l.k] ? `<button type="button" onclick="selectMenu('${IMP_DESTINO[l.k][0]}','${IMP_DESTINO[l.k][1]}')" style="margin-top:6px;border:0;background:#1F5C3A;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">Abrir ${rpEsc(IMP_DESTINO[l.k][2])} ›</button>` : ''}</div></div>`).join('');
     const box = document.getElementById('rp-import-res');
     if(box){ box.innerHTML = impResHTML; box.style.display = 'block'; }
   };
@@ -3343,8 +3352,8 @@ async function importarFicheirosDia(input){
         l.tipo = 'Imagem';
         try{ const av = t => { l.msg = t; mostrar(false); };
           const texto = await valOcrImagem(f, av);
-          if(/picage/i.test(texto) || picLerTexto(texto).length >= 2){ l.tipo = 'Mapa de controlo de picagens → Recursos Humanos'; const lp = picLerTexto(texto); if(!lp.length) throw new Error('não consegui ler as linhas do mapa de picagens'); picRevisao(lp); l.msg = `${lp.length} linhas lidas — confirme na janela que abriu`; }
-          else { l.tipo = 'Imagem do Score Mensal de Validades'; l.msg = await valScoreDeImagem(f, av, texto); }
+          if(/picage/i.test(texto) || picLerTexto(texto).length >= 2){ l.tipo = 'Mapa de controlo de picagens → Recursos Humanos'; l.k = 'picagens'; const lp = picLerTexto(texto); if(!lp.length) throw new Error('não consegui ler as linhas do mapa de picagens'); picRevisao(lp); l.msg = `${lp.length} linhas lidas — confirme na janela que abriu`; }
+          else { l.tipo = 'Imagem do Score Mensal de Validades'; l.k = 'scorevalidades'; l.msg = await valScoreDeImagem(f, av, texto); }
           l.ok = true; }catch(e){ l.ok = false; l.msg = String(e && e.message || e); }
         continue;
       }
@@ -3354,18 +3363,18 @@ async function importarFicheirosDia(input){
         const tt = impTipoTexto(texto, f.name);
         if(!tt){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Não percebi que relatório é. Carregue-o no cartão certo.'; continue; }
         if(tt !== 'infoneg' && tt !== 'vozcliente'){ const lojasTxt = [...String(texto).matchAll(/loja\s*(?:n\.?\s*[ºo°]?\s*)?[:\-]?\s*(\d{3,4})\b/gi)].map(m => Number(m[1]));
-          if(lojasTxt.length && !lojasTxt.includes(747) && !/portuzelo/i.test(texto)){ l.ok = false; l.tipo = IMP_NOMES[tt]; l.msg = `Este documento não é da loja ${IMP_LOJA} (fala da loja ${lojasTxt[0]}). Não foi gravado.`; continue; } }
-        l.tipo = IMP_NOMES[tt]; lidos.push({l, extra: tt, f, tipo: tt, nome: f.name}); continue;
+          if(lojasTxt.length && !lojasTxt.includes(747) && !/portuzelo/i.test(texto)){ l.ok = false; l.tipo = IMP_NOMES[tt]; l.k = tt; l.msg = `Este documento não é da loja ${IMP_LOJA} (fala da loja ${lojasTxt[0]}). Não foi gravado.`; continue; } }
+        l.tipo = IMP_NOMES[tt]; l.k = tt; lidos.push({l, extra: tt, f, tipo: tt, nome: f.name}); continue;
       }
       const bufX = await f.arrayBuffer();
-      try{ if(lflEhMapa(lflLerOriginal(bufX, true).SheetNames)){ l.tipo = IMP_NOMES.lflarea; lidos.push({l, wb: lflLerOriginal(bufX), tipo: 'lflarea', nome: f.name}); continue; } }catch(e){}
+      try{ if(lflEhMapa(lflLerOriginal(bufX, true).SheetNames)){ l.tipo = IMP_NOMES.lflarea; l.k = 'lflarea'; lidos.push({l, wb: lflLerOriginal(bufX), tipo: 'lflarea', nome: f.name}); continue; } }catch(e){}
       const wb = XLSX.read(bufX, {type:'array'});
       let tipo = impTipo(wb);
-      if(!tipo){ const te = impTipoExtra(wb, f.name); if(te){ l.tipo = IMP_NOMES[te]; lidos.push({l, extra: te, f, tipo: te, nome: f.name}); continue; } }
+      if(!tipo){ const te = impTipoExtra(wb, f.name); if(te){ l.tipo = IMP_NOMES[te]; l.k = te; lidos.push({l, extra: te, f, tipo: te, nome: f.name}); continue; } }
       if(tipo === 'markdown'){ l.ok = 'skip'; l.tipo = 'Relatório de markdown — já não é usado'; l.msg = 'O markdown saiu da app. Este ficheiro foi ignorado.'; continue; }
       if(tipo === 'naousado'){ l.ok = 'skip'; l.tipo = 'Não é preciso'; l.msg = 'A app agora só usa vendas e quebras — este ficheiro foi ignorado.'; continue; }
       if(!tipo){ l.ok = false; l.tipo = 'Ficheiro não reconhecido'; l.msg = 'Este ficheiro não é nenhum dos relatórios que a app conhece. Envie-o ao Claude para a app aprender a lê-lo.'; continue; }
-      l.tipo = IMP_NOMES[tipo]; lidos.push({l, wb, tipo, nome: f.name, data: f.lastModified});
+      l.tipo = IMP_NOMES[tipo]; l.k = tipo; lidos.push({l, wb, tipo, nome: f.name, data: f.lastModified});
     }catch(e){ l.ok = false; l.tipo = 'Erro a ler'; l.msg = String(e && e.message || e); }
   }
   mostrar(false);
