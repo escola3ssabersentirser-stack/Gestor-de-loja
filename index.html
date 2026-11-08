@@ -14235,6 +14235,67 @@ function ctBotao(){
   return `<div class="card" style="margin-bottom:10px;"><input type="file" id="ct-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="ctCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#ct-fich')||document.getElementById('ct-fich')).click()">📎 Atualizar dados da equipa (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Ficheiro com o nome e o telefone, a data de nascimento ou o email de cada pessoa. A app junta pelo nome e mostra o que muda antes de guardar.</div><div id="ct-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
 
+// ===================== ALERTAS AOS COLABORADORES (11 h de descanso, alterações de horário, banco de horas, formação em falta) =====================
+let alrFiltro = 'todos';
+const ALR_FORM = {codigo_conduta: 'Código de Conduta', data_privacy: 'Data Privacy', politica_anticorrupcao: 'Política Anticorrupção', seguranca_protecao: 'Segurança e Proteção'};
+async function blocoAlertasRH(){
+  const dona = currentUser && souDona();
+  const [cols, ind, comp, alt] = await Promise.all([
+    sb('loja_colaboradores?select=numero_pessoal,nome,telefone,bh_positivo,bh_negativo,data_prevista_gozar_horas&order=nome.asc').catch(() => []),
+    sb('loja_rh_indicadores?select=data_extracao,dados&order=data_extracao.desc&limit=1').catch(() => []),
+    impTodos('loja_formacao_compliance?select=numero_pessoal,codigo_conduta,data_privacy,politica_anticorrupcao,seguranca_protecao').catch(() => []),
+    sb('loja_alteracoes_horario?assinado=not.is.true&select=colaborador_numero').catch(() => [])
+  ]);
+  const N = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const k0 = n => String(n || '').replace(/^0+/, '');
+  const I = ind && ind[0] && ind[0].dados ? ind[0].dados.pessoas || [] : []; const dataInd = ind && ind[0] ? ind[0].data_extracao : null;
+  const indDe = c => { const nc = N(c.nome).split(' '); return I.find(p => { const np = N(p.nome).split(' '); return np.length && np.every(w => nc.includes(w)); }); };
+  const compPor = {}; (comp || []).forEach(r => { compPor[k0(r.numero_pessoal)] = r; });
+  const altPor = {}; (alt || []).forEach(r => { const k = k0(r.colaborador_numero); altPor[k] = (altPor[k] || 0) + 1; });
+  const curto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
+  const P = (cols || []).filter(c => c.numero_pessoal && !/^0*(123456|9990001)$/.test(c.numero_pessoal)).map(c => {
+    const k = k0(c.numero_pessoal), ip = indDe(c) || {}, cp = compPor[k];
+    const falta = cp ? Object.entries(ALR_FORM).filter(([f]) => /a formar|pendente|n[ãa]o/i.test(String(cp[f] || ''))).map(([, t]) => t) : [];
+    const bh = Number(c.bh_positivo) || 0, bhn = Number(c.bh_negativo) || 0;
+    return {k, nome: c.nome, curto: curto(c.nome), tel: c.telefone, oc11: Number(ip.oc11) || 0, trocas: Number(ip.trocas) || 0, porAssinar: altPor[k] || 0, bh, bhn, bhData: c.data_prevista_gozar_horas, falta};
+  });
+  const tem = {d11: p => p.oc11 > 0, trocas: p => p.trocas > 0 || p.porAssinar > 0, bh: p => p.bh > 0 || p.bhn < 0, form: p => p.falta.length > 0};
+  const comAlgo = P.filter(p => Object.values(tem).some(f => f(p)));
+  window.__alrP = P; window.__alrData = dataInd;
+  const cont = k => P.filter(tem[k]).length;
+  const FIL = [['todos', 'Todos', comAlgo.length], ['d11', '🌙 11 h', cont('d11')], ['trocas', '🔁 Horário', cont('trocas')], ['bh', '⏳ Banco h.', cont('bh')], ['form', '🎓 Formação', cont('form')]];
+  const lista = alrFiltro === 'todos' ? comAlgo : P.filter(tem[alrFiltro]);
+  const mesInd = dataInd ? impTitulo(IMP_MESES[Number(dataInd.slice(5, 7)) - 1]) : '';
+  let h = `<div class="section-title">📨 Alertas aos colaboradores</div><div class="card">
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">11 h de descanso e alterações de horário: relatório de ${dataInd ? impDDMM(dataInd) : '—'} · banco de horas e formação: dados atuais. Toque em 💬 para enviar a mensagem com tudo o que a pessoa tem em falta.</div>
+    <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin-bottom:10px;">${FIL.map(([k, t, n]) => `<button type="button" onclick="alrFiltro='${k}';renderFormacoesScreen()" style="border:1px solid ${alrFiltro === k ? 'var(--navy)' : 'var(--line)'};background:${alrFiltro === k ? 'var(--navy)' : '#fff'};color:${alrFiltro === k ? '#fff' : 'var(--navy)'};border-radius:10px;padding:6px 2px;font-size:11px;font-weight:700;line-height:1.25;cursor:pointer;">${t}<br><span style="font-size:13px;">${n}</span></button>`).join('')}</div>`;
+  if(!lista.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">✓ Ninguém com alertas neste ponto.</div></div>`;
+  const chip = (t, cor, bg) => `<span style="display:inline-block;font-size:11px;font-weight:700;color:${cor};background:${bg};border-radius:999px;padding:2px 8px;margin:2px 4px 0 0;">${t}</span>`;
+  h += lista.map(p => `<div style="padding:8px 0;border-top:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><b style="font-size:13px;">${rpEsc(p.curto)}</b>${dona ? `<span style="display:flex;gap:4px;"><button type="button" onclick="alrEnviar('${p.k}','wa')" style="border:0;background:#25D366;color:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;">💬${p.tel ? '' : ' (sem tel.)'}</button><button type="button" onclick="alrEnviar('${p.k}','copiar')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">📋</button></span>` : ''}</div>
+      <div>${p.oc11 ? chip(`🌙 ${p.oc11}× menos de 11 h de descanso`, '#9B1C14', '#FBEAEA') : ''}${p.trocas ? chip(`🔁 ${p.trocas} alteraç${p.trocas === 1 ? 'ão' : 'ões'} de horário`, '#8A5A00', '#FFF4DC') : ''}${p.porAssinar ? chip(`✍️ ${p.porAssinar} por assinar`, '#8A5A00', '#FFF4DC') : ''}${p.bh > 0 ? chip(`⏳ ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhData ? ' · ' + impDDMM(p.bhData) : ' · sem data'}`, '#1F5C3A', '#E8F4EA') : ''}${p.bhn < 0 ? chip(`⏳ ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar`, '#9B1C14', '#FBEAEA') : ''}${p.falta.length ? chip(`🎓 falta: ${p.falta.join(', ')}`, '#2F4FA0', '#E8EEFB') : ''}</div></div>`).join('');
+  return h + `</div>`;
+}
+function alrMensagem(p){
+  const pn = String(p.nome || '').trim().split(/\s+/)[0];
+  const mes = window.__alrData ? impTitulo(IMP_MESES[Number(window.__alrData.slice(5, 7)) - 1]) : '';
+  const L = [];
+  if(p.oc11) L.push(`🌙 *Descanso:* alerto para o incumprimento das 11 horas de descanso entre jornadas — ${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}${mes ? ' em ' + mes : ''}. O descanso mínimo de 11 horas entre o fim de um turno e o início do seguinte é obrigatório.`);
+  if(p.trocas || p.porAssinar) L.push(`🔁 *Horário:* ${p.trocas ? `teve ${p.trocas} alteraç${p.trocas === 1 ? 'ão' : 'ões'} de horário${mes ? ' em ' + mes : ''}` : ''}${p.trocas && p.porAssinar ? ' e ' : ''}${p.porAssinar ? `tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} por assinar — passe pela gerência para assinar` : ''}.`);
+  if(p.bh > 0) L.push(`⏳ *Banco de horas:* tem ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhData ? ` (data prevista: ${impDDMM(p.bhData)})` : '. Combine comigo a data para as gozar'}.`);
+  if(p.bhn < 0) L.push(`⏳ *Banco de horas:* tem ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar.`);
+  if(p.falta.length) L.push(`🎓 *Formação em falta:* ${p.falta.join(', ')}. Peço que conclua até ao fim do mês.`);
+  return `Olá ${pn},\n\nPonto de situação de RH:\n\n${L.join('\n\n')}\n\nQualquer dúvida, fale comigo.\nObrigada,\nConceição Alves`;
+}
+async function alrEnviar(k, modo){
+  if(!soDona('enviar mensagens')) return;
+  const p = (window.__alrP || []).find(x => x.k === k); if(!p) return;
+  const txt = alrMensagem(p);
+  if(modo === 'copiar'){ try{ await navigator.clipboard.writeText(txt); alert('Mensagem copiada.'); }catch(e){ prompt('Copie a mensagem:', txt); } return; }
+  let tel = String(p.tel || '').replace(/\D/g, ''); if(tel.length === 9) tel = '351' + tel;
+  window.open(tel ? `https://wa.me/${tel}?text=${encodeURIComponent(txt)}` : `https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+}
+
 // ===================== PICAGENS MANUAIS (mapa de controlo de picagens) → Recursos Humanos =====================
 const PIC_SECOES = ['Frutas e Vegetais','Frente de Loja','Livre Serviço','Direcção Loja','Direção Loja','Pronto a Comer','Take Away','Peixaria','Talho','Padaria','Pastelaria','Charcutaria','Queijos','Armazém','Recepção','Receção','Bacalhau','Restauração','Cafetaria'];
 let picMesSel = null;
@@ -14360,7 +14421,8 @@ async function renderFormacoesScreen(){
   const formacaoHtml = await blocoFormacaoCompliance();
   const sec = (t, i) => `<div class="section-title" style="margin-top:6px;">${t}</div>`;
   let picHtml = ''; try{ picHtml = await blocoPicagens(); }catch(e){ console.error('picagens', e); }
-  content.innerHTML = indHtml + picHtml + ctBotao() + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml + fundHtml;
+  let alHtml = ''; try{ alHtml = await blocoAlertasRH(); }catch(e){ console.error('alertas RH', e); }
+  content.innerHTML = alHtml + indHtml + picHtml + ctBotao() + rhBotaoUpload('bh', 'Atualizar Banco de Horas (ficheiro Excel)') + bhHtml + alteracoesHtml + rhBotaoUpload('form', 'Atualizar Formações (ficheiro Excel)') + formacaoHtml + fundHtml;
 }
 
 // encontra o elemento do mesmo cartão do ficheiro (há ecrãs escondidos com os mesmos ids)
