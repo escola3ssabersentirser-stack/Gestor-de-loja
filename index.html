@@ -660,6 +660,14 @@
 .mc-sep-painel > .section-title:first-child{margin-top:6px;}
 .mc-mais > summary{cursor:pointer;list-style:none;text-align:center;font-size:12.5px;font-weight:700;color:var(--navy);background:#fff;border:1px dashed var(--line);border-radius:12px;padding:10px;margin:8px 0;}
 .mc-mais[open] > summary{background:#EEF3EF;}
+.rp-menus-btn{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:10px;width:100%;background:#1F5C3A;color:#fff;border-radius:18px;padding:14px 18px;margin:4px 0 14px;font-size:22px;box-shadow:0 6px 18px rgba(20,48,30,.25);}
+.rp-menus-btn span{font-size:17px;font-weight:800;}
+.rp-menus-btn small{font-size:12.5px;opacity:.85;margin-left:auto;}
+.rp-areas{display:none;position:fixed;inset:0;z-index:900;background:rgba(10,20,14,.5);align-items:flex-end;justify-content:center;}
+.rp-areas.aberto{display:flex;}
+.rp-areas-folha{background:#F4F1EA;width:100%;max-width:760px;max-height:86vh;overflow:auto;border-radius:20px 20px 0 0;padding:14px 14px 24px;box-sizing:border-box;}
+.rp-areas-cab{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;position:sticky;top:-14px;background:#F4F1EA;padding:6px 0;z-index:1;}
+.rp-areas-x{all:unset;cursor:pointer;font-size:18px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#fff;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -754,9 +762,11 @@
           </div>
         </div>
 
+        <button type="button" class="rp-menus-btn" onclick="rpMenus(true)">☰ <span>Menus</span><small>escolher a área da loja</small></button>
         <div id="painel-resumo"></div>
 
-        <div class="rp-bloco-tit">Áreas da loja</div>
+        <div id="rp-areas" class="rp-areas" onclick="if(event.target===this||event.target.closest('.rp-nav-btn:not(#rp-btn-aud),.h3s-pill'))setTimeout(()=>rpMenus(false),0)"><div class="rp-areas-folha">
+        <div class="rp-areas-cab"><div class="rp-bloco-tit" style="margin:0;">Áreas da loja</div><button type="button" class="rp-areas-x" onclick="rpMenus(false)" aria-label="Fechar">✕</button></div>
         <div class="rp-nav">
           <button class="rp-nav-btn" onclick="selectMenu('painel-vendas','Vendas')"><span class="rp-nav-ic">💶</span><span><b>Vendas</b><small>por dia, por secção e objetivo</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('painel-custos','Custos da Loja')"><span class="rp-nav-ic">💡</span><span><b>Custos da loja</b><small>luz, água, pessoal, economato</small></span></button>
@@ -785,6 +795,7 @@
           <button class="rp-nav-btn rp-nav-destaque" onclick="abrirApresentacao()"><span class="rp-nav-ic">📊</span><span><b>Apresentação semanal</b><small>sempre com os dados mais recentes</small></span></button>
           <button class="rp-nav-btn" onclick="selectMenu('objetivos2027','Objetivos 2027')"><span class="rp-nav-ic">🚀</span><span><b>2027</b><small>objetivos da loja e secções</small></span></button>
         </div>
+        </div></div>
         <div class="hidden" aria-hidden="true">
         <div id="h3s-areas">
           
@@ -4861,11 +4872,13 @@ function renderHome3S(){
 }
 
 let currentLabel = 'Dashboard';
+function rpMenus(abrir){ const el = document.getElementById('rp-areas'); if(!el) return; el.classList.toggle('aberto', !!abrir); document.body.style.overflow = abrir ? 'hidden' : ''; }
 // botão «voltar» do telemóvel: volta ao ecrã anterior da app em vez de sair da app
 (function(){
   let navPop = false;
   const orig = selectMenu;
   selectMenu = function(id, label){
+    try{ rpMenus(false); }catch(e){}
     const r = orig.apply(this, arguments);
     if(!navPop){ try{ const st = history.state;
       if(id === 'dashboard'){ if(!st || st.menu !== 'dashboard') history.replaceState({menu: 'dashboard', label: label || 'Dashboard'}, ''); }
@@ -4876,6 +4889,7 @@ let currentLabel = 'Dashboard';
   window.addEventListener('popstate', e => {
     if(typeof currentUser === 'undefined' || !currentUser) return;
     const ov = document.getElementById('pic-rev'); if(ov){ ov.remove(); }
+    const ar = document.getElementById('rp-areas'); if(ar && ar.classList.contains('aberto')){ rpMenus(false); }
     navPop = true;
     try{ const st = e.state; if(st && st.menu) selectMenu(st.menu, st.label); else selectMenu('dashboard', 'Dashboard'); }
     finally{ navPop = false; }
