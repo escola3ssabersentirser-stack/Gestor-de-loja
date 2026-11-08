@@ -16240,9 +16240,11 @@ function mcOrganizarSeparadores(content){
   MC_SEPS.forEach(([k]) => { if(paineis[k].childNodes.length) content.appendChild(paineis[k]); });
   // nas Automáticas ficam à vista só os 2 gráficos principais; o resto fica em «Ver mais detalhe»
   const pa = paineis.auto; if(pa && pa.childNodes.length){
-    const principais = [...pa.querySelectorAll(':scope > .card')].filter(c => /repostos por dia|artigos repostos por hora/i.test(c.textContent.slice(0, 200)));
-    const resto = [...pa.childNodes].filter(n => !principais.includes(n));
-    if(principais.length && resto.length){ const det = document.createElement('details'); det.className = 'mc-mais'; det.innerHTML = '<summary>➕ Ver mais detalhe (quem fez as listas, horas, grelha, divisões)</summary>'; resto.forEach(n => det.appendChild(n)); pa.innerHTML = ''; principais.forEach(c => pa.appendChild(c)); pa.appendChild(det); }
+    // nas listas fica só: quem fez, artigos por hora e artigos por dia (o resto era informação a mais)
+    const ordem = [/quem fez as listas/i, /artigos repostos por hora/i, /artigos repostos por dia/i];
+    const cards = [...pa.querySelectorAll(':scope > .card')];
+    const principais = ordem.map(re => cards.find(c => re.test(c.textContent.slice(0, 120)))).filter(Boolean);
+    if(principais.length){ pa.innerHTML = '<div class="section-title">🔁 Listas automáticas</div>'; principais.forEach(c => pa.appendChild(c)); }
   }
   if(!paineis[mcSep] || !paineis[mcSep].childNodes.length) mcSep = paineis.equipa && paineis.equipa.childNodes.length ? 'equipa' : 'auto';
   mcMudarSep(mcSep, true);
@@ -16659,16 +16661,11 @@ async function blocoRuturasReposicao(D){
   h += `<div class="card"><h3 style="margin-bottom:6px;">Por divisão</h3>${ld.map(d => `<div style="display:grid;grid-template-columns:minmax(0,1fr) 26px;gap:2px 8px;align-items:center;padding:4px 0;font-size:12px;"><span style="grid-column:1 / -1;">${rpEsc(d.k)}</span><div style="display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line);width:${(d.t / mxd * 100).toFixed(1)}%;">${Object.keys(GR).map(k => d.c[k] ? `<div style="flex:${d.c[k]};background:${GR[k][2]};"></div>` : '').join('')}</div><b style="text-align:right;">${d.t}</b></div>`).join('')}</div>`;
   // listas por artigo
   Object.entries(GR).forEach(([k, g]) => { const lst = itens.filter(x => x.cat === k); if(!lst.length) return;
-    h += `<details class="card" id="rutl-${k}"><summary style="cursor:pointer;font-weight:800;color:${g[2]};font-size:13px;">${g[0]} (${lst.length})</summary><div style="font-size:11.5px;color:var(--ink-soft);margin:4px 0 2px;">${g[1]}</div>` + lst.map(x => {
-      const linhas = [];
-      if(x.nLista) linhas.push(`🔁 saiu na lista <b style="color:var(--ink);">${x.nLista}×</b>${x.auOk.length ? ` · reposto ${x.auOk.length}× (último ${dm(ultimo(x.auOk).data)} por ${rpEsc(nome(ultimo(x.auOk).numero))})` : ''}`);
-      else linhas.push('🔁 não saiu na lista automática');
-      if(x.ss.length) linhas.push(`📦 sem stock ${x.ss.length}× · último ${dm(x.uSS.data)} às ${String(x.uSS.hora || '').slice(0, 5)} por ${rpEsc(nome(x.uSS.numero))}`);
-      const quando = d => d > dK ? ' <span style="color:#1F7A33;font-weight:700;">(depois do KPI)</span>' : d === dK ? ' <span style="font-weight:700;">(dia do KPI)</span>' : '';
-      if(x.ma.length) linhas.push(`🚚 palete chegou: <b style="color:var(--ink);">${[...new Set(x.ma.map(y => y.data))].map(d => dm(d) + quando(d)).join(', ')}</b>`);
-      if(x.viRut.length){ const u = ultimo(x.viRut); linhas.push(`🟥 picado com rutura para encher ${x.viRut.length}× · último ${dm(u.data)} às ${String(u.hora || '').slice(0, 5)} por ${rpEsc(nome(u.numero))}${quando(u.data)}`); }
-      if(x.vi.length){ const u = ultimo(x.vi); linhas.push(`👀 visível ${x.vi.length}× · último ${dm(u.data)} por ${rpEsc(nome(u.numero))}`); }
-      return `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;"><div><b>${rpEsc(x.artigo || x.artigo_cod)}</b> <span style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod} · ${rpEsc(x.area || '')}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</span></div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.55;">${linhas.join('<br>')}</div></div>`; }).join('') + `</details>`; });
+    const pn = n => { const t = String(nome(n) || ''); return /^Nº/.test(t) ? t : t.split(' ')[0]; };
+    const cel = (a, cor) => { if(!a || !a.length) return `<td style="text-align:center;color:#C5C9CF;">—</td>`; const u = ultimo(a); return `<td style="text-align:center;white-space:nowrap;"><b style="color:${cor};">${dm(u.data)}</b>${u.data > dK ? '<sup style="color:#1F7A33;">●</sup>' : ''}${u.numero ? `<div style="font-size:10px;color:var(--ink-soft);">${rpEsc(pn(u.numero))}</div>` : ''}${a.length > 1 ? `<div style="font-size:9.5px;color:var(--ink-soft);">${a.length}×</div>` : ''}</td>`; };
+    h += `<details class="card" id="rutl-${k}"><summary style="cursor:pointer;font-weight:800;color:${g[2]};font-size:13px;">${g[0]} (${lst.length})</summary><div style="font-size:11px;color:var(--ink-soft);margin:4px 0 6px;">${g[1]} Mostra o último dia e quem. <sup style="color:#1F7A33;">●</sup> = depois do KPI.</div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;"><thead><tr style="background:#F4F1EA;"><th style="text-align:left;padding:5px 4px;">Artigo</th><th style="padding:5px 2px;">🚚<br>Palete</th><th style="padding:5px 2px;">🔁<br>Reposto</th><th style="padding:5px 2px;">🟥<br>Rutura</th><th style="padding:5px 2px;">👀<br>Visível</th></tr></thead><tbody>` +
+      lst.map(x => `<tr style="border-top:1px solid var(--line);vertical-align:top;"><td style="padding:5px 4px;"><b>${rpEsc(x.artigo || x.artigo_cod)}</b><div style="font-size:9.5px;color:var(--ink-soft);">${x.artigo_cod}${x.ss.length ? ' · <span style="color:#8E44AD;font-weight:700;">sem stock ' + dm(x.uSS.data) + '</span>' : ''}</div></td>${cel(x.ma, '#2F6DB5')}${cel(x.auOk, '#1F7A33')}${cel(x.viRut, '#B4231A')}${cel(x.vi.filter(y => !y.rutura), '#C77F12')}</tr>`).join('') + `</tbody></table></div></details>`; });
   // em rutura e não picados na visível
   if(semVisivel.length){ const pv = {}; semVisivel.forEach(x => { const k = x.area || '—'; (pv[k] = pv[k] || []).push(x); });
     h += `<details class="card"><summary style="cursor:pointer;font-weight:800;color:#C77F12;font-size:13px;">🙈 Em rutura e não picados na visível (${semVisivel.length} de ${tot})</summary><div style="font-size:11.5px;color:var(--ink-soft);margin:4px 0 2px;">Ninguém passou a visível nestes artigos nos dias antes do KPI. Por divisão:</div>` +
