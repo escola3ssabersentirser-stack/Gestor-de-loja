@@ -16339,7 +16339,9 @@ function mcOrganizarSeparadores(content){
   if(!paineis[mcSep] || !paineis[mcSep].childNodes.length) mcSep = paineis.equipa && paineis.equipa.childNodes.length ? 'equipa' : 'auto';
   mcMudarSep(mcSep, true);
 }
+function mcAjustarTopoSep(){ try{ const tb = [...document.querySelectorAll('.topbar')].find(t => t.offsetParent !== null); const hh = tb ? tb.getBoundingClientRect().height : 0; document.querySelectorAll('.mc-sep-barra').forEach(b => b.style.top = Math.round(hh) + 'px'); }catch(e){} }
 function mcMudarSep(k, semScroll){
+  mcAjustarTopoSep();
   mcSep = k;
   document.querySelectorAll('.mc-sep-painel').forEach(d => d.style.display = d.dataset.sep === k ? '' : 'none');
   document.querySelectorAll('.mc-sep-barra button').forEach(b => b.classList.toggle('ativo', b.dataset.sep === k));
@@ -16559,7 +16561,7 @@ function blocoResumoReposicao(RD){
     <table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#F4F1EA;"><th style="text-align:left;padding:5px 4px;">Hora</th><th style="text-align:left;padding:5px 4px;">🔁 Automática<br><span style="font-weight:400;font-size:10px;">artigos repostos</span></th><th style="padding:5px 2px;">❌ Lista<br><span style="font-weight:400;font-size:10px;">falhou</span></th><th style="text-align:left;padding:5px 4px;">👀 Visível<br><span style="font-weight:400;font-size:10px;">artigos</span></th></tr></thead><tbody>` +
     L.map(x => `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 4px;font-weight:700;white-space:nowrap;">${x.h}h–${x.h + 1}h</td>
       <td style="padding:5px 4px;"><div style="display:flex;align-items:center;gap:5px;"><div style="flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.aOk / mxA * 100).toFixed(1)}%;background:#1F7A33;"></div></div><b style="min-width:30px;text-align:right;">${x.aOk}</b></div></td>
-      <td style="padding:5px 2px;text-align:center;"><b style="color:${x.dentro ? corF(x.falhou.length) : '#C5C9CF'};">${!x.dentro ? '—' : x.falhou.length ? x.falhou.length + '×' : '✓'}</b>${x.falhou.length && x.falhou.length <= 4 ? `<div style="font-size:9.5px;color:var(--ink-soft);">${x.falhou.map(d => impDDMM(d)).join(' ')}</div>` : ''}</td>
+      <td style="padding:5px 2px;text-align:center;"><b style="color:${x.dentro ? corF(x.falhou.length) : '#C5C9CF'};">${!x.dentro ? '—' : x.falhou.length ? x.falhou.length + '×' : '✓'}</b>${x.falhou.length ? `<div style="font-size:9.5px;color:var(--ink-soft);line-height:1.35;">${x.falhou.map(d => MC_SEM_CURTO[mcDow(d)] + ' ' + impDDMM(d)).join('<br>')}</div>` : ''}</td>
       <td style="padding:5px 4px;"><div style="display:flex;align-items:center;gap:5px;"><div style="flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.v / mxV * 100).toFixed(1)}%;background:#C77F12;"></div></div><b style="min-width:26px;text-align:right;">${x.v}</b></div></td></tr>`).join('') +
     `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">${nd} dia${nd > 1 ? 's' : ''} com dados. «Lista falhou» = número de dias em que não houve nenhuma lista automática nessa hora (só conta das 9h às 22h). A visível aparece em todas as horas em que foi feita.</div>
     <div style="font-weight:800;font-size:13px;color:var(--red);margin:14px 0 4px;">🔴 Top 10 ruturas prolongadas (mais de 3 dias)</div>
@@ -16649,7 +16651,7 @@ function mcResumoTexto(){
   t += `❌ *Lista falhou:* ${R.totF} hora${R.totF === 1 ? '' : 's'}${R.piores.length ? ` — piores: ${R.piores.map(x => `${x.h}h (${x.falhou.length} dia${x.falhou.length > 1 ? 's' : ''})`).join(', ')}` : ' — houve lista em todas as horas'}\n`;
   t += `👀 *Visível:* ${R.totV.toLocaleString('pt-PT')} artigos picados\n\n`;
   t += `*Hora a hora* (automática · lista falhou · visível)\n`;
-  t += R.L.map(x => `${p2(x.h)}h–${p2(x.h + 1)}h: ${x.aOk} · ${!x.dentro ? '—' : x.falhou.length ? `❌ ${x.falhou.length}× (${x.falhou.map(d => impDDMM(d)).join(', ')})` : '✓'} · ${x.v}`).join('\n');
+  t += R.L.map(x => `${p2(x.h)}h–${p2(x.h + 1)}h: ${x.aOk} · ${!x.dentro ? '—' : x.falhou.length ? `❌ ${x.falhou.length}× (${x.falhou.map(d => MC_SEM_CURTO[mcDow(d)] + ' ' + impDDMM(d)).join(', ')})` : '✓'} · ${x.v}`).join('\n');
   t += `\n\n*🔴 Top 10 ruturas prolongadas (mais de 3 dias)*\n` + (R.top10.length ? R.top10.map((x, i) => `${i + 1}. ${x.artigo} — *${x.dias} dias* (${impDDMM(x.desde)} a ${impDDMM(x.picado)})`).join('\n') : 'Nenhuma rutura com mais de 3 dias.');
   t += `\n\n«Lista falhou» = dias sem nenhuma lista automática nessa hora (9h–22h). ${R.nd} dia${R.nd > 1 ? 's' : ''} com dados.`;
   return t;
