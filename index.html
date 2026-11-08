@@ -2402,6 +2402,16 @@ async function rpAtualizarAnoResumo(){
   if(q && Number(q.atual) > 0){ pl.quebras_ano = Math.round(Number(q.atual)*100)/100; if(q.ant) pl.quebras_ano_anterior = Math.round(Number(q.ant)*100)/100; }
   await sb('loja_resumo?id=eq.1', {method:'PATCH', body: JSON.stringify(pl)});
 }
+function rpTabelaSecoes(r){
+  r = r || resumoPainel; if(!r || !(r.secoes||[]).length) return '';
+  let h = '';
+    h += `<div class="rp-bloco-tit">Mês em curso por secção</div><div class="h3s-card rp-tabela-box" style="overflow-x:auto;"><table class="rp-tab"><thead><tr><th>Secção</th><th>Budget acum.</th><th>Real acum.</th><th>vs budget</th><th>vs ${anoP}</th><th>Quebra %</th><th>Quebra % ${anoP}</th><th>Diferença</th></tr></thead><tbody>`;
+    const linha = (s, tot) => `<tr${tot ? ' class="rp-tot"' : ''}><td>${rpEsc(s.sec)}</td><td>${rpEur(s.bdg)}</td><td>${rpEur(s.real)}</td><td>${rpChip(rpVarPct(s.vsb), s.vsb >= 0)}</td><td>${rpChip(rpVarPct(s.vsaa), s.vsaa >= 0)}</td><td>${rpPct(s.qp,2)}</td><td>${rpPct(s.qp_aa,2)}</td><td>${(s.qp == null || s.qp_aa == null) ? '–' : rpChip(rpVarPP((s.qp - s.qp_aa)*100), (s.qp - s.qp_aa) <= 0)}</td></tr>`;
+    r.secoes.forEach(s => h += linha(s, false));
+    if(r.secoes_total) h += linha(r.secoes_total, true);
+    h += `</tbody></table></div>`;
+    return h;
+}
 function renderPainelResumo(){
   const box = document.getElementById('painel-resumo');
   if(!box) return;
@@ -2488,15 +2498,6 @@ function renderPainelResumo(){
       h += `<tr><td>${rpEsc(m.mes)}</td><td>${m.v_ant > 0 ? rpEur(m.v_ant) : '–'}</td><td>${m.budget > 0 ? rpEur(m.budget) : '–'}</td><td>${tem ? rpEur(m.v) : '–'}</td><td>${vsb === null ? '–' : rpChip(rpVarPct(vsb), vsb >= 0)}</td><td>${vsa === null ? '–' : rpChip(rpVarPct(vsa), vsa >= 0)}</td><td>${m.qp_ant > 0 ? rpPct(m.qp_ant,2) : '–'}</td><td>${m.qp > 0 ? rpPct(m.qp,2) : '–'}</td></tr>`;
     });
     h += `</tbody></table></div></details>`;
-  }
-
-  // ---- Secções (saiu da página principal: fica em Vendas)
-  if(false && (r.secoes||[]).length){
-    h += `<div class="rp-bloco-tit">Mês em curso por secção</div><div class="h3s-card rp-tabela-box"><table class="rp-tab"><thead><tr><th>Secção</th><th>Budget acum.</th><th>Real acum.</th><th>vs budget</th><th>vs ${anoP}</th><th>Quebra %</th><th>Quebra % ${anoP}</th><th>Diferença</th></tr></thead><tbody>`;
-    const linha = (s, tot) => `<tr${tot ? ' class="rp-tot"' : ''}><td>${rpEsc(s.sec)}</td><td>${rpEur(s.bdg)}</td><td>${rpEur(s.real)}</td><td>${rpChip(rpVarPct(s.vsb), s.vsb >= 0)}</td><td>${rpChip(rpVarPct(s.vsaa), s.vsaa >= 0)}</td><td>${rpPct(s.qp,2)}</td><td>${rpPct(s.qp_aa,2)}</td><td>${(s.qp == null || s.qp_aa == null) ? '–' : rpChip(rpVarPP((s.qp - s.qp_aa)*100), (s.qp - s.qp_aa) <= 0)}</td></tr>`;
-    r.secoes.forEach(s => h += linha(s, false));
-    if(r.secoes_total) h += linha(r.secoes_total, true);
-    h += `</tbody></table></div>`;
   }
 
   // ---- Auditorias (saíram da página principal: ficam em Auditorias)
@@ -13264,6 +13265,7 @@ async function renderPainelVendas(){
   const vendasSemana = calc && calc.semana.vendas!==null ? calc.semana.vendas : null;
 
   let html = await blocoVendasDiaMesAno(r);
+  try{ if(!resumoPainel) resumoPainel = RESUMO_PADRAO; html += rpTabelaSecoes(rpSincronizarMesAtual(resumoPainel)); }catch(e){ console.error('secções', e); }
   html += `<div class="section-title">💶 Vendas</div>`;
   html += `<div class="card">
     <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12.5px;color:var(--ink-soft);">Ontem</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasDia.length?fmtEuro(vendasDia[0].vendas_real):'—'}</span></div>
