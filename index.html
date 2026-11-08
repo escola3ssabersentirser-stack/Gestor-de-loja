@@ -2490,8 +2490,8 @@ function renderPainelResumo(){
     h += `</tbody></table></div></details>`;
   }
 
-  // ---- Secções
-  if((r.secoes||[]).length){
+  // ---- Secções (saiu da página principal: fica em Vendas)
+  if(false && (r.secoes||[]).length){
     h += `<div class="rp-bloco-tit">Mês em curso por secção</div><div class="h3s-card rp-tabela-box"><table class="rp-tab"><thead><tr><th>Secção</th><th>Budget acum.</th><th>Real acum.</th><th>vs budget</th><th>vs ${anoP}</th><th>Quebra %</th><th>Quebra % ${anoP}</th><th>Diferença</th></tr></thead><tbody>`;
     const linha = (s, tot) => `<tr${tot ? ' class="rp-tot"' : ''}><td>${rpEsc(s.sec)}</td><td>${rpEur(s.bdg)}</td><td>${rpEur(s.real)}</td><td>${rpChip(rpVarPct(s.vsb), s.vsb >= 0)}</td><td>${rpChip(rpVarPct(s.vsaa), s.vsaa >= 0)}</td><td>${rpPct(s.qp,2)}</td><td>${rpPct(s.qp_aa,2)}</td><td>${(s.qp == null || s.qp_aa == null) ? '–' : rpChip(rpVarPP((s.qp - s.qp_aa)*100), (s.qp - s.qp_aa) <= 0)}</td></tr>`;
     r.secoes.forEach(s => h += linha(s, false));
@@ -2499,8 +2499,8 @@ function renderPainelResumo(){
     h += `</tbody></table></div>`;
   }
 
-  // ---- Auditorias (o gráfico do score saiu da entrada)
-  if((r.auditorias||[]).length){
+  // ---- Auditorias (saíram da página principal: ficam em Auditorias)
+  if(false && (r.auditorias||[]).length){
     h += `<div class="rp-bloco-tit">Auditorias</div><div>`;
     h += `<div class="h3s-card rp-tabela-box"><table class="rp-tab"><thead><tr><th>Área</th><th>${anoP}</th><th>${anoA}</th><th>Objetivo</th><th>Avaliação</th></tr></thead><tbody>`;
     (r.auditorias||[]).forEach(a => {
