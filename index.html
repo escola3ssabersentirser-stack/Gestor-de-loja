@@ -14318,14 +14318,14 @@ function alrMensagem(p, tema){
   const pn = String(p.nome || '').trim().split(/\s+/)[0];
   const mes = window.__alrData ? impTitulo(IMP_MESES[Number(window.__alrData.slice(5, 7)) - 1]) : '';
   const L = [];
-  if(so('d11') && p.oc11) L.push(`🌙 *Descanso:* alerto para o incumprimento das 11 horas de descanso entre jornadas — ${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}${mes ? ' em ' + mes : ''}. O descanso mínimo de 11 horas entre o fim de um turno e o início do seguinte é obrigatório.`);
   const mesT = window.__alrTrcMes ? impTitulo(IMP_MESES[Number(window.__alrTrcMes.slice(5, 7)) - 1]) : mes;
-  if(so('trocas') && p.trocas) L.push(`🔁 *Trocas de horário:* ${p.trocas > TRC_MAX ? `alerto que ultrapassou o máximo de ${TRC_MAX} trocas de horário por mês: tem ${p.trocas} trocas` : p.trocas === TRC_MAX ? `atingiu o máximo de ${TRC_MAX} trocas de horário por mês — não pode fazer mais trocas` : `tem ${p.trocas} troca${p.trocas === 1 ? '' : 's'} de horário (máximo ${TRC_MAX} por mês; restam ${TRC_MAX - p.trocas})`}${mesT ? ' em ' + mesT : ''}. As trocas têm de ser combinadas antes com a gerência.`);
-  if(so('assin') && p.porAssinar) L.push(`✍️ *Assinatura de horário:* tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} de horário por assinar. Passe pela gerência para assinar.`);
-  if(so('bh') && p.bh > 0) L.push(`⏳ *Banco de horas:* tem ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhDias.length ? `. Dias marcados para gozar: ${p.bhDias.map(d => impDDMM(d)).join(', ')}` : '. Ainda não tem dias marcados: combine comigo os dias para as gozar'}.`);
+  if(so('trocas') && p.trocas) L.push(`🔁 *Trocas de horário:* tem ${p.trocas} troca${p.trocas === 1 ? '' : 's'} de horário${mesT ? ' em ' + mesT : ''}${p.trocas > TRC_MAX ? `, acima do máximo de ${TRC_MAX} por mês` : p.trocas === TRC_MAX ? `, o máximo de ${TRC_MAX} por mês` : ` (máximo ${TRC_MAX} por mês)`}. As alterações de horário são feitas no Hello.`);
+  if(so('d11') && p.oc11) L.push(`🌙 *Descanso de 11 horas:* lembro que não são permitidos períodos de descanso inferiores a 11 horas entre o fim de um turno e o início do seguinte. ${mes ? 'Em ' + mes : 'No último relatório'} teve ${p.oc11} ${p.oc11 === 1 ? 'situação' : 'situações'} com menos de 11 horas.`);
+  if(so('assin') && p.porAssinar) L.push(`✍️ *Assinatura de horário:* tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} de horário por assinar.`);
+  if(so('bh') && p.bh > 0) L.push(`⏳ *Banco de horas:* tem ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhDias.length ? `. Dias marcados para gozar: ${p.bhDias.map(d => impDDMM(d)).join(', ')}` : ', ainda sem dias marcados'}.`);
   if(so('bh') && p.bhn < 0) L.push(`⏳ *Banco de horas:* tem ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar.`);
-  if(so('form') && p.falta.length) L.push(`🎓 *Formação em falta:* ${p.falta.join(', ')}. Peço que conclua até ao fim do mês.`);
-  return `Olá ${pn},\n\n${tema === 'todos' ? 'Ponto de situação de RH:\n\n' : ''}${L.join('\n\n')}\n\nQualquer dúvida, fale comigo.\nObrigada,\nConceição Alves`;
+  if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:* ${p.falta.join(', ')}.`);
+  return `Olá ${pn},\n\nPara sua informação:\n\n${L.join('\n\n')}\n\nQualquer dúvida, fale comigo.\nObrigada,\nConceição Alves`;
 }
 async function alrEnviar(k, modo, tema){
   if(!soDona('enviar mensagens')) return;
