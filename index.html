@@ -2582,7 +2582,19 @@ function impCabecalho(R, titulos){
   }
   return null;
 }
-async function impTodos(caminho){ return (await sb(caminho)) || []; }
+// lê TODAS as linhas: o servidor só devolve 1000 de cada vez, por isso pede página a página
+async function impTodos(caminho){
+  if(/[?&]limit=/.test(caminho)) return (await sb(caminho)) || [];
+  const sep = caminho.includes('?') ? '&' : '?';
+  // ordem estável (com id no fim) para as páginas não saltarem nem repetirem linhas
+  const base = /[?&]order=/.test(caminho) ? (/[?&]order=[^&]*\bid\./.test(caminho) ? caminho : caminho.replace(/([?&]order=[^&]*)/, '$1,id.asc')) : caminho + sep + 'order=id.asc';
+  const out = []; const P = 1000;
+  for(let off = 0; off < 500000; off += P){
+    const r = (await sb(`${base}${base.includes('?') ? '&' : '?'}limit=${P}&offset=${off}`)) || [];
+    out.push(...r); if(r.length < P) break;
+  }
+  return out;
+}
 
 function impTipo(wb){
   const nomes = wb.SheetNames;
@@ -13210,7 +13222,7 @@ async function renderPainelVendas(){
     sb('loja_resumo?id=eq.1&select=*'),
     sb('loja_vendas_secao?select=*'),
     sb('loja_vendas_dia?select=*&order=data.desc&limit=1'),
-    sb('loja_categorias_perda_vendas?select=*&order=delta_pct.asc&limit=2000').catch(()=>[])
+    impTodos('loja_categorias_perda_vendas?select=*&order=delta_pct.asc').catch(()=>[])
   ]);
   const r = resumoRows[0] || {};
   const calc = await calcularVendasPorPeriodo();
@@ -14379,7 +14391,7 @@ function picAlertar(numero, canal){
 }
 async function blocoPicagens(){
   const dona = currentUser && souDona();
-  let rows = []; try{ rows = await sb('loja_picagens_manuais?select=data,numero,nome,secao,horas,n&order=data.asc&limit=5000') || []; }catch(e){ rows = []; }
+  let rows = []; try{ rows = await impTodos('loja_picagens_manuais?select=data,numero,nome,secao,horas,n&order=data.asc') || []; }catch(e){ rows = []; }
   const meses = [...new Set(rows.map(r => r.data.slice(0, 7)))].sort();
   const hojeM = impISO(new Date()).slice(0, 7);
   if(!picMesSel || !meses.includes(picMesSel)) picMesSel = meses.includes(hojeM) ? hojeM : (meses[meses.length - 1] || hojeM);
@@ -15912,7 +15924,7 @@ async function renderMarkdownScreen(){
 
 async function blocoEtiquetasMarkdown(){
   let rows = [];
-  try{ rows = await sb('loja_markdown_etiquetas?select=*&order=sem_venda.desc.nullslast&limit=2000') || []; }catch(e){}
+  try{ rows = await impTodos('loja_markdown_etiquetas?select=*&order=sem_venda.desc.nullslast') || []; }catch(e){}
   const div = rows.filter(r => r.nivel === 'divisao'), art = rows.filter(r => r.nivel === 'artigo');
   if(!rows.length) return `<div class="section-title">🏷️ Etiquetas de markdown</div><div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Aparece ao carregar o relatório de markdown nos ficheiros do dia.</div></div>`;
   const ref = rows[0];
@@ -16759,7 +16771,7 @@ async function impRuturas(wb, nomeFicheiro, dataFicheiro){
 }
 async function rutDados(){
   let rows = [];
-  try{ rows = await sb('loja_ruturas?select=data,artigo_cod,artigo,pa,area&order=data.desc&limit=5000') || []; }catch(e){ rows = []; }
+  try{ rows = await impTodos('loja_ruturas?select=data,artigo_cod,artigo,pa,area&order=data.desc') || []; }catch(e){ rows = []; }
   const datas = [...new Set(rows.map(r => r.data))].sort().reverse();
   const hoje = rows.filter(r => r.data === datas[0]), ant = datas[1] ? rows.filter(r => r.data === datas[1]) : null;
   const diasSeguidos = cod => { let n = 0; for(const d of datas){ if(rows.some(r => r.data === d && r.artigo_cod === cod)) n++; else break; } return n; };
@@ -16911,7 +16923,7 @@ function vldMarcaArtigo(v, a){
 // ---------- MAPAS DE PRODUÇÃO: leitura (excesso de produção, % para quebra, artigos problemáticos) ----------
 async function blocoMapasProducao(){
   let rows = [];
-  try{ rows = await sb('loja_mp_artigos?select=*&order=data.desc&limit=3000') || []; }catch(e){ rows = []; }
+  try{ rows = await impTodos('loja_mp_artigos?select=*&order=data.desc') || []; }catch(e){ rows = []; }
   let h = `<div class="section-title">🍞 Mapas de produção — leitura</div>`;
   if(!rows.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem dados. Carregue os mapas de produção (Padaria e Meal Solutions) em "📥 Carregar relatórios".</div></div>`;
   const fim = rows[0].data, d0 = new Date(fim + 'T12:00:00'); d0.setDate(d0.getDate() - 6); const ini = impISO(d0);
