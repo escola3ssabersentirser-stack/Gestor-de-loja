@@ -16308,16 +16308,70 @@ async function mcExportarExcel(btn){
     let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
     const res = mcMontarExcel(l, rut, nomes, M, mcColSel);
     if(!res.paletes.length && !res.rut.length){ alert('Não há paletes nem ruturas neste período.'); return; }
-    const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.json_to_sheet(res.paletes); ws1['!cols'] = [{wch:11},{wch:6},{wch:12},{wch:10},{wch:38},{wch:8},{wch:22},{wch:26},{wch:34},{wch:26},{wch:34},{wch:22},{wch:16},{wch:26},{wch:12}]; ws1['!autofilter'] = {ref: ws1['!ref']};
-    XLSX.utils.book_append_sheet(wb, ws1, 'Paletes e reposição');
-    const ws2 = XLSX.utils.json_to_sheet(res.rut.length ? res.rut : [{'Info': 'Sem ruturas neste período'}]); ws2['!cols'] = [{wch:10},{wch:38},{wch:8},{wch:24},{wch:16},{wch:12},{wch:13},{wch:26},{wch:40},{wch:44}]; if(res.rut.length) ws2['!autofilter'] = {ref: ws2['!ref']};
-    XLSX.utils.book_append_sheet(wb, ws2, 'Ruturas sem picar');
-    const ws3 = XLSX.utils.json_to_sheet(res.pessoas.length ? res.pessoas : [{'Info': 'Sem dados'}]); ws3['!cols'] = [{wch:30},{wch:14},{wch:16},{wch:14},{wch:14}];
-    XLSX.utils.book_append_sheet(wb, ws3, 'Quem não tratou');
-    XLSX.writeFile(wb, `reposicao-ruturas-${M.ini}-a-${M.fim}${mcColSel ? '-n' + mcColSel : ''}.xlsx`);
+    const nomeF = `reposicao-ruturas-${M.ini}-a-${M.fim}${mcColSel ? '-n' + mcColSel : ''}.xlsx`;
+    let feito = false;
+    try{ await mcCarregarExcelJS(); await mcExcelBonito(res, M, nomeF); feito = true; }catch(e){ console.warn('ExcelJS', e); }
+    if(!feito){ const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.paletes), 'Paletes e reposição');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.rut.length ? res.rut : [{'Info': 'Sem ruturas'}]), 'Ruturas sem picar');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(res.pessoas.length ? res.pessoas : [{'Info': 'Sem dados'}]), 'Quem não tratou');
+      XLSX.writeFile(wb, nomeF); }
   }catch(e){ console.error(e); alert('Não consegui preparar o Excel.'); }
   finally{ if(btn){ btn.disabled = false; btn.textContent = '📊 Excel: paletes, reposição e ruturas'; } }
+}
+function mcCarregarExcelJS(){
+  if(window.ExcelJS) return Promise.resolve();
+  return new Promise((ok, falha) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'; sc.onload = () => window.ExcelJS ? ok() : falha(new Error('ExcelJS')); sc.onerror = falha; document.head.appendChild(sc); });
+}
+// Excel com cores, cabeçalhos fixos, filtros e uma folha de resumo — fácil de ler
+async function mcExcelBonito(res, M, nomeF){
+  const wb = new ExcelJS.Workbook(); wb.creator = 'Liderança 3S';
+  const VERDE = 'FF1F5C3A', VERDE_CL = 'FFE8F4EA', AMAR = 'FFFFF1CC', VERM = 'FFF8D7D3', VERM_F = 'FFB4231A', CINZA = 'FF6B7280', LINHA = 'FFF7F5F0';
+  const borda = {bottom: {style: 'thin', color: {argb: 'FFE3DED3'}}};
+  const corDias = n => n === '' || n == null ? null : n <= 1 ? VERDE_CL : n <= 3 ? AMAR : VERM;
+  const folha = (nome, linhas, cols, cor) => {
+    const ws = wb.addWorksheet(nome, {views: [{state: 'frozen', ySplit: 1}], properties: {tabColor: {argb: cor || VERDE}}});
+    ws.columns = cols.map(([k, w]) => ({header: k, key: k, width: w}));
+    linhas.forEach(r => ws.addRow(r));
+    const h = ws.getRow(1); h.height = 32;
+    h.eachCell(c => { c.font = {bold: true, color: {argb: 'FFFFFFFF'}, size: 11}; c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: cor || VERDE}}; c.alignment = {vertical: 'middle', horizontal: 'center', wrapText: true}; });
+    ws.eachRow((row, n) => { if(n === 1) return; row.alignment = {vertical: 'top', wrapText: true}; row.eachCell({includeEmpty: true}, c => { c.border = borda; if(n % 2 === 0) c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: LINHA}}; c.font = {size: 10}; }); });
+    ws.autoFilter = {from: {row: 1, column: 1}, to: {row: 1, column: cols.length}};
+    return ws;
+  };
+  const pinta = (ws, chave, fn) => { const ci = ws.columns.findIndex(c => c.key === chave) + 1; if(!ci) return; ws.eachRow((row, n) => { if(n === 1) return; const c = row.getCell(ci); const f = fn(c.value); if(f){ if(f.fill) c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: f.fill}}; c.font = {size: 10, bold: !!f.bold, italic: !!f.italic, color: {argb: f.cor || 'FF1F2937'}}; c.alignment = {vertical: 'top', horizontal: f.centro ? 'center' : 'left', wrapText: true}; } }); };
+  // RESUMO
+  const R = wb.addWorksheet('Resumo', {properties: {tabColor: {argb: VERDE}}, views: [{showGridLines: false}]});
+  R.columns = [{width: 4}, {width: 46}, {width: 16}, {width: 16}, {width: 30}];
+  R.mergeCells('B2:E2'); R.getCell('B2').value = 'Reposição e ruturas — Loja 747 Portuzelo'; R.getCell('B2').font = {bold: true, size: 18, color: {argb: VERDE}};
+  R.mergeCells('B3:E3'); R.getCell('B3').value = `${M.semana ? M.nome : 'Mês de ' + M.nome} · ${impDDMM(M.ini)} a ${impDDMM(M.fim)}`; R.getCell('B3').font = {size: 11, color: {argb: CINZA}};
+  const dS = res.rut.map(r => r['Dias sem picar']).filter(v => v !== '' && v != null);
+  const caixas = [['Artigos de paletes repostos', res.paletes.length, VERDE_CL, VERDE], ['Ruturas registadas (KPI e picadas com rutura)', res.rut.length, AMAR, 'FF8A5A00'], ['Ruturas com 3 dias ou mais sem picar', dS.filter(v => v >= 3).length, VERM, VERM_F], ['Paletes recebidas', new Set(res.paletes.map(p => p['Data entrada'] + '|' + p['Nº palete'])).size, LINHA, CINZA]];
+  let lr = 5; caixas.forEach(([t, v, bg, fg]) => { R.getCell(`B${lr}`).value = t; R.getCell(`C${lr}`).value = v; [`B${lr}`, `C${lr}`].forEach(k => { R.getCell(k).fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: bg}}; R.getCell(k).border = {top: {style: 'thin', color: {argb: 'FFFFFFFF'}}, bottom: {style: 'medium', color: {argb: 'FFFFFFFF'}}}; }); R.getCell(`B${lr}`).font = {size: 11, color: {argb: fg}}; R.getCell(`C${lr}`).font = {size: 18, bold: true, color: {argb: fg}}; R.getCell(`C${lr}`).alignment = {horizontal: 'center'}; R.getRow(lr).height = 28; lr++; });
+  lr++; R.getCell(`B${lr}`).value = '🔴 As 10 piores ruturas (mais dias sem picar)'; R.getCell(`B${lr}`).font = {bold: true, size: 13, color: {argb: VERM_F}}; lr++;
+  ['Artigo', 'Dias sem picar', 'Picado em', 'Picado por'].forEach((t, i) => { const c = R.getCell(lr, i + 2); c.value = t; c.font = {bold: true, color: {argb: 'FFFFFFFF'}}; c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: VERM_F}}; }); lr++;
+  res.rut.slice(0, 10).forEach(r => { [r['Artigo'], r['Dias sem picar'], r['Picado em'], r['Picado por']].forEach((v, i) => { const c = R.getCell(lr, i + 2); c.value = v; c.border = borda; c.font = {size: 10, bold: i === 1}; if(i === 1){ c.alignment = {horizontal: 'center'}; const f = corDias(v); if(f) c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: f}}; } }); lr++; });
+  lr++; R.getCell(`B${lr}`).value = '👥 Quem fez listas nos dias em que as ruturas ficaram por tratar'; R.getCell(`B${lr}`).font = {bold: true, size: 13, color: {argb: VERDE}}; lr++;
+  ['Colaborador', 'Ruturas', 'Dias somados', ''].forEach((t, i) => { const c = R.getCell(lr, i + 2); c.value = t; c.font = {bold: true, color: {argb: 'FFFFFFFF'}}; c.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: VERDE}}; }); lr++;
+  const mxP = Math.max(...res.pessoas.map(p => p['Dias de rutura somados']), 1);
+  res.pessoas.slice(0, 15).forEach(p => { const v = p['Dias de rutura somados']; R.getCell(`B${lr}`).value = p['Colaborador']; R.getCell(`C${lr}`).value = p['Ruturas não tratadas']; R.getCell(`D${lr}`).value = v; R.getCell(`E${lr}`).value = '█'.repeat(Math.max(1, Math.round(v / mxP * 20))); R.getCell(`E${lr}`).font = {color: {argb: v / mxP > 0.66 ? VERM_F : v / mxP > 0.33 ? 'FFC77F12' : VERDE}}; [`B${lr}`, `C${lr}`, `D${lr}`].forEach(k => { R.getCell(k).border = borda; R.getCell(k).font = {size: 10}; }); lr++; });
+  lr++; R.mergeCells(`B${lr}:E${lr}`); R.getCell(`B${lr}`).value = 'Cores dos dias: verde = 0 a 1 dia · amarelo = 2 a 3 dias · vermelho = 4 dias ou mais. «Quem fez listas» inclui todos os que fizeram listas da mesma divisão nesses dias: quem trabalha mais dias aparece mais vezes.'; R.getCell(`B${lr}`).alignment = {wrapText: true}; R.getCell(`B${lr}`).font = {size: 9, italic: true, color: {argb: CINZA}}; R.getRow(lr).height = 42;
+  // PALETES
+  const wsP = folha('Paletes e reposição', res.paletes, [['Data entrada', 11], ['Hora', 7], ['Nº palete', 17], ['Código', 9], ['Artigo', 36], ['Divisão', 8], ['Reposto por (massiva)', 24], ['Visível — 1.º dia e quem', 26], ['Visível — todos os dias', 34], ['Automática — 1.º dia e quem', 26], ['Automática — todos os dias', 40], ['Sem stock na lista', 14], ['Rutura no KPI', 10], ['Picado com rutura (dia e quem)', 26], ['Dias até picar com rutura', 12]]);
+  const semNada = v => v === 'não picado' || v === 'não saiu' ? {italic: true, cor: 'FF9CA3AF'} : null;
+  pinta(wsP, 'Visível — 1.º dia e quem', semNada); pinta(wsP, 'Automática — 1.º dia e quem', semNada);
+  pinta(wsP, 'Dias até picar com rutura', v => v === '' || v == null ? null : {fill: corDias(v), bold: true, centro: true});
+  pinta(wsP, 'Sem stock na lista', v => v ? {fill: AMAR} : null); pinta(wsP, 'Picado com rutura (dia e quem)', v => v ? {fill: VERM, cor: VERM_F} : null);
+  // RUTURAS
+  const wsR = folha('Ruturas sem picar', res.rut.length ? res.rut : [{'Observação': 'Sem ruturas neste período'}], [['Código', 9], ['Artigo', 36], ['Divisão', 8], ['Tipo', 24], ['Desde / último toque', 14], ['Picado em', 11], ['Dias sem picar', 11], ['Picado por', 26], ['Listas feitas nesses dias por (não trataram)', 46], ['Observação', 40]], VERM_F);
+  pinta(wsR, 'Dias sem picar', v => v === '' || v == null ? null : {fill: corDias(v), bold: true, centro: true});
+  pinta(wsR, 'Picado em', v => v === 'ainda não' ? {fill: VERM, bold: true, cor: VERM_F} : null);
+  // PESSOAS
+  const wsQ = folha('Quem não tratou', res.pessoas.length ? res.pessoas : [{'Colaborador': 'Sem dados'}], [['Colaborador', 34], ['Ruturas não tratadas', 14], ['Dias de rutura somados', 16]], 'FFC77F12');
+  pinta(wsQ, 'Dias de rutura somados', v => typeof v === 'number' ? {fill: v / mxP > 0.66 ? VERM : v / mxP > 0.33 ? AMAR : VERDE_CL, bold: true, centro: true} : null);
+  wb.worksheets.forEach((w, i) => { w.pageSetup = {orientation: i === 0 ? 'portrait' : 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, margins: {left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2}}; if(i > 0) w.pageSetup.printTitlesRow = '1:1'; });
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})); a.download = nomeF; document.body.appendChild(a); a.click(); a.remove();
 }
 function mcMontarExcel(l, rut, nomes, M, col){
   const nm = n => { const k = String(n || '').replace(/^0+/, ''); return k ? (nomes[k] || 'Nº ' + k) : ''; };
