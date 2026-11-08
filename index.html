@@ -15756,7 +15756,7 @@ async function renderMelhoriaContinua(){
   try{ html += await blocoAutomaticas(); }catch(e){ console.error('automáticas', e); }
   try{ const RD = await reposDados();
     try{ const M = mcMesIntervalo(); const ag = await impTodos(`loja_automaticas_agg?data=gte.${M.ini}&data=lte.${M.fim}&select=linhas`); const esp = (ag || []).reduce((a, x) => a + (Number(x.linhas) || 0), 0);
-      if(esp && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
+      if(esp && !mcColSel && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
     html += blocoEquipaRanking(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
 
   content.innerHTML = html; mcOrganizarSeparadores(content);
@@ -16192,17 +16192,42 @@ function mcMudarSep(k, semScroll){
   document.querySelectorAll('.mc-sep-barra button').forEach(b => b.classList.toggle('ativo', b.dataset.sep === k));
   if(!semScroll){ const b = document.querySelector('.mc-sep-barra'); if(b) b.scrollIntoView({behavior:'smooth', block:'start'}); }
 }
-function mcMesIntervalo(sel){ const d = new Date(); if((sel || mcMesSel) === 'anterior') d.setMonth(d.getMonth() - 1, 1); else d.setDate(1);
-  const ini = impISO(d), fim = impISO(new Date(d.getFullYear(), d.getMonth() + 1, 0)); return {ini, fim, nome: impTitulo(IMP_MESES[d.getMonth()])}; }
-function mcMesBotoes(){ const a = mcMesIntervalo('anterior'), b = mcMesIntervalo('atual');
-  return `<div style="display:flex;gap:6px;margin:4px 0 10px;">${[['anterior', 'Mês anterior · ' + a.nome], ['atual', 'Mês atual · ' + b.nome]].map(([k, t]) => `<button class="econ-btn" style="margin:0;flex:1;${mcMesSel === k ? 'background:var(--navy);color:#fff;' : ''}" onclick="mcMesSel='${k}';renderMelhoriaContinua()">${t}</button>`).join('')}</div>`; }
+let mcSemSel = '', mcColSel = '';
+// mês escolhido: 'atual', 'anterior' ou 'AAAA-MM'; se houver semana escolhida, o intervalo é essa semana (segunda a domingo)
+function mcMesBase(sel){ const v = sel || mcMesSel; const d = new Date(); d.setDate(1);
+  if(v === 'anterior') d.setMonth(d.getMonth() - 1, 1); else if(/^\d{4}-\d{2}$/.test(v)){ d.setFullYear(Number(v.slice(0, 4)), Number(v.slice(5, 7)) - 1, 1); }
+  return {ini: impISO(d), fim: impISO(new Date(d.getFullYear(), d.getMonth() + 1, 0)), nome: impTitulo(IMP_MESES[d.getMonth()]), chave: impISO(d).slice(0, 7)}; }
+function mcMesIntervalo(sel){ const M = mcMesBase(sel);
+  if(!sel && mcSemSel){ const f = new Date(mcSemSel + 'T12:00:00'); f.setDate(f.getDate() + 6); return {ini: mcSemSel, fim: impISO(f), nome: `semana de ${impDDMM(mcSemSel)} a ${impDDMM(impISO(f))}`, chave: M.chave, semana: true}; }
+  return M; }
+function mcMesBotoes(cols){
+  const hoje = new Date(); const meses = [];
+  for(let i = 0; i < 6; i++){ const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1); meses.push(impISO(d).slice(0, 7)); }
+  const M = mcMesBase(); const semanas = []; const x = new Date(M.ini + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  while(impISO(x) <= M.fim){ const ini = impISO(x); const f = new Date(x); f.setDate(f.getDate() + 6); semanas.push([ini, `${impDDMM(ini)} a ${impDDMM(impISO(f))}`]); x.setDate(x.getDate() + 7); }
+  const sel = 'width:100%;border:1px solid var(--line);border-radius:10px;padding:8px 6px;font-size:13px;background:#fff;color:var(--navy);font-weight:700;';
+  const lab = t => `<div style="font-size:10.5px;color:var(--ink-soft);margin:0 0 2px 2px;">${t}</div>`;
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:4px 0 10px;">
+    <div>${lab('Mês')}<select style="${sel}" onchange="mcMesSel=this.value;mcSemSel='';renderMelhoriaContinua()">${meses.map(m => `<option value="${m}" ${M.chave === m ? 'selected' : ''}>${impTitulo(IMP_MESES[Number(m.slice(5, 7)) - 1])} ${m.slice(0, 4)}</option>`).join('')}</select></div>
+    <div>${lab('Semana (segunda a domingo)')}<select style="${sel}" onchange="mcSemSel=this.value;renderMelhoriaContinua()"><option value="">Mês todo</option>${semanas.map(([k, t]) => `<option value="${k}" ${mcSemSel === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+    <div style="grid-column:1 / -1;">${lab('Colaborador')}<select style="${sel}" onchange="mcColSel=this.value;renderMelhoriaContinua()"><option value="">Todos os colaboradores</option>${(cols || []).map(([k, t, n]) => `<option value="${k}" ${mcColSel === k ? 'selected' : ''}>${rpEsc(t)}${n != null ? ' · ' + n.toLocaleString('pt-PT') + ' linhas' : ''}</option>`).join('')}</select></div></div>`; }
 async function blocoAutomaticas(){
   let rows = [];
   const M = mcMesIntervalo();
   try{ rows = await impTodos(`loja_automaticas_agg?data=gte.${M.ini}&data=lte.${M.fim}&select=data,hora,divisao,tipo,numero,linhas,rutura,sem_stock&order=data.asc`); }catch(e){ rows = []; }
-  let h = mcMesBotoes() + `<div class="section-title">🔁 Listas automáticas e reposição — ${M.nome}</div>`;
-  if(!rows.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda sem dados de ${M.nome}. Carregue o relatório de reposição (automáticas / massiva / visível) em "📥 Carregar relatórios" — a app junta os dias e vai atualizando.</div></div>`;
   let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
+  const nC = n => { const k = String(n || '').replace(/^0+/, ''); const x = nomes[k]; if(!x) return 'Nº ' + k; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
+  const porCol = {}; rows.forEach(r => { const k = String(r.numero || '').replace(/^0+/, ''); if(k) porCol[k] = (porCol[k] || 0) + (Number(r.linhas) || 0); });
+  if(mcColSel && !porCol[mcColSel]) porCol[mcColSel] = 0;
+  const cols = Object.entries(porCol).map(([k, n]) => [k, nC(k), n]).sort((a, b) => a[1].localeCompare(b[1]));
+  if(mcColSel) rows = rows.filter(r => String(r.numero || '').replace(/^0+/, '') === mcColSel);
+  // dias do período sem nenhuma linha carregada
+  const temDia = new Set(rows.map(r => r.data)); const faltam = []; { const x = new Date(M.ini + 'T12:00:00'); const ate = M.fim < impISO(new Date()) ? M.fim : impISO(new Date(Date.now() - 86400000)); while(impISO(x) <= ate){ if(!temDia.has(impISO(x))) faltam.push(impISO(x)); x.setDate(x.getDate() + 1); } }
+  const grupos = []; faltam.forEach(d => { const g = grupos[grupos.length - 1]; const ant = g && new Date(g[1] + 'T12:00:00'); if(ant){ ant.setDate(ant.getDate() + 1); } if(g && impISO(ant) === d) g[1] = d; else grupos.push([d, d]); });
+  const avisoDias = !mcColSel && faltam.length ? `<div style="font-size:12px;margin:0 0 10px;padding:8px 10px;border-radius:10px;background:#FFF4DC;">📅 <b>Dias sem dados carregados${M.semana ? '' : ' em ' + M.nome}:</b> ${grupos.map(([a, b]) => a === b ? mcDiaCurto(a) : `${impDDMM(a)} a ${impDDMM(b)}`).join(', ')} (${faltam.length} dia${faltam.length > 1 ? 's' : ''}). Carregue o ficheiro com estes dias para ficarem nos gráficos.</div>` : '';
+  const quem = mcColSel ? ' · ' + rpEsc(nC(mcColSel)) : '';
+  let h = mcMesBotoes(cols) + avisoDias + `<div class="section-title">🔁 Listas automáticas e reposição — ${M.nome}${quem}</div>`;
+  if(!rows.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Sem dados ${mcColSel ? 'deste colaborador ' : ''}em ${M.nome}. Carregue o relatório de reposição (automáticas / massiva / visível) em "📥 Carregar relatórios" — a app junta os dias e vai atualizando.</div></div>`;
   const nomeCurto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : (p[0] || ''); };
   const soma = (l, k) => l.reduce((a, x) => a + (Number(x[k]) || 0), 0);
   const datas = [...new Set(rows.map(r => r.data))].sort(), nD = datas.length, tot = soma(rows, 'linhas');
@@ -16215,7 +16240,7 @@ async function blocoAutomaticas(){
   const cumpre = falhas.filter(f => !f.sem.length).length;
   h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${mesNome} · ${impDDMM(datas[0])} a ${impDDMM(datas[nD - 1])} · ${nD} dias</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;">
-      ${tile(tot.toLocaleString('pt-PT'), 'linhas de reposição no mês')}${tile(Math.round(tot / nD).toLocaleString('pt-PT'), 'por dia (média)')}
+      ${tile(tot.toLocaleString('pt-PT'), 'linhas de reposição no período')}${tile(Math.round(tot / nD).toLocaleString('pt-PT'), 'por dia (média)')}
       ${tile(Math.round(cumpre / nD * 100) + '%', `dias com automáticas hora a hora, 9h–22h (${cumpre}/${nD})`, cumpre === nD ? 'var(--green)' : cumpre / nD >= .8 ? 'var(--amber)' : 'var(--red)')}
       ${tile(soma(rows, 'rutura').toLocaleString('pt-PT'), 'linhas em rutura', 'var(--red)')}${tile(soma(rows, 'sem_stock').toLocaleString('pt-PT'), 'sem stock', 'var(--amber)')}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${Object.entries(porTipo).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<span style="background:var(--bg-soft,#F6F4EF);border-radius:8px;padding:4px 9px;font-size:12px;"><b>${rpEsc(t)}</b> ${Math.round(n / tot * 100)}% · ${n.toLocaleString('pt-PT')}</span>`).join('')}</div></div>`;
@@ -16267,6 +16292,7 @@ async function reposDados(){
   let l = [];
   const M = mcMesIntervalo();
   try{ l = await impTodos(`loja_reposicao_linhas?data=gte.${M.ini}&data=lte.${M.fim}&select=data,hora,material,artigo,tipo,numero,palete,reposicao,rutura&order=data.asc,hora.asc`); }catch(e){ l = []; }
+  if(mcColSel) l = (l || []).filter(x => String(x.numero || '').replace(/^0+/, '') === mcColSel);
   let nomes = {}; try{ (await sb('loja_colaboradores?select=nome,numero_pessoal') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
   const nome = n => { const x = nomes[n]; if(!x) return n ? 'Nº ' + n : '—'; const p = x.trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   return {l, nome};
@@ -16288,7 +16314,7 @@ function blocoEquipaRanking(RD){
   const mx = L[0].tot, medEq = L.reduce((a, p) => a + p.med, 0) / L.length;
   const medalha = i => ['🥇', '🥈', '🥉'][i] || `<span style="display:inline-block;width:18px;text-align:center;font-size:11px;color:var(--ink-soft);">${i + 1}</span>`;
   let h = `<div class="section-title">🏆 Quem trabalha mais na reposição</div><div class="card">
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Artigos repostos no mês por pessoa. <span style="color:#1F7A33;">■</span> automática · <span style="color:#2F6DB5;">■</span> massiva · <span style="color:#C77F12;">■</span> visível</div>`;
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Artigos repostos no período por pessoa. <span style="color:#1F7A33;">■</span> automática · <span style="color:#2F6DB5;">■</span> massiva · <span style="color:#C77F12;">■</span> visível</div>`;
   const linhaP = (p, i) => `<div style="padding:7px 0;border-top:1px solid var(--line);">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><span style="font-size:13px;min-width:0;">${medalha(i)} <b>${rpEsc(nome(p.k))}</b></span><b style="font-size:16px;color:var(--navy);white-space:nowrap;">${p.tot.toLocaleString('pt-PT')}</b></div>
       <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:4px 0 3px;width:${Math.max(4, p.tot / mx * 100).toFixed(1)}%;">${p.auto ? `<div style="flex:${p.auto};background:#1F7A33;"></div>` : ''}${p.mas ? `<div style="flex:${p.mas};background:#2F6DB5;"></div>` : ''}${p.vis ? `<div style="flex:${p.vis};background:#C77F12;"></div>` : ''}</div>
