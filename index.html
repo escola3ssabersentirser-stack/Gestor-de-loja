@@ -14312,7 +14312,7 @@ async function blocoAlertasRH(){
     sb('loja_colaboradores?select=numero_pessoal,nome,telefone,bh_positivo,bh_negativo,data_prevista_gozar_horas,bh_gozo&order=nome.asc').catch(() => []),
     sb('loja_rh_indicadores?select=data_extracao,dados&order=data_extracao.desc&limit=1').catch(() => []),
     impTodos('loja_formacao_compliance?select=numero_pessoal,codigo_conduta,data_privacy,politica_anticorrupcao,seguranca_protecao').catch(() => []),
-    sb('loja_alteracoes_horario?assinado=not.is.true&select=colaborador_numero').catch(() => []),
+    sb('loja_alteracoes_horario?assinado=not.is.true&select=colaborador_numero,colaborador_nome,descricao,data_alteracao&order=data_alteracao.asc').catch(() => []),
     sb('loja_trocas_horario?select=mes,numero,n&order=mes.desc').catch(() => [])
   ]);
   const N = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -14322,7 +14322,7 @@ async function blocoAlertasRH(){
   const compPor = {}; (comp || []).forEach(r => { compPor[k0(r.numero_pessoal)] = r; });
   const trcMes = trc && trc[0] ? trc[0].mes : null; const trcPor = {}; (trc || []).filter(r => r.mes === trcMes).forEach(r => { trcPor[k0(r.numero)] = Number(r.n) || 0; });
   window.__alrTrcMes = trcMes;
-  const altPor = {}; (alt || []).forEach(r => { const k = k0(r.colaborador_numero); altPor[k] = (altPor[k] || 0) + 1; });
+  const altPor = {}, altLst = {}; (alt || []).forEach(r => { const k = k0(r.colaborador_numero); altPor[k] = (altPor[k] || 0) + 1; (altLst[k] = altLst[k] || []).push(r); });
   const curto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   const P = (cols || []).filter(c => c.numero_pessoal && !/^0*(123456|9990001)$/.test(c.numero_pessoal)).map(c => {
     const k = k0(c.numero_pessoal), ip = indDe(c) || {}, cp = compPor[k];
@@ -14330,24 +14330,28 @@ async function blocoAlertasRH(){
     const bh = Number(c.bh_positivo) || 0, bhn = Number(c.bh_negativo) || 0;
     const hojeI = impISO(new Date()); const gozo = (Array.isArray(c.bh_gozo) ? c.bh_gozo : []).filter(x => x && x.data && x.data >= hojeI).map(x => x.data).sort();
     const bhDias = gozo.length ? gozo : (c.data_prevista_gozar_horas ? [c.data_prevista_gozar_horas] : []);
-    return {k, nome: c.nome, curto: curto(c.nome), tel: c.telefone, oc11: Number(ip.oc11) || 0, trocas: trcMes ? (trcPor[k] || 0) : (Number(ip.trocas) || 0), porAssinar: altPor[k] || 0, bh, bhn, bhData: c.data_prevista_gozar_horas, bhDias, falta};
+    return {k, nome: c.nome, curto: curto(c.nome), tel: c.telefone, oc11: Number(ip.oc11) || 0, trocas: trcMes ? (trcPor[k] || 0) : (Number(ip.trocas) || 0), porAssinar: altPor[k] || 0, altLst: altLst[k] || [], bh, bhn, bhData: c.data_prevista_gozar_horas, bhDias, falta};
   });
   const tem = {trocas: p => p.trocas > 0, d11: p => p.oc11 > 0, bh: p => p.bh > 0 || p.bhn < 0, assin: p => p.porAssinar > 0, form: p => p.falta.length > 0};
   const comAlgo = P.filter(p => Object.values(tem).some(f => f(p)));
   window.__alrP = P; window.__alrData = dataInd;
-  const cont = k => P.filter(tem[k]).length;
-  const FIL = [['todos', '📋 Tudo', comAlgo.length], ['trocas', '🔁 Trocas horário', cont('trocas')], ['d11', '🌙 Descanso 11 h', cont('d11')], ['bh', '⏳ Banco horas', cont('bh')], ['assin', '✍️ Assinar horário', cont('assin')], ['form', '🎓 Formação', cont('form')]];
-  const lista = alrFiltro === 'todos' ? comAlgo : P.filter(tem[alrFiltro]).sort((a, b) => alrFiltro === 'trocas' ? b.trocas - a.trocas : 0);
-  const mesInd = dataInd ? impTitulo(IMP_MESES[Number(dataInd.slice(5, 7)) - 1]) : '';
-  let h = `<div class="section-title">📨 Alertas aos colaboradores</div><div class="card">
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Trocas de horário: ${trcMes ? impTitulo(IMP_MESES[Number(trcMes.slice(5, 7)) - 1]) + ' (máx. ' + TRC_MAX + ' por pessoa)' : 'relatório de ' + (dataInd ? impDDMM(dataInd) : '—')} · 11 h de descanso: relatório de ${dataInd ? impDDMM(dataInd) : '—'} · banco de horas e formação: dados atuais. Escolha o tema e toque em 💬: a mensagem leva só esse tema (em «Tudo» leva todos os pontos da pessoa).</div>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:10px;">${FIL.map(([k, t, n]) => `<button type="button" onclick="alrFiltro='${k}';renderFormacoesScreen()" style="border:1px solid ${alrFiltro === k ? 'var(--navy)' : 'var(--line)'};background:${alrFiltro === k ? 'var(--navy)' : '#fff'};color:${alrFiltro === k ? '#fff' : 'var(--navy)'};border-radius:10px;padding:6px 2px;font-size:11px;font-weight:700;line-height:1.25;cursor:pointer;">${t}<br><span style="font-size:13px;">${n}</span></button>`).join('')}</div>`;
-  if(!lista.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">✓ Ninguém com alertas neste ponto.</div></div>`;
-  const chip = (t, cor, bg) => `<span style="display:inline-block;font-size:11px;font-weight:700;color:${cor};background:${bg};border-radius:999px;padding:2px 8px;margin:2px 4px 0 0;">${t}</span>`;
-  h += lista.map(p => `<div style="padding:8px 0;border-top:1px solid var(--line);">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><b style="font-size:13px;">${rpEsc(p.curto)}</b>${dona ? `<span style="display:flex;gap:4px;"><button type="button" onclick="alrEnviar('${p.k}','wa','${alrFiltro}')" style="border:0;background:#25D366;color:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;">💬${p.tel ? '' : ' (sem tel.)'}</button><button type="button" onclick="alrEnviar('${p.k}','copiar','${alrFiltro}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">📋</button></span>` : ''}</div>
-      <div>${p.oc11 ? chip(`🌙 ${p.oc11}× menos de 11 h de descanso`, '#9B1C14', '#FBEAEA') : ''}${p.trocas ? chip(`🔁 ${p.trocas}/${TRC_MAX} trocas de horário${p.trocas > TRC_MAX ? ' — acima do máximo' : p.trocas === TRC_MAX ? ' — no limite' : ''}`, p.trocas >= TRC_MAX ? '#9B1C14' : '#8A5A00', p.trocas >= TRC_MAX ? '#FBEAEA' : '#FFF4DC') : ''}${p.porAssinar ? chip(`✍️ ${p.porAssinar} por assinar`, '#8A5A00', '#FFF4DC') : ''}${p.bh > 0 ? chip(`⏳ ${p.bh.toLocaleString('pt-PT')} h a gozar · ${p.bhDias.length ? 'dias: ' + p.bhDias.map(d => impDDMM(d)).join(', ') : 'sem dias marcados'}`, '#1F5C3A', '#E8F4EA') : ''}${p.bhn < 0 ? chip(`⏳ ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar`, '#9B1C14', '#FBEAEA') : ''}${p.falta.length ? chip(`🎓 falta: ${p.falta.join(', ')}`, '#2F4FA0', '#E8EEFB') : ''}</div></div>`).join('');
-  return h + `</div>`;
+  // cada tema no seu cartão, com a lista de pessoas e o botão 💬 só desse tema
+  const mesN = m => m ? impTitulo(IMP_MESES[Number(m.slice(5, 7)) - 1]) : '';
+  const btn = (p, tema) => dona ? `<span style="display:flex;gap:4px;flex-shrink:0;"><button type="button" onclick="alrEnviar('${p.k}','wa','${tema}')" style="border:0;background:#25D366;color:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;">💬${p.tel ? '' : ' (sem tel.)'}</button><button type="button" onclick="alrEnviar('${p.k}','copiar','${tema}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">📋</button></span>` : '';
+  const linha = (p, tema, info) => `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--line);"><div style="min-width:0;"><b style="font-size:13px;">${rpEsc(p.curto)}</b><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;">${info}</div></div>${btn(p, tema)}</div>`;
+  const cartao = (tit, sub, tema, lst, info, vazio) => `<div class="section-title">${tit} <span style="font-size:12px;font-weight:700;color:var(--ink-soft);">(${lst.length})</span></div><div class="card"><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">${sub}</div>${lst.length ? lst.map(p => linha(p, tema, info(p))).join('') : `<div style="font-size:12.5px;color:#1F7A33;padding:6px 0;">✓ ${vazio}</div>`}</div>`;
+  let h = '';
+  h += cartao('✍️ Horários por assinar no Hello', 'Alterações de horário que ainda não foram assinadas no Hello.', 'assin', P.filter(tem.assin).sort((a, b) => b.porAssinar - a.porAssinar),
+    p => `<b style="color:#8A5A00;">${p.porAssinar} por assinar</b>${p.altLst.length ? ' · ' + p.altLst.map(a => `${a.data_alteracao ? impDDMM(a.data_alteracao) : ''}${a.descricao ? ' ' + rpEsc(String(a.descricao).slice(0, 40)) : ''}`).join(' · ') : ''}`, 'Todos os horários estão assinados.');
+  h += cartao('⏳ Banco de horas e dias a gozar', 'Horas a gozar e os dias já marcados para as gozar.', 'bh', P.filter(tem.bh).sort((a, b) => (b.bh - a.bh) || (a.bhn - b.bhn)),
+    p => p.bh > 0 ? `<b style="color:#1F5C3A;">${p.bh.toLocaleString('pt-PT')} h a gozar</b> · ${p.bhDias.length ? 'dias: ' + p.bhDias.map(d => impDDMM(d)).join(', ') : '<span style="color:var(--red);">sem dias marcados</span>'}` : `<b style="color:var(--red);">${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar</b>`, 'Ninguém com banco de horas por gozar.');
+  h += cartao('🌙 Descanso de 11 horas', `Não são permitidos descansos inferiores a 11 horas entre turnos. Relatório de ${dataInd ? impDDMM(dataInd) : '—'}.`, 'd11', P.filter(tem.d11).sort((a, b) => b.oc11 - a.oc11),
+    p => `<b style="color:var(--red);">${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}</b> com menos de 11 h de descanso`, 'Ninguém com menos de 11 h de descanso.');
+  h += cartao('🔁 Trocas de horário', `${trcMes ? mesN(trcMes) : 'Relatório de ' + (dataInd ? impDDMM(dataInd) : '—')} · máximo ${TRC_MAX} por pessoa · as alterações são feitas no Hello.`, 'trocas', P.filter(tem.trocas).sort((a, b) => b.trocas - a.trocas),
+    p => `<b style="color:${p.trocas >= TRC_MAX ? 'var(--red)' : '#8A5A00'};">${p.trocas}/${TRC_MAX} trocas</b>${p.trocas > TRC_MAX ? ' — acima do máximo' : p.trocas === TRC_MAX ? ' — no limite' : ''}`, 'Ninguém com trocas de horário.');
+  h += cartao('🎓 Formação pendente', 'Formações de compliance por concluir.', 'form', P.filter(tem.form).sort((a, b) => b.falta.length - a.falta.length),
+    p => `<b style="color:#2F4FA0;">${p.falta.join(', ')}</b>`, 'Todas as formações concluídas.');
+  return h;
 }
 function alrMensagem(p, tema){
   tema = tema || 'todos'; const so = t => tema === 'todos' || tema === t;
@@ -14357,7 +14361,7 @@ function alrMensagem(p, tema){
   const mesT = window.__alrTrcMes ? impTitulo(IMP_MESES[Number(window.__alrTrcMes.slice(5, 7)) - 1]) : mes;
   if(so('trocas') && p.trocas) L.push(`🔁 *Trocas de horário:* tem ${p.trocas} troca${p.trocas === 1 ? '' : 's'} de horário${mesT ? ' em ' + mesT : ''}${p.trocas > TRC_MAX ? `, acima do máximo de ${TRC_MAX} por mês` : p.trocas === TRC_MAX ? `, o máximo de ${TRC_MAX} por mês` : ` (máximo ${TRC_MAX} por mês)`}. As alterações de horário são feitas no Hello.`);
   if(so('d11') && p.oc11) L.push(`🌙 *Descanso de 11 horas:* lembro que não são permitidos períodos de descanso inferiores a 11 horas entre o fim de um turno e o início do seguinte. ${mes ? 'Em ' + mes : 'No último relatório'} teve ${p.oc11} ${p.oc11 === 1 ? 'situação' : 'situações'} com menos de 11 horas.`);
-  if(so('assin') && p.porAssinar) L.push(`✍️ *Assinatura de horário:* tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} de horário por assinar.`);
+  if(so('assin') && p.porAssinar) L.push(`✍️ *Assinatura de horário:* tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} de horário para assinar no Hello${(p.altLst || []).length ? ' (' + p.altLst.map(a => a.data_alteracao ? impDDMM(a.data_alteracao) : '').filter(Boolean).join(', ') + ')' : ''}.`);
   if(so('bh') && p.bh > 0) L.push(`⏳ *Banco de horas:* tem ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhDias.length ? `. Dias marcados para gozar: ${p.bhDias.map(d => impDDMM(d)).join(', ')}` : ', ainda sem dias marcados'}.`);
   if(so('bh') && p.bhn < 0) L.push(`⏳ *Banco de horas:* tem ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar.`);
   if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:* ${p.falta.join(', ')}. Conclua até ao fim da semana.`);
