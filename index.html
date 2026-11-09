@@ -8035,7 +8035,7 @@ async function renderResumoExecutivo(){
   const quebraAnoPct = (r.vendas_ano && r.quebras_ano) ? (Number(r.quebras_ano)/Number(r.vendas_ano)*100) : null;
 
   // Top 5 artigos a perder mais quebra (ontem)
-  const topQuebraOntem = [...quebraOntemArtigos].sort((a,b)=>Number(b.valor_quebra)-Number(a.valor_quebra)).slice(0,5);
+  const topQuebraOntem = [...(quebraOntemArtigos.length ? quebraOntemArtigos : artigosQuebra)].sort((a,b)=>((b.ontem ?? -1) - (a.ontem ?? -1)) || (Number(b.valor_quebra)-Number(a.valor_quebra))).slice(0,5);
 
   // Ícone de seta + número grande, sem frases — visual, não textual
   const setaGrande = (p) => p===null ? '—' : (p>=0?'▲':'▼');
@@ -8065,11 +8065,13 @@ async function renderResumoExecutivo(){
   if(topQuebraOntem.length || categoriasPerda.length){
     html += `<div class="card">`;
     if(topQuebraOntem.length){
-      html += `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-bottom:4px;">📉 Artigos com mais quebra (ontem)</div>`;
+      const subiu = topQuebraOntem.filter(a => a.ontem == null || a.ontem > 0);
+      html += `<div style="font-size:11px;color:var(--ink-soft);font-weight:700;margin-bottom:4px;">📉 Artigos com mais quebra${topQuebraOntem[0] && topQuebraOntem[0].data ? ' · ' + impDDMM(topQuebraOntem[0].data) : ''} <span style="font-weight:400;">(do dia · acumulado do mês)</span></div>`;
+      if(!subiu.length) html += `<div style="font-size:11.5px;color:#8A5A00;background:#FFF4DC;border-radius:8px;padding:6px 8px;margin-bottom:4px;">Os artigos do top não tiveram quebra nova desde ${topQuebraOntem[0] && topQuebraOntem[0].dataAnterior ? impDDMM(topQuebraOntem[0].dataAnterior) : 'o relatório anterior'}. Confirme se o Bom Dia de hoje já foi carregado.</div>`;
       topQuebraOntem.forEach(a=>{
-        html += `<div style="display:flex;justify-content:space-between;padding:3px 0;">
-          <span style="font-size:12px;color:var(--ink);">${a.descricao}</span>
-          <span style="font-size:12px;font-weight:700;color:var(--red);">${fmtEuro(a.valor_quebra)}</span>
+        html += `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;">
+          <span style="font-size:12px;color:var(--ink);">${a.descricao}${a.ontem == null ? ' <span style="font-size:10px;color:#C77F12;font-weight:700;">novo no top</span>' : ''}</span>
+          <span style="font-size:12px;white-space:nowrap;">${a.ontem != null ? `<b style="color:${a.ontem > 0 ? 'var(--red)' : 'var(--ink-soft)'};">${a.ontem > 0 ? '+' : ''}${fmtEuro(a.ontem)}</b> · ` : ''}<span style="color:var(--ink-soft);">${fmtEuro(a.mes != null ? a.mes : a.valor_quebra)}</span></span>
         </div>`;
       });
     }
@@ -13012,11 +13014,18 @@ function kpiRow(label, valor, nota){
 
 // ---------- QUEBRA POR ARTIGO: só conta o último relatório carregado ----------
 async function quebraArtigosAtuais(limite){
-  const rows = (await sb('loja_alertas_quebra_artigo?resolvido=eq.false&valor_quebra=gt.0&valor_quebra=lt.1500&select=*&order=data.desc,valor_quebra.desc&limit=300').catch(()=>[])) || [];
+  const rows = (await sb('loja_alertas_quebra_artigo?resolvido=eq.false&valor_quebra=gt.0&select=*&order=data.desc,valor_quebra.desc&limit=300').catch(()=>[])) || [];
   if(!rows.length) return [];
   const ultima = rows[0].data;
+  // o Bom Dia traz a quebra ACUMULADA do mês: a quebra do dia = acumulado de hoje − acumulado do relatório anterior
+  let ant = []; try{ ant = await sb(`loja_alertas_quebra_artigo?data=lt.${ultima}&select=data,material,descricao,valor_quebra&order=data.desc&limit=40`) || []; }catch(e){ ant = []; }
+  const dAnt = ant.length ? ant[0].data : null; const mesmoMes = dAnt && dAnt.slice(0, 7) === ultima.slice(0, 7);
+  const antPor = {}; ant.filter(r => r.data === dAnt).forEach(r => { antPor[String(r.material || r.descricao)] = Number(r.valor_quebra) || 0; });
   const vistos = new Set(); const out = [];
-  rows.filter(r => r.data === ultima).forEach(r => { if(!r.secao) r.secao = secaoPorDescricao(r.descricao); const k = String(r.material||r.descricao); if(!vistos.has(k)){ vistos.add(k); out.push(r); } });
+  rows.filter(r => r.data === ultima).forEach(r => { if(!r.secao) r.secao = secaoPorDescricao(r.descricao); const k = String(r.material||r.descricao); if(!vistos.has(k)){ vistos.add(k);
+    r.mes = Number(r.valor_quebra) || 0; r.dataAnterior = dAnt;
+    r.ontem = !dAnt ? null : !mesmoMes ? r.mes : (k in antPor ? Math.round((r.mes - antPor[k]) * 100) / 100 : null);
+    out.push(r); } });
   out.sort((a,b)=>Number(b.valor_quebra)-Number(a.valor_quebra));
   return limite ? out.slice(0, limite) : out;
 }
