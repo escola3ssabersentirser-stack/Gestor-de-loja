@@ -13050,6 +13050,27 @@ function etiquetaDoArtigo(a, etiquetas){
   return etiquetas.find(e => (e.artigo_cod && String(e.artigo_cod).replace(/^0+/,'') === cod) || normArtigoMd(e.artigo) === nome) || null;
 }
 
+// Top de quebra lido do relatório «Vendas e Quebras Mensal» (mês até à data, por categoria e por divisão)
+let tqvDiv = '';
+async function blocoTopQuebraVQ(){
+  const cats = await impTodos('loja_categorias_perda_vendas?select=divisao,familia,categoria,venda_ac,venda_aa,quebra_ac,quebra_ac_pct,delta_quebra_pp,data_referencia&order=quebra_ac.asc') || [];
+  let h = `<div class="section-title">🔥 Top 10 com mais quebra — Vendas e Quebras</div><div class="card" id="tqv-card">`;
+  const L = cats.map(c => ({...c, q: Math.abs(Number(c.quebra_ac) || 0), v: Number(c.venda_ac) || 0, pct: (Number(c.venda_ac) || 0) > 0 ? Math.abs(Number(c.quebra_ac) || 0) / Number(c.venda_ac) * 100 : 0, dpp: -(Number(c.delta_quebra_pp) || 0)})).filter(c => c.q > 0);
+  if(!L.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">Carregue o relatório «Vendas e Quebras Mensal» em «📥 Carregar relatórios».</div></div>`;
+  const dRef = cats[0].data_referencia; const eur = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const divs = {}; L.forEach(c => { const k = c.divisao || '—'; (divs[k] = divs[k] || {k, q: 0, v: 0}); divs[k].q += c.q; divs[k].v += c.v; });
+  const LD = Object.values(divs).sort((a, b) => b.q - a.q);
+  const totQ = L.reduce((a, c) => a + c.q, 0), totV = L.reduce((a, c) => a + c.v, 0);
+  const lista = (tqvDiv ? L.filter(c => c.divisao === tqvDiv) : L).sort((a, b) => b.q - a.q).slice(0, 10);
+  const mx = Math.max(...lista.map(c => c.q), 1);
+  h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Mês até ${dRef ? impDDMM(dRef) : '—'} · quebra (soma das categorias) <b style="color:var(--red);">${eur(totQ)}</b>${totV ? ` (${(totQ / totV * 100).toLocaleString('pt-PT', {maximumFractionDigits: 2})}% das vendas)` : ''}</div>
+    <div style="display:flex;gap:5px;overflow-x:auto;padding-bottom:6px;margin-bottom:6px;">${[['', 'Todas']].concat(LD.slice(0, 12).map(d => [d.k, `${impTitulo(d.k)} · ${eur(d.q)}`])).map(([k, t]) => `<button type="button" onclick="tqvDiv=${JSON.stringify(k).replace(/"/g, '&quot;')};blocoTopQuebraVQ().then(x=>{const c=document.getElementById('tqv-card');if(c){const d=document.createElement('div');d.innerHTML=x;c.replaceWith(d.querySelector('#tqv-card'));}})" style="flex-shrink:0;border:1px solid ${tqvDiv === k ? 'var(--navy)' : 'var(--line)'};background:${tqvDiv === k ? 'var(--navy)' : '#fff'};color:${tqvDiv === k ? '#fff' : 'var(--navy)'};border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;">${rpEsc(t)}</button>`).join('')}</div>`;
+  h += lista.map((c, i) => `<div style="padding:6px 0;border-top:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-size:12.5px;min-width:0;"><b>${i + 1}.</b> ${rpEsc(impTitulo(c.categoria))}<span style="font-size:10.5px;color:var(--ink-soft);"> · ${rpEsc(impTitulo(c.divisao || ''))}</span></span><b style="color:var(--red);white-space:nowrap;font-size:13px;">${eur(c.q)}</b></div>
+      <div style="height:7px;border-radius:4px;background:var(--line);overflow:hidden;margin:3px 0;"><div style="height:100%;width:${(c.q / mx * 100).toFixed(1)}%;background:var(--red);"></div></div>
+      <div style="font-size:10.5px;color:var(--ink-soft);">${c.pct ? `${c.pct.toLocaleString('pt-PT', {maximumFractionDigits: 1})}% das vendas da categoria` : ''}${c.dpp ? ` · <b style="color:${c.dpp > 0 ? 'var(--red)' : '#1F7A33'};">${c.dpp > 0 ? '+' : ''}${c.dpp.toLocaleString('pt-PT', {maximumFractionDigits: 1})} pp vs ano passado</b>` : ''}</div></div>`).join('');
+  return h + `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Atualiza sempre que carregar o «Vendas e Quebras Mensal». Toque numa divisão para ver o top dessa divisão.</div></div>`;
+}
 async function blocoAlertasQuebraArtigo(secao){
   const [todos, etiquetas] = await Promise.all([
     quebraArtigosAtuais(0),
@@ -17290,6 +17311,7 @@ async function renderControloQuebra(){
 
   let html = '';
 
+  try{ html += await blocoTopQuebraVQ(); }catch(e){ console.error('top quebra VQ', e); }
   try{ html += blocoRegrasQuebra(); }catch(e){ console.error('regras quebra', e); }
   try{ html += `<div id="pp-wrap">${await blocoPlanoProducao()}</div>`; }catch(e){ console.error('plano produção', e); }
   try{ html += await blocoMapasProducao(); }catch(e){ console.error('mapas produção', e); }
