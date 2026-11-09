@@ -763,6 +763,7 @@
         </div>
 
         <button type="button" class="rp-menus-btn" onclick="rpMenus(true)">☰ <span>Menus</span><small>escolher a área da loja</small></button>
+        <button type="button" class="rp-menus-btn" style="background:#25D366;font-size:20px;padding:12px 18px;margin-top:-6px;" onclick="partilhaSemanal(this)">📤 <span>Resumo da semana</span><small>imagens para WhatsApp ou email</small></button>
         <div id="painel-resumo"></div>
 
         <div id="rp-areas" class="rp-areas" onclick="if(event.target===this||event.target.closest('.rp-nav-btn:not(#rp-btn-aud),.h3s-pill'))setTimeout(()=>rpMenus(false),0)"><div class="rp-areas-folha">
@@ -16606,7 +16607,7 @@ function mcSemanasHtml(){
   return h;
 }
 // desenha uma imagem simples (para WhatsApp) com título e linhas de texto
-async function mcDesenharImagem(titulo, sub, blocos, nomeF){
+async function mcDesenharImagem(titulo, sub, blocos, nomeF, devolver){
   const W = 1080, P = 56; const c = document.createElement('canvas'); const g = c.getContext('2d');
   const fonte = (t, b) => `${b ? '700' : '400'} ${t}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
   const quebrar = (txt, t, b, larg) => { g.font = fonte(t, b); const pal = String(txt).split(' '); const out = []; let lin = ''; pal.forEach(p => { const tst = lin ? lin + ' ' + p : p; if(g.measureText(tst).width > larg && lin){ out.push(lin); lin = p; } else lin = tst; }); if(lin) out.push(lin); return out; };
@@ -16624,6 +16625,7 @@ async function mcDesenharImagem(titulo, sub, blocos, nomeF){
   g.font = fonte(24); g.fillStyle = '#6B7280'; g.fillText('Liderança 3S · Loja 747 Portuzelo', P, H - 30);
   const blob = await new Promise(r => c.toBlob(r, 'image/png'));
   const file = new File([blob], nomeF, {type: 'image/png'});
+  if(devolver) return file;
   if(navigator.canShare && navigator.canShare({files: [file]})){ try{ await navigator.share({files: [file], title: titulo}); return; }catch(e){ if(e && e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nomeF; document.body.appendChild(a); a.click(); a.remove();
 }
@@ -16642,6 +16644,58 @@ async function mcImagemDia(d){
   const blocos = [{fundo: '#fff', linhas: [{t: r.falhou.length ? `❌ Falhou: lista das ${r.falhou.map(x => x + 'h').join(', ')}` : '✓ Houve lista automática em todas as horas', b: true, s: 32, c: r.falhou.length ? '#B4231A' : '#1F7A33'}, {t: `🔁 ${r.auOk} artigos repostos na automática`, b: true, s: 30, c: '#1F5C3A'}, {t: `👀 ${r.vi} artigos picados na visível${r.ma ? ` · 🚚 ${r.ma} da massiva` : ''}`, s: 30, c: '#8A5A00'}]}];
   blocos.push({fundo: '#fff', linhas: [{t: 'Hora a hora', b: true, s: 30}].concat(r.horas.map(x => ({t: `${String(x.h).padStart(2, '0')}h–${String(x.h + 1).padStart(2, '0')}h   ${x.falhou ? '❌ lista falhou · ' : ''}🔁 ${x.a} repostos${x.v ? ` · 👀 ${x.v} visível` : ''}`, s: 27, c: x.falhou ? '#B4231A' : '#1F2937', b: x.falhou})))});
   await mcDesenharImagem('Resumo do dia', `${MC_DIA_LONGO[mcDow(d)]} ${impDDMM(d)}`, blocos, `resumo-dia-${d}.png`);
+}
+// ===== Resumo semanal para partilhar (Vendas e Quebras, Custos, RH, Melhoria Contínua) em imagens =====
+async function partilhaSemanal(btn){
+  if(!soDona('enviar mensagens')) return;
+  const txt0 = btn ? btn.innerHTML : ''; if(btn){ btn.disabled = true; btn.innerHTML = '⏳ <span>A preparar as imagens…</span>'; }
+  try{
+    const eur = v => Math.round(Number(v) || 0).toLocaleString('pt-PT') + ' €';
+    const pct = v => (v >= 0 ? '+' : '') + v.toLocaleString('pt-PT', {maximumFractionDigits: 1}) + '%';
+    const hoje = new Date(); const seg = new Date(hoje); seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7) - 7);
+    const dias = []; for(let k = 0; k < 7; k++){ const x = new Date(seg); x.setDate(x.getDate() + k); dias.push(impISO(x)); }
+    const ini = dias[0], fim = dias[6], sub = `Semana de ${impDDMM(ini)} a ${impDDMM(fim)}`;
+    const files = [];
+    // 1) Vendas e quebras
+    const vd = await sb(`loja_vendas_dia?data=gte.${ini}&data=lte.${fim}&select=data,vendas_real,vendas_budget,quebras_real&order=data.asc`).catch(() => []) || [];
+    const rs = (await sb('loja_resumo?select=*&limit=1').catch(() => []) || [])[0] || {};
+    const V = vd.reduce((a, x) => a + (Number(x.vendas_real) || 0), 0), B = vd.reduce((a, x) => a + (Number(x.vendas_budget) || 0), 0), Q = vd.reduce((a, x) => a + (Number(x.quebras_real) || 0), 0);
+    const bl1 = [{fundo: '#fff', linhas: [{t: `💶 Vendas da semana: ${eur(V)}`, b: true, s: 34, c: '#1F5C3A'}, B ? {t: `Budget: ${eur(B)} · ${pct((V - B) / B * 100)}`, s: 28, c: V >= B ? '#1F7A33' : '#B4231A', b: true} : {t: 'Sem budget da semana', s: 26, c: '#6B7280'}, {t: `🗑️ Quebra: ${eur(Q)}${V ? ` · ${(Q / V * 100).toLocaleString('pt-PT', {maximumFractionDigits: 2})}% das vendas` : ''}`, s: 30, b: true, c: '#8A5A00'}]}];
+    if(vd.length) bl1.push({fundo: '#fff', linhas: [{t: 'Dia a dia', b: true, s: 30}].concat(vd.map(x => { const v = Number(x.vendas_real) || 0, b = Number(x.vendas_budget) || 0; return {t: `${MC_SEM_CURTO[mcDow(x.data)]} ${impDDMM(x.data)}   ${eur(v)}${b ? ' · ' + pct((v - b) / b * 100) : ''}   quebra ${eur(x.quebras_real)}`, s: 26, c: b && v < b ? '#B4231A' : '#1F2937'}; }))});
+    if(rs.vendas_mes) bl1.push({fundo: '#E8F4EA', linhas: [{t: `Mês em curso: ${eur(rs.vendas_mes)}${rs.budget_mes_vendas ? ` · budget ${pct((rs.vendas_mes - rs.budget_mes_vendas) / rs.budget_mes_vendas * 100)}` : ''}`, b: true, s: 28, c: '#1F5C3A'}, {t: `Quebra do mês: ${eur(rs.quebras_mes)}${rs.vendas_mes ? ` (${(rs.quebras_mes / rs.vendas_mes * 100).toLocaleString('pt-PT', {maximumFractionDigits: 2})}%)` : ''}`, s: 26}]});
+    files.push(await mcDesenharImagem('Vendas e Quebras', sub, bl1, `1-vendas-quebras-${ini}.png`, true));
+    // 2) Custos
+    const C = [['💡 Luz', 'luz'], ['💧 Água', 'agua'], ['🧻 Economato', 'economato'], ['🔧 Manutenções', 'manutencoes'], ['👥 Pessoal', 'pessoal'], ['🗑️ Lixo', 'lixo']];
+    const mesC = rs.mes_referencia_custos || rs.mes_referencia || '';
+    const bl2 = [{fundo: '#fff', linhas: [{t: `Custos ${mesC ? 'de ' + mesC : 'do último mês'}`, b: true, s: 32}].concat(C.filter(([, k]) => rs[k + '_mes'] != null).map(([n, k]) => { const v = Number(rs[k + '_mes']) || 0, a = Number(rs[k + '_mes_anterior']), aa = Number(rs[k + '_mesmo_mes_ano_anterior']);
+      return {t: `${n}: ${eur(v)}${a ? ` · vs mês anterior ${pct((v - a) / a * 100)}` : ''}${aa ? ` · vs ano passado ${pct((v - aa) / aa * 100)}` : ''}`, s: 26, c: aa && v > aa ? '#B4231A' : '#1F2937'}; }))}];
+    files.push(await mcDesenharImagem('Custos da loja', sub, bl2, `2-custos-${ini}.png`, true));
+    // 3) RH
+    try{ await blocoAlertasRH(); }catch(e){}
+    const P = window.__alrP || [];
+    let picN = 0; try{ const mesP = impISO(hoje).slice(0, 7); picN = (await impTodos(`loja_picagens_manuais?data=gte.${mesP}-01&select=n`) || []).reduce((a, x) => a + (Number(x.n) || 1), 0); }catch(e){}
+    const nomes = (f, fmt) => P.filter(f).map(fmt).slice(0, 8).join(' · ');
+    const bl3 = [{fundo: '#fff', linhas: [
+      {t: `✍️ Horários por assinar no Hello: ${P.reduce((a, p) => a + p.porAssinar, 0)}`, b: true, s: 28, c: '#8A5A00'}, {t: nomes(p => p.porAssinar, p => `${p.curto} (${p.porAssinar})`) || '—', s: 24, c: '#4B5563'},
+      {t: `🌙 Descansos inferiores a 11 h: ${P.reduce((a, p) => a + p.oc11, 0)}`, b: true, s: 28, c: '#B4231A'}, {t: nomes(p => p.oc11, p => `${p.curto} (${p.oc11})`) || '—', s: 24, c: '#4B5563'},
+      {t: `🔁 Trocas de horário no limite ou acima de ${TRC_MAX}: ${P.filter(p => p.trocas >= TRC_MAX).length}`, b: true, s: 28, c: '#8A5A00'}, {t: nomes(p => p.trocas >= TRC_MAX, p => `${p.curto} (${p.trocas})`) || '—', s: 24, c: '#4B5563'},
+      {t: `⏳ Banco de horas a gozar: ${P.filter(p => p.bh > 0).length} pessoa${P.filter(p => p.bh > 0).length === 1 ? '' : 's'} · ${P.reduce((a, p) => a + (p.bh > 0 ? p.bh : 0), 0).toLocaleString('pt-PT')} h`, b: true, s: 28, c: '#1F5C3A'}, {t: `${P.filter(p => p.bh > 0 && !p.bhDias.length).length} sem dias marcados`, s: 24, c: '#4B5563'},
+      {t: `🎓 Formação pendente: ${P.filter(p => p.falta.length).length} pessoa${P.filter(p => p.falta.length).length === 1 ? '' : 's'}`, b: true, s: 28, c: '#2F4FA0'},
+      {t: `🖐️ Picagens manuais no mês: ${picN}`, b: true, s: 28, c: picN ? '#B4231A' : '#1F5C3A'}]}];
+    files.push(await mcDesenharImagem('Recursos Humanos', sub, bl3, `3-rh-${ini}.png`, true));
+    // 4) Melhoria contínua (reposição)
+    const l = await impTodos(`loja_reposicao_linhas?data=gte.${ini}&data=lte.${fim}&select=data,hora,tipo,reposicao,material,artigo,rutura&order=data.asc,hora.asc`).catch(() => []) || [];
+    const R = dias.map(d => ({d, r: mcResumoDia(l, d)}));
+    const tA = R.reduce((a, x) => a + (x.r ? x.r.auOk : 0), 0), tF = R.reduce((a, x) => a + (x.r ? x.r.falhou.length : 0), 0), tV = R.reduce((a, x) => a + (x.r ? x.r.vi : 0), 0);
+    const bl4 = [{fundo: '#fff', linhas: [{t: `🔁 ${tA} artigos repostos na automática`, b: true, s: 30, c: '#1F5C3A'}, {t: `❌ ${tF} horas em que a lista falhou`, b: true, s: 30, c: tF ? '#B4231A' : '#1F5C3A'}, {t: `👀 ${tV} artigos picados na visível`, b: true, s: 30, c: '#8A5A00'}]}];
+    bl4.push({fundo: '#fff', linhas: [{t: 'Por dia', b: true, s: 30}].concat(R.map(({d, r}) => ({t: r ? `${MC_SEM_CURTO[mcDow(d)]} ${impDDMM(d)}: ${r.falhou.length ? '❌ ' + r.falhou.map(x => x + 'h').join(', ') : '✓ todas as horas'} · ${r.auOk} repostos` : `${MC_SEM_CURTO[mcDow(d)]} ${impDDMM(d)}: sem dados`, s: 25, c: r && r.falhou.length ? '#B4231A' : '#1F2937'})))});
+    files.push(await mcDesenharImagem('Melhoria Contínua · Reposição', sub, bl4, `4-melhoria-continua-${ini}.png`, true));
+    const titulo = `Resumo da semana ${impDDMM(ini)} a ${impDDMM(fim)} — Loja 747 Portuzelo`;
+    if(navigator.canShare && navigator.canShare({files})){ try{ await navigator.share({files, title: titulo, text: titulo}); return; }catch(e){ if(e && e.name === 'AbortError') return; } }
+    files.forEach((f, i) => setTimeout(() => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, i * 400));
+    alert('As 4 imagens foram guardadas. Anexe-as no WhatsApp ou no email.');
+  }catch(e){ console.error(e); alert('Não consegui preparar o resumo da semana.'); }
+  finally{ if(btn){ btn.disabled = false; btn.innerHTML = txt0; } }
 }
 function mcResumoTexto(){
   const R = window.__resumoRep; if(!R) return '';
