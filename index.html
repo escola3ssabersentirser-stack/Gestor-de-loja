@@ -2570,6 +2570,8 @@ const IMP_SECAO_MKD = {'TALHO':'Talho','PEIXARIA':'Peixaria','PADARIA/PASTELARIA
 function impLinhas(folha){
   const ref = folha && folha['!ref']; if(!ref) return [];
   const d = XLSX.utils.decode_range(ref);
+  // alguns relatórios trazem a dimensão errada (ex.: A1:EF1 com 1 500 linhas): corrige pela última célula real
+  if(!folha.__refOk){ folha.__refOk = true; for(const k in folha){ if(k[0] === '!') continue; const c = XLSX.utils.decode_cell(k); if(c.r > d.e.r) d.e.r = c.r; if(c.c > d.e.c) d.e.c = c.c; } folha['!ref'] = XLSX.utils.encode_range(d); }
   return XLSX.utils.sheet_to_json(folha, {header:1, raw:true, defval:null, blankrows:true, range: XLSX.utils.encode_range({s:{r:0,c:0}, e:d.e})});
 }
 const impTxt = v => (v === null || v === undefined) ? '' : String(v).replace(/\s+/g,' ').trim();
@@ -2613,7 +2615,9 @@ function impTipo(wb){
   const nomes = wb.SheetNames;
   if(nomes.includes('Resumo') && nomes.includes('Dados_Mensais')) return 'resumo';
   if(ehExcelR05(wb)) return 'resumo';
-  if(nomes.includes('RawData') && (nomes.includes('RawHeader') || nomes.includes('Format')) && trcEhTrocas(wb)) return 'trocas';
+  if(d11Eh(wb)) return 'descanso11';
+  if(cmpEh(wb)) return 'compliance';
+  if(trcEhTrocas(wb)) return 'trocas';
   if(nomes.includes('Bom Dia')) return 'bomdia';
   if(nomes.some(n => n.startsWith('Markdown da Loja por Divis'))) return 'markdown';
   if(nomes.includes('Detalhes por Categoria')) return 'categorias';
@@ -3245,7 +3249,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3307,7 +3311,7 @@ async function impExtraCorrer(tipo, f){
 let impResHTML = '';
 // depois de carregar, cada ficheiro tem um botão para abrir a área onde ficou (e enviar as mensagens dessa área)
 const _RH = ['formacoes', 'Banco de Horas, Horários e Formação', 'Recursos Humanos'];
-const IMP_DESTINO = {trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
+const IMP_DESTINO = {descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
   automaticas: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], reposicao: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], ruturas: ['markdown', 'Ruturas', 'Ruturas'],
   mapasproducao: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'], validades: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'],
   categorias: ['painel-vendas', 'Vendas', 'Vendas'], bomdia: ['painel-vendas', 'Vendas', 'Vendas'], resumo: ['painel-vendas', 'Vendas', 'Vendas'],
@@ -3384,7 +3388,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -14323,11 +14327,101 @@ function ctBotao(){
   return `<div class="card" style="margin-bottom:10px;"><input type="file" id="ct-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.csv" onchange="ctCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="((this.closest('.card')||this.parentElement).querySelector('#ct-fich')||document.getElementById('ct-fich')).click()">📎 Atualizar dados da equipa (Excel)</button><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Ficheiro com o nome e o telefone, a data de nascimento ou o email de cada pessoa. A app junta pelo nome e mostra o que muda antes de guardar.</div><div id="ct-estado" style="font-size:12.5px;margin-top:6px;"></div></div>`;
 }
 
+// ===================== 11 HORAS DE DESCANSO (Análises Diversas Tempos — «Incump Descans entre Jorn») =====================
+function d11Folha(wb){
+  for(const n of ['RawData', 'Header', ...wb.SheetNames]){
+    const s = wb.Sheets[n]; if(!s) continue; const R = impLinhas(s);
+    const hi = R.slice(0, 15).findIndex(r => (r || []).some(c => /descritivo de tempos/i.test(String(c || ''))) && (r || []).some(c => /nome de colaborador/i.test(String(c || ''))));
+    if(hi >= 0) return {R, hi};
+  }
+  return null;
+}
+function d11Eh(wb){ try{ const f = d11Folha(wb); if(!f) return false; const raw = wb.Sheets.RawHeader ? impLinhas(wb.Sheets.RawHeader).flat().join(' ') : ''; return /an[áa]lises diversas tempos/i.test(raw) || f.R.slice(f.hi + 1).some(r => (r || []).some(c => /incump.*descans/i.test(String(c || '')))); }catch(e){ return false; } }
+async function impDescanso11(wb, nomeF){
+  const f = d11Folha(wb); if(!f) throw new Error('não encontrei a coluna «Descritivo de tempos»');
+  const H = f.R[f.hi].map(c => impNorm(c)); const ci = re => H.findIndex(h => re.test(h));
+  const cNum = ci(/n.? ?de colaborador/), cNome = ci(/nome de colaborador/), cSec = ci(/^seccao|^secao/), cData = ci(/^data$/), cDesc = ci(/descritivo de tempos/), cSaldo = ci(/^saldo$/), cLoja = ci(/nome de sub/), cPer = ci(/^periodo$/);
+  const linhas = f.R.slice(f.hi + 1).filter(r => r && impTxt(r[cNum]) && /incump.*descans/i.test(impTxt(r[cDesc])) && (cLoja < 0 || !impTxt(r[cLoja]) || /portuzelo/i.test(r[cLoja])));
+  const meses = new Set();
+  f.R.slice(f.hi + 1).forEach(r => { const p = cPer >= 0 ? impTxt(r && r[cPer]).replace(/\D/g, '') : ''; if(p.length === 6) meses.add(`${p.slice(2)}-${p.slice(0, 2)}`); });
+  const l = []; const vistos = new Set();
+  linhas.forEach(r => { const data = horIso(r[cData]); if(!data) return; const numero = impTxt(r[cNum]).replace(/\D/g, '').padStart(8, '0'); const k = data + '|' + numero; if(vistos.has(k)) return; vistos.add(k); meses.add(data.slice(0, 7));
+    l.push({data, numero, nome: impTxt(r[cNome]), secao: cSec >= 0 ? impTxt(r[cSec]).replace(/^0?\d{3}\s+/, '') : null, saldo: cSaldo >= 0 ? impTxt(r[cSaldo]) || null : null}); });
+  if(!meses.size) meses.add(impISO(new Date()).slice(0, 7));
+  for(const m of meses){ const [a, mm] = m.split('-').map(Number); const fim = impISO(new Date(a, mm, 0)); await sb(`loja_descanso_11h?data=gte.${m}-01&data=lte.${fim}`, {method: 'DELETE'}); }
+  if(l.length) await sb('loja_descanso_11h', {method: 'POST', body: JSON.stringify(l)});
+  const pes = new Set(l.map(x => x.numero)).size; const mesT = [...meses].sort().map(m => impTitulo(IMP_MESES[Number(m.slice(5, 7)) - 1])).join(', ');
+  return l.length ? `${l.length} incumprimento${l.length === 1 ? '' : 's'} de 11 h em ${mesT} · ${pes} pessoa${pes === 1 ? '' : 's'}` : `Sem incumprimentos de 11 h em ${mesT} ✓`;
+}
+
+// ===================== FORMAÇÃO COMPLIANCE («Colaboradores a formar» — todas as lojas; só ficam os da loja) =====================
+function cmpFolha(wb){
+  const nomes = [...wb.SheetNames.filter(n => /colaboradores a formar/i.test(n)), ...wb.SheetNames];
+  for(const n of nomes){ const R = impLinhas(wb.Sheets[n]); const hi = R.slice(0, 10).findIndex(r => (r || []).some(c => /pendente c[óo]digo conduta/i.test(String(c || ''))) && (r || []).some(c => /^id sap$/i.test(impTxt(c)))); if(hi >= 0) return {R, hi}; }
+  return null;
+}
+function cmpEh(wb){ try{ return !!cmpFolha(wb); }catch(e){ return false; } }
+async function impCompliance(wb){
+  const f = cmpFolha(wb); if(!f) throw new Error('não encontrei a folha «Colaboradores a formar»');
+  const H = f.R[f.hi].map(c => impNorm(c)); const ci = re => H.findIndex(h => re.test(h));
+  const c = {id: ci(/^id sap$/), codigo_conduta: ci(/^formacao codigo conduta/), data_privacy: ci(/^formacao data privacy/), politica_anticorrupcao: ci(/^formacao politica de anti/), seguranca_protecao: ci(/^formacao em seguranca/), obs: ci(/^observacao/)};
+  const k0 = n => String(n == null ? '' : n).replace(/\D/g, '').replace(/^0+/, '');
+  const fich = {}; f.R.slice(f.hi + 1).forEach(r => { if(r && k0(r[c.id])) fich[k0(r[c.id])] = r; });
+  const cols = ((await sb('loja_colaboradores?select=numero_pessoal,nome&order=nome.asc')) || []).filter(x => x.numero_pessoal && !/^0*(123456|9990001)$/.test(x.numero_pessoal));
+  if(!cols.length) throw new Error('não há colaboradores na app para comparar');
+  const antes = await impTodos('loja_formacao_compliance?select=id,numero_pessoal,observacoes').catch(() => []);
+  const obsAnt = {}; (antes || []).forEach(x => { if(x.observacoes) obsAnt[k0(x.numero_pessoal)] = x.observacoes; });
+  const val = (r, i) => { const t = i >= 0 ? impTxt(r[i]) : ''; return t ? (/a formar|pendente/i.test(t) ? 'a formar' : t) : 'Formado'; };
+  const novos = cols.map(x => { const r = fich[k0(x.numero_pessoal)];
+    return {numero_pessoal: x.numero_pessoal, nome: x.nome, codigo_conduta: r ? val(r, c.codigo_conduta) : 'Formado', data_privacy: r ? val(r, c.data_privacy) : 'Formado', politica_anticorrupcao: r ? val(r, c.politica_anticorrupcao) : 'Formado', seguranca_protecao: r ? val(r, c.seguranca_protecao) : 'Formado',
+      observacoes: (r && c.obs >= 0 && impTxt(r[c.obs])) || obsAnt[k0(x.numero_pessoal)] || null, atualizado_em: new Date().toISOString()}; });
+  const nums = cols.flatMap(x => [x.numero_pessoal, k0(x.numero_pessoal)]).filter((v, i, a) => v && a.indexOf(v) === i);
+  for(let i = 0; i < nums.length; i += 80) await sb(`loja_formacao_compliance?numero_pessoal=in.(${nums.slice(i, i + 80).map(encodeURIComponent).join(',')})`, {method: 'DELETE'});
+  await sb('loja_formacao_compliance', {method: 'POST', body: JSON.stringify(novos)});
+  const falta = novos.filter(x => ['codigo_conduta', 'data_privacy', 'politica_anticorrupcao', 'seguranca_protecao'].some(k => x[k] === 'a formar'));
+  return `${novos.length} colaboradores da loja atualizados · ${falta.length ? `⚠️ ${falta.length} com formação pendente: ${falta.slice(0, 5).map(x => x.nome.split(' ')[0]).join(', ')}` : 'toda a equipa formada ✓'}`;
+}
+
 // ===================== TROCAS DE HORÁRIO (Relatório para Análise de Trocas) — máximo 7 por mês por pessoa =====================
 const TRC_MAX = 7;
-function trcEhTrocas(wb){ try{ const R = impLinhas(wb.Sheets.RawData); return R.slice(0, 5).some(r => (r || []).some(c => /trocas total/i.test(String(c || '')))); }catch(e){ return false; } }
+function trcEhTrocas(wb){ try{ if(!wb.Sheets.RawData) return false; const R = impLinhas(wb.Sheets.RawData); return R.slice(0, 5).some(r => (r || []).some(c => /trocas total/i.test(String(c || '')))) || trcListaCab(R) != null; }catch(e){ return false; } }
+// formato em lista (uma linha por troca: Dia, Horário Ant., Horário Novo, Tipo de Troca, Data da Troca, Status Tarefa)
+function trcListaCab(R){ const hi = R.slice(0, 10).findIndex(r => (r || []).some(c => /tipo de troca/i.test(String(c || ''))) && (r || []).some(c => /nome de colaborador/i.test(String(c || ''))) && (r || []).some(c => /hor[áa]rio novo/i.test(String(c || '')))); return hi >= 0 ? hi : null; }
+async function impTrocasLista(wb, nomeF, R, hi){
+  const H = R[hi].map(c => impNorm(c)); const ci = re => H.findIndex(h => re.test(h));
+  const cNum = ci(/n.? ?de colaborador/), cNome = ci(/nome de colaborador/), cSec = ci(/^seccao|^secao/), cDia = ci(/^dia$/), cLoja = ci(/nome da sub/), cSt = ci(/status/), cAnt = ci(/horario ant/), cNovo = ci(/horario novo/), cTipo = ci(/tipo de troca/), cDt = ci(/data da troca/);
+  const L = R.slice(hi + 1).filter(r => r && impTxt(r[cNum]) && (cLoja < 0 || !impTxt(r[cLoja]) || /portuzelo/i.test(r[cLoja])))
+    .map(r => ({numero: horNum(r[cNum]), nome: impTxt(r[cNome]), secao: cSec >= 0 ? impTxt(r[cSec]).replace(/^0?\d{3}\s+/, '') : '', dia: horIso(r[cDia]), de: impTxt(r[cAnt]), para: impTxt(r[cNovo]), tipo: cTipo >= 0 ? impTxt(r[cTipo]) : '', data: horIso(r[cDt]) || horIso(r[cDia]), status: cSt >= 0 ? impTxt(r[cSt]) : ''}))
+    .filter(x => x.dia && !/cancelad/i.test(x.status));
+  // mês: do nome do ficheiro; senão o mês mais frequente das datas
+  const nm = String(nomeF || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  const iMes = IMP_MESES.findIndex(m => nm.includes(m.normalize('NFD').replace(/[̀-ͯ]/g, '')));
+  let mes;
+  if(iMes >= 0){ const ds = L.map(x => x.dia).filter(d => Number(d.slice(5, 7)) === iMes + 1); const hoje = new Date(); mes = ds.length ? ds[0].slice(0, 7) : `${iMes > hoje.getMonth() + 1 ? hoje.getFullYear() - 1 : hoje.getFullYear()}-${String(iMes + 1).padStart(2, '0')}`; }
+  else { const cont = {}; L.forEach(x => { cont[x.dia.slice(0, 7)] = (cont[x.dia.slice(0, 7)] || 0) + 1; }); mes = Object.keys(cont).sort((a, b) => cont[b] - cont[a])[0] || impISO(new Date()).slice(0, 7); }
+  const vistos = new Set(); const por = {};
+  L.forEach(x => { const k = [x.numero, x.dia, x.de, x.para].join('|'); if(vistos.has(k)) return; vistos.add(k); (por[x.numero] = por[x.numero] || {mes, numero: x.numero, nome: x.nome, secao: x.secao, n: 0}).n++; });
+  const l = Object.values(por);
+  await sb(`loja_trocas_horario?mes=eq.${mes}`, {method: 'DELETE'});
+  if(l.length) await sb('loja_trocas_horario', {method: 'POST', body: JSON.stringify(l)});
+  // as que aguardam consentimento ficam «por assinar no Hello»; as que já não aguardam saem da lista
+  const aguarda = L.filter(x => /aguarda|pendente|por assinar|consentimento/i.test(x.status));
+  const feitas = new Set(L.filter(x => !/aguarda|pendente|por assinar|consentimento/i.test(x.status)).map(x => horChave(x.numero, horDesc(x))));
+  let novasAss = 0;
+  try{
+    const atuais = await sb('loja_alteracoes_horario?assinado=eq.false&select=id,colaborador_numero,descricao') || [];
+    const ch = new Set(atuais.map(a => horChave(a.colaborador_numero, a.descricao)));
+    const novos = aguarda.filter(x => !ch.has(horChave(x.numero, horDesc(x)))).map(x => ({colaborador_numero: x.numero, colaborador_nome: x.nome, descricao: horDesc(x), data_alteracao: x.data, assinado: false, criado_por: 'importado do Hello'}));
+    if(novos.length){ await sb('loja_alteracoes_horario', {method: 'POST', body: JSON.stringify(novos)}); novasAss = novos.length; }
+    const ids = atuais.filter(a => feitas.has(horChave(a.colaborador_numero, a.descricao))).map(a => a.id);
+    if(ids.length) await sb(`loja_alteracoes_horario?id=in.(${ids.join(',')})`, {method: 'PATCH', body: JSON.stringify({assinado: true, assinado_em: new Date().toISOString()})});
+  }catch(e){ console.warn('trocas por assinar', e); }
+  const acima = l.filter(x => x.n > TRC_MAX).length; const tot = l.reduce((s, x) => s + x.n, 0);
+  return `${tot} troca${tot === 1 ? '' : 's'} de ${l.length} pessoa${l.length === 1 ? '' : 's'} em ${impTitulo(IMP_MESES[Number(mes.slice(5, 7)) - 1])}${acima ? ` · ⚠️ ${acima} acima do máximo de ${TRC_MAX}` : ` · ninguém acima de ${TRC_MAX}`}${aguarda.length ? ` · ✍️ ${aguarda.length} por assinar no Hello${novasAss < aguarda.length ? ` (${novasAss} novas)` : ''}` : ''}`;
+}
 async function impTrocas(wb, nomeF){
   const R = impLinhas(wb.Sheets.RawData); const hi = R.findIndex(r => (r || []).some(c => /trocas total/i.test(String(c || ''))));
+  if(hi < 0 && trcListaCab(R) != null) return impTrocasLista(wb, nomeF, R, trcListaCab(R));
   if(hi < 0) throw new Error('não encontrei a coluna «Nº de trocas total no período»');
   const H = R[hi].map(c => impNorm(c)); const ci = re => H.findIndex(h => re.test(h));
   const cNum = ci(/n.? ?de colaborador|numero de colaborador/), cNome = ci(/nome de colaborador/), cSec = ci(/^seccao|^secao/), cN = ci(/trocas total/), cLoja = ci(/nome da sub/);
@@ -14348,12 +14442,13 @@ let alrFiltro = 'todos';
 const ALR_FORM = {codigo_conduta: 'Código de Conduta', data_privacy: 'Data Privacy', politica_anticorrupcao: 'Política Anticorrupção', seguranca_protecao: 'Segurança e Proteção'};
 async function blocoAlertasRH(){
   const dona = currentUser && souDona();
-  const [cols, ind, comp, alt, trc] = await Promise.all([
+  const [cols, ind, comp, alt, trc, d11] = await Promise.all([
     sb('loja_colaboradores?select=numero_pessoal,nome,telefone,bh_positivo,bh_negativo,data_prevista_gozar_horas,bh_gozo&order=nome.asc').catch(() => []),
     sb('loja_rh_indicadores?select=data_extracao,dados&order=data_extracao.desc&limit=1').catch(() => []),
     impTodos('loja_formacao_compliance?select=numero_pessoal,codigo_conduta,data_privacy,politica_anticorrupcao,seguranca_protecao').catch(() => []),
     sb('loja_alteracoes_horario?assinado=not.is.true&select=colaborador_numero,colaborador_nome,descricao,data_alteracao&order=data_alteracao.asc').catch(() => []),
-    sb('loja_trocas_horario?select=mes,numero,n&order=mes.desc').catch(() => [])
+    sb('loja_trocas_horario?select=mes,numero,n&order=mes.desc').catch(() => []),
+    impTodos('loja_descanso_11h?select=data,numero&order=data.desc').catch(() => [])
   ]);
   const N = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
   const k0 = n => String(n || '').replace(/^0+/, '');
@@ -14362,6 +14457,8 @@ async function blocoAlertasRH(){
   const compPor = {}; (comp || []).forEach(r => { compPor[k0(r.numero_pessoal)] = r; });
   const trcMes = trc && trc[0] ? trc[0].mes : null; const trcPor = {}; (trc || []).filter(r => r.mes === trcMes).forEach(r => { trcPor[k0(r.numero)] = Number(r.n) || 0; });
   window.__alrTrcMes = trcMes;
+  const d11Mes = d11 && d11[0] ? d11[0].data.slice(0, 7) : null; const d11Por = {}; (d11 || []).filter(r => r.data.slice(0, 7) === d11Mes).forEach(r => { (d11Por[k0(r.numero)] = d11Por[k0(r.numero)] || []).push(r.data); });
+  window.__alrD11Mes = d11Mes;
   const altPor = {}, altLst = {}; (alt || []).forEach(r => { const k = k0(r.colaborador_numero); altPor[k] = (altPor[k] || 0) + 1; (altLst[k] = altLst[k] || []).push(r); });
   const curto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   const P = (cols || []).filter(c => c.numero_pessoal && !/^0*(123456|9990001)$/.test(c.numero_pessoal)).map(c => {
@@ -14370,7 +14467,7 @@ async function blocoAlertasRH(){
     const bh = Number(c.bh_positivo) || 0, bhn = Number(c.bh_negativo) || 0;
     const hojeI = impISO(new Date()); const gozo = (Array.isArray(c.bh_gozo) ? c.bh_gozo : []).filter(x => x && x.data && x.data >= hojeI).map(x => x.data).sort();
     const bhDias = gozo.length ? gozo : (c.data_prevista_gozar_horas ? [c.data_prevista_gozar_horas] : []);
-    return {k, nome: c.nome, curto: curto(c.nome), tel: c.telefone, oc11: Number(ip.oc11) || 0, trocas: trcMes ? (trcPor[k] || 0) : (Number(ip.trocas) || 0), porAssinar: altPor[k] || 0, altLst: altLst[k] || [], bh, bhn, bhData: c.data_prevista_gozar_horas, bhDias, falta};
+    return {k, nome: c.nome, curto: curto(c.nome), tel: c.telefone, oc11: d11Mes ? (d11Por[k] || []).length : (Number(ip.oc11) || 0), d11Datas: (d11Por[k] || []).slice().sort(), trocas: trcMes ? (trcPor[k] || 0) : (Number(ip.trocas) || 0), porAssinar: altPor[k] || 0, altLst: altLst[k] || [], bh, bhn, bhData: c.data_prevista_gozar_horas, bhDias, falta};
   });
   const tem = {trocas: p => p.trocas > 0, d11: p => p.oc11 > 0, bh: p => p.bh > 0 || p.bhn < 0, assin: p => p.porAssinar > 0, form: p => p.falta.length > 0};
   const comAlgo = P.filter(p => Object.values(tem).some(f => f(p)));
@@ -14385,8 +14482,8 @@ async function blocoAlertasRH(){
     p => `<b style="color:#8A5A00;">${p.porAssinar} por assinar</b>${p.altLst.length ? ' · ' + p.altLst.map(a => `${a.data_alteracao ? impDDMM(a.data_alteracao) : ''}${a.descricao ? ' ' + rpEsc(String(a.descricao).slice(0, 40)) : ''}`).join(' · ') : ''}`, 'Todos os horários estão assinados.');
   h += cartao('⏳ Banco de horas e dias a gozar', 'Horas a gozar e os dias já marcados para as gozar.', 'bh', P.filter(tem.bh).sort((a, b) => (b.bh - a.bh) || (a.bhn - b.bhn)),
     p => p.bh > 0 ? `<b style="color:#1F5C3A;">${p.bh.toLocaleString('pt-PT')} h a gozar</b> · ${p.bhDias.length ? 'dias: ' + p.bhDias.map(d => impDDMM(d)).join(', ') : '<span style="color:var(--red);">sem dias marcados</span>'}` : `<b style="color:var(--red);">${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar</b>`, 'Ninguém com banco de horas por gozar.');
-  h += cartao('🌙 Descanso de 11 horas', `Não são permitidos descansos inferiores a 11 horas entre turnos. Relatório de ${dataInd ? impDDMM(dataInd) : '—'}.`, 'd11', P.filter(tem.d11).sort((a, b) => b.oc11 - a.oc11),
-    p => `<b style="color:var(--red);">${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}</b> com menos de 11 h de descanso`, 'Ninguém com menos de 11 h de descanso.');
+  h += cartao('🌙 Descanso de 11 horas', `Não são permitidos descansos inferiores a 11 horas entre turnos. ${window.__alrD11Mes ? 'Mês de ' + impTitulo(IMP_MESES[Number(window.__alrD11Mes.slice(5, 7)) - 1]) : 'Relatório de ' + (dataInd ? impDDMM(dataInd) : '—')}.`, 'd11', P.filter(tem.d11).sort((a, b) => b.oc11 - a.oc11),
+    p => `<b style="color:var(--red);">${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}</b> com menos de 11 h de descanso${(p.d11Datas || []).length ? ' · ' + p.d11Datas.map(d => impDDMM(d)).join(', ') : ''}`, 'Ninguém com menos de 11 h de descanso.');
   h += cartao('🔁 Trocas de horário', `${trcMes ? mesN(trcMes) : 'Relatório de ' + (dataInd ? impDDMM(dataInd) : '—')} · máximo ${TRC_MAX} por pessoa · as alterações são feitas no Hello.`, 'trocas', P.filter(tem.trocas).sort((a, b) => b.trocas - a.trocas),
     p => `<b style="color:${p.trocas >= TRC_MAX ? 'var(--red)' : '#8A5A00'};">${p.trocas}/${TRC_MAX} trocas</b>${p.trocas > TRC_MAX ? ' — acima do máximo' : p.trocas === TRC_MAX ? ' — no limite' : ''}`, 'Ninguém com trocas de horário.');
   h += cartao('🎓 Formação pendente', 'Formações de compliance por concluir.', 'form', P.filter(tem.form).sort((a, b) => b.falta.length - a.falta.length),
@@ -14398,9 +14495,10 @@ function alrMensagem(p, tema){
   const pn = String(p.nome || '').trim().split(/\s+/)[0];
   const mes = window.__alrData ? impTitulo(IMP_MESES[Number(window.__alrData.slice(5, 7)) - 1]) : '';
   const L = [];
+  const mesD = window.__alrD11Mes ? impTitulo(IMP_MESES[Number(window.__alrD11Mes.slice(5, 7)) - 1]) : mes;
   const mesT = window.__alrTrcMes ? impTitulo(IMP_MESES[Number(window.__alrTrcMes.slice(5, 7)) - 1]) : mes;
   if(so('trocas') && p.trocas) L.push(`🔁 *Trocas de horário:* tem ${p.trocas} troca${p.trocas === 1 ? '' : 's'} de horário${mesT ? ' em ' + mesT : ''}${p.trocas > TRC_MAX ? `, acima do máximo de ${TRC_MAX} por mês` : p.trocas === TRC_MAX ? `, o máximo de ${TRC_MAX} por mês` : ` (máximo ${TRC_MAX} por mês)`}. As alterações de horário são feitas no Hello.`);
-  if(so('d11') && p.oc11) L.push(`🌙 *Descanso de 11 horas:* lembro que não são permitidos períodos de descanso inferiores a 11 horas entre o fim de um turno e o início do seguinte. ${mes ? 'Em ' + mes : 'No último relatório'} teve ${p.oc11} ${p.oc11 === 1 ? 'situação' : 'situações'} com menos de 11 horas.`);
+  if(so('d11') && p.oc11) L.push(`🌙 *Descanso de 11 horas:* lembro que não são permitidos períodos de descanso inferiores a 11 horas entre o fim de um turno e o início do seguinte. ${mesD ? 'Em ' + mesD : 'No último relatório'} teve ${p.oc11} ${p.oc11 === 1 ? 'situação' : 'situações'} com menos de 11 horas${(p.d11Datas || []).length ? ' (' + p.d11Datas.map(d => impDDMM(d)).join(', ') + ')' : ''}.`);
   if(so('assin') && p.porAssinar) L.push(`✍️ *Assinatura de horário:* tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} de horário para assinar no Hello${(p.altLst || []).length ? ' (' + p.altLst.map(a => a.data_alteracao ? impDDMM(a.data_alteracao) : '').filter(Boolean).join(', ') + ')' : ''}.`);
   if(so('bh') && p.bh > 0) L.push(`⏳ *Banco de horas:* tem ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhDias.length ? `. Dias marcados para gozar: ${p.bhDias.map(d => impDDMM(d)).join(', ')}` : ', ainda sem dias marcados'}.`);
   if(so('bh') && p.bhn < 0) L.push(`⏳ *Banco de horas:* tem ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar.`);
