@@ -4713,7 +4713,7 @@ function lemMsgBH(i){
     // período previsto: todos os dias marcados a partir de hoje
     const desde = lemHojeISO();
     let dias = (Array.isArray(c.bh_gozo) ? c.bh_gozo : []).filter(x => x && x.data && x.data >= desde).sort((a,b) => a.data.localeCompare(b.data));
-    if(!dias.length && c.data_prevista_gozar_horas) dias = [{data: c.data_prevista_gozar_horas}];
+    if(!dias.length && c.data_prevista_gozar_horas && c.data_prevista_gozar_horas >= desde) dias = [{data: c.data_prevista_gozar_horas}];
     if(dias.length){
       // hora do primeiro dia: do ficheiro do Hello ou perguntar
       const d0 = dias[0] = Object.assign({}, dias[0]);
@@ -13928,9 +13928,10 @@ function rhLerGozoBH(wb){
     }
     const lista = Object.values(pess); if(!lista.length) continue;
     const hoje = dataLocalISO(new Date());
-    lista.forEach(p => { p.datas.sort((a,b) => a.data.localeCompare(b.data)); const fut = p.datas.filter(d => d.data >= hoje);
-      p.proxima = (fut[0] || p.datas[p.datas.length-1]).data; p.horas_marcadas = Math.round(p.datas.reduce((s,d)=>s+(d.horas||0),0)*100)/100; p.dias_futuros = fut.length; });
-    lista.sort((a,b) => a.proxima.localeCompare(b.proxima));
+    // só contam os dias a partir do dia em que o ficheiro é carregado
+    lista.forEach(p => { p.datas = p.datas.filter(d => d.data >= hoje).sort((a,b) => a.data.localeCompare(b.data)); const fut = p.datas;
+      p.proxima = fut.length ? fut[0].data : null; p.horas_marcadas = Math.round(p.datas.reduce((s,d)=>s+(d.horas||0),0)*100)/100; p.dias_futuros = fut.length; });
+    lista.sort((a,b) => String(a.proxima || '9').localeCompare(String(b.proxima || '9')));
     return lista;
   }
   return [];
@@ -13939,13 +13940,17 @@ let rhGozo = [];
 async function rhGuardarGozo(){
   if(!soDona('atualizar o banco de horas')) return;
   try{
-    const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome') || [];
-    let ok = 0; const falta = [];
+    const colabs = await sb('loja_colaboradores?select=id,numero_pessoal,nome,bh_gozo,data_prevista_gozar_horas') || [];
+    let ok = 0; const falta = []; const tratados = new Set();
+    const hojeG = dataLocalISO(new Date());
     for(const p of rhGozo){
       const c = (p.numero && colabs.find(k => String(k.numero_pessoal||'').replace(/^0+/,'') === p.numero.replace(/^0+/,''))) || colabs.find(k => rhN(k.nome) === rhN(p.nome));
       if(!c){ falta.push(p.nome); continue; }
-      await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({data_prevista_gozar_horas: p.proxima, bh_gozo: p.datas})}); ok++;
+      await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({data_prevista_gozar_horas: p.proxima, bh_gozo: p.datas})}); ok++; tratados.add(c.id);
     }
+    for(const c of colabs){ if(tratados.has(c.id)) continue; const g = Array.isArray(c.bh_gozo) ? c.bh_gozo : [];
+      const fut = g.filter(x => x && x.data && x.data >= hojeG).sort((a, b) => a.data.localeCompare(b.data));
+      if(fut.length !== g.length || (c.data_prevista_gozar_horas && c.data_prevista_gozar_horas < hojeG)) await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({bh_gozo: fut, data_prevista_gozar_horas: fut.length ? fut[0].data : null})}); }
     alert(`Guardado ✓\n\n${ok} pessoas com dias de gozo de banco de horas marcados${falta.length ? '\n\nNão encontrei na app: ' + falta.join(', ') : ''}`);
     lemDados = null; renderFormacoesScreen();
   }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
@@ -13960,7 +13965,7 @@ async function rhCarregar(input, tipo){
     // mapa de absentismo com os dias marcados para gozar o banco de horas
     if(tipo === 'bh'){ const gozo = rhLerGozoBH(wb);
       if(gozo.length){ rhGozo = gozo; const dd = iso => iso.slice(8,10) + '/' + iso.slice(5,7);
-        msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">📅 Dias marcados para gozar banco de horas · ${gozo.length} pessoas</b><div style="max-height:260px;overflow:auto;margin:6px 0;font-size:12px;">${gozo.map(p => `<div style="padding:5px 0;border-top:1px solid var(--line);"><b>${rpEsc(p.nome)}</b> · próximo: <b>${dd(p.proxima)}</b> · ${p.datas.length} ${p.datas.length === 1 ? 'dia' : 'dias'} · ${String(p.horas_marcadas).replace('.',',')}h<br><span style="color:var(--ink-soft);">${p.datas.map(d => dd(d.data) + (d.horas ? ' (' + String(d.horas).replace('.',',') + 'h)' : '')).join(', ')}</span></div>`).join('')}</div>
+        msg(`<div class="card" style="margin-top:8px;"><b style="font-size:13px;">📅 Dias marcados para gozar banco de horas · ${gozo.length} pessoas</b><div style="max-height:260px;overflow:auto;margin:6px 0;font-size:12px;">${gozo.map(p => `<div style="padding:5px 0;border-top:1px solid var(--line);"><b>${rpEsc(p.nome)}</b> · ${p.proxima ? `próximo: <b>${dd(p.proxima)}</b>` : 'sem dias a partir de hoje'} · ${p.datas.length} ${p.datas.length === 1 ? 'dia' : 'dias'} · ${String(p.horas_marcadas).replace('.',',')}h<br><span style="color:var(--ink-soft);">${p.datas.map(d => dd(d.data) + (d.horas ? ' (' + String(d.horas).replace('.',',') + 'h)' : '')).join(', ')}</span></div>`).join('')}</div>
           <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">As horas do banco não mudam; fica guardada a próxima data de gozo e o calendário de cada pessoa.</div>
           <button class="btn-primary" onclick="rhGuardarGozo()">Guardar</button></div>`);
         return; } }
@@ -14466,7 +14471,7 @@ async function blocoAlertasRH(){
     const falta = cp ? Object.entries(ALR_FORM).filter(([f]) => /a formar|pendente|n[ãa]o/i.test(String(cp[f] || ''))).map(([, t]) => t) : [];
     const bh = Number(c.bh_positivo) || 0, bhn = Number(c.bh_negativo) || 0;
     const hojeI = impISO(new Date()); const gozo = (Array.isArray(c.bh_gozo) ? c.bh_gozo : []).filter(x => x && x.data && x.data >= hojeI).map(x => x.data).sort();
-    const bhDias = gozo.length ? gozo : (c.data_prevista_gozar_horas ? [c.data_prevista_gozar_horas] : []);
+    const bhDias = gozo.length ? gozo : (c.data_prevista_gozar_horas && c.data_prevista_gozar_horas >= hojeI ? [c.data_prevista_gozar_horas] : []);
     return {k, nome: c.nome, curto: curto(c.nome), tel: c.telefone, oc11: d11Mes ? (d11Por[k] || []).length : (Number(ip.oc11) || 0), d11Datas: (d11Por[k] || []).slice().sort(), trocas: trcMes ? (trcPor[k] || 0) : (Number(ip.trocas) || 0), porAssinar: altPor[k] || 0, altLst: altLst[k] || [], bh, bhn, bhData: c.data_prevista_gozar_horas, bhDias, falta};
   });
   const tem = {trocas: p => p.trocas > 0, d11: p => p.oc11 > 0, bh: p => p.bh > 0 || p.bhn < 0, assin: p => p.porAssinar > 0, form: p => p.falta.length > 0};
