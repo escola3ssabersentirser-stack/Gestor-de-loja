@@ -12270,6 +12270,18 @@ async function enviarPedidosEconomatoEmail(){
 
 const LINK_FORM_AQUI_CLIENTE = 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=fVI7hPGtkE27GYPYg87TmSzZw09yyZhJkCYb0zr5YoRUNVI4MTdFUU5RUlFDRTBNSVFHWlcxUFZCNy4u&route=shorturl';
 
+// abre o Microsoft Forms e regista na app quem o preencheu (não repete o registo da mesma pessoa em 10 minutos)
+async function aquiAbrirForm(secao){
+  window.open(LINK_FORM_AQUI_CLIENTE, '_blank');
+  const nome = currentUser && currentUser.name; if(!nome) return;
+  try{
+    const desde = new Date(Date.now() - 10 * 60000).toISOString();
+    const rec = await sb(`loja_avaliacoes_cliente?criado_por=eq.${encodeURIComponent(nome)}&criado_em=gte.${encodeURIComponent(desde)}&select=id&limit=1`).catch(() => []);
+    if(rec && rec.length) return;
+    await sb('loja_avaliacoes_cliente', {method: 'POST', body: JSON.stringify({secao: secao || null, nota: null, comentario: 'Formulário AQUI para o Cliente (Microsoft Forms)', criado_por: nome})});
+    if(typeof showToast === 'function') showToast();
+  }catch(e){ console.warn('registo AQUI', e); }
+}
 // ---------- Nº de Observações "AQUI para o Cliente" (ficheiro da região) ----------
 function aquiLerExcel(wb, nomeFicheiro){
   for(const n of wb.SheetNames){
@@ -12669,14 +12681,22 @@ async function blocoAquiObservacoes(){
 
 async function blocoAvaliacaoClienteSecao(secao, label, modoSimples){
   if(modoSimples){
-    const total = await sb('loja_avaliacoes_cliente?select=nota');
+    const total = (await impTodos('loja_avaliacoes_cliente?select=nota,criado_por,criado_em,colaborador_nome').catch(() => [])) || [];
+    const mesI = impISO(new Date()).slice(0, 7);
+    const por = {}; total.forEach(a => { const n = a.criado_por || 'Sem nome'; const o = por[n] = por[n] || {n: 0, mes: 0, ult: ''}; o.n++; if(String(a.criado_em || '').slice(0, 7) === mesI) o.mes++; if(String(a.criado_em || '') > o.ult) o.ult = a.criado_em; });
+    const quem = Object.entries(por).sort((a, b) => b[1].mes - a[1].mes || b[1].n - a[1].n);
+    const dtq = t => t ? new Date(t).toLocaleDateString('pt-PT', {day: '2-digit', month: '2-digit'}) : '—';
+    const quemHtml = quem.length ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">Quem preencheu</div>
+      <div style="display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:12.5px;align-items:center;"><span style="font-size:11px;color:var(--ink-soft);">Nome</span><span style="font-size:11px;color:var(--ink-soft);text-align:right;">Este mês</span><span style="font-size:11px;color:var(--ink-soft);text-align:right;">Última</span>
+      ${quem.map(([n, o]) => `<span>${rpEsc(n)}</span><b style="text-align:right;color:var(--navy);">${o.mes}</b><span style="text-align:right;color:var(--ink-soft);">${dtq(o.ult)}</span>`).join('')}</div></div>` : '';
     return `<div class="section-title">⭐ Avaliação Aqui para o Cliente</div>
     <div class="card">
-      <a href="${LINK_FORM_AQUI_CLIENTE}" target="_blank" style="font-size:11.5px;color:var(--navy);word-break:break-all;">📋 ${LINK_FORM_AQUI_CLIENTE}</a>
+      <button type="button" class="btn-primary" style="margin:0;width:100%;background:#1F7A33;" onclick="aquiAbrirForm(null)">📋 Preencher o formulário AQUI para o Cliente</button>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Ao abrir o formulário, o seu nome fica registado na app.</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
         <span style="font-size:12.5px;color:var(--ink-soft);">Avaliações feitas</span>
         <span style="font-size:20px;font-weight:800;color:var(--navy);">${total.length}</span>
-      </div>
+      </div>${quemHtml}
     </div>`;
   }
 
@@ -12691,8 +12711,8 @@ async function blocoAvaliacaoClienteSecao(secao, label, modoSimples){
   html += `<div class="card" style="padding:4px 12px;margin-bottom:16px;">`;
   html += `<div style="padding:10px 0;border-bottom:1px solid var(--line);">
     <button class="btn-primary" style="margin-top:0;width:100%;margin-bottom:6px;" onclick="adicionarAvaliacaoCliente('${(secao||'').replace(/'/g,"\\'")}')">+ Registar avaliação</button>
-    <a href="${LINK_FORM_AQUI_CLIENTE}" target="_blank" style="font-size:11.5px;color:var(--navy);word-break:break-all;">📋 ${LINK_FORM_AQUI_CLIENTE}</a>
-    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">⚠️ Quem preencher o Microsoft Forms acima tem também de <b>registar aqui</b> com o botão — só assim conta para o total da loja.</div>
+    <button type="button" class="btn-primary" style="margin:0;width:100%;background:#1F7A33;" onclick="aquiAbrirForm('${(secao||'').replace(/'/g,"\\'")}')">📋 Preencher o formulário AQUI para o Cliente</button>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Ao abrir o formulário, o seu nome fica registado na app.</div>
   </div>`;
 
   // Resumo geral da loja (todos os avaliadores/colaboradores) — soma real, sem limite
