@@ -14609,15 +14609,64 @@ async function picGuardarRevisao(btn){
 }
 async function picCarregarFicheiro(input){
   const fs = Array.from(input.files || []); input.value = ''; if(!fs.length || !soDona('carregar ficheiros')) return;
+  // fotografia tirada na hora ao ecrã: a leitura automática não funciona bem, por isso abre logo a foto com as linhas para preencher
+  if(input.id === 'pic-foto'){ picManual(fs[0], []); return; }
   const est = document.getElementById('pic-estado'); const msg = t => { if(est) est.textContent = t; };
   try{ let todas = [];
     for(const f of fs){ let texto = '';
       if(/^image\//.test(f.type) || /\.(png|jpe?g|webp|heic)$/i.test(f.name)) texto = await valOcrImagem(f, msg);
       else texto = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f);
       todas = todas.concat(picLerTexto(texto)); }
+    const foto = fs.find(f => /^image\//.test(f.type) || /\.(png|jpe?g|webp|heic)$/i.test(f.name));
+    if(!todas.length && foto){ msg('A fotografia não deu para ler sozinha — preencha as linhas ao lado da foto.'); picManual(foto, []); return; }
     if(!todas.length){ msg('✕ Não encontrei linhas de picagens. Tente uma imagem mais nítida ou o PDF.'); return; }
+    if(foto){ msg(`${todas.length} linhas lidas — confirme ao lado da foto.`); picManual(foto, todas); return; }
     msg(`${todas.length} linhas lidas — confirme na janela.`); picRevisao(todas);
   }catch(e){ console.error(e); msg('✕ Não consegui ler o ficheiro.'); }
+}
+// fotografia ao ecrã: a foto fica em cima e as linhas preenchem-se em baixo (o que o OCR leu já vem preenchido)
+async function picManual(foto, lidas){
+  let cols = []; try{ cols = (await sb('loja_colaboradores?select=numero_pessoal,nome,secao&order=nome.asc') || []).filter(c => c.numero_pessoal && !/^0*(123456|9990001)$/.test(c.numero_pessoal)); }catch(e){}
+  window.__picCols = cols;
+  const k0 = n => String(n || '').replace(/\D/g, '').replace(/^0+/, '');
+  const hoje = impISO(new Date());
+  window.__picMan = (lidas.length ? lidas : [{}]).map(x => { const c = cols.find(c => k0(c.numero_pessoal) === k0(x.numero)); return {data: x.data || hoje, numero: c ? c.numero_pessoal : '', n: x.n || 1, horas: x.horas || ''}; });
+  const url = URL.createObjectURL(foto);
+  let ov = document.getElementById('pic-man'); if(ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'pic-man';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div style="background:#fff;border-radius:16px 16px 0 0;max-height:94vh;width:100%;max-width:640px;display:flex;flex-direction:column;">
+    <div style="padding:12px 16px 6px;"><b style="font-size:15px;">🖐️ Picagens manuais da fotografia</b><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">Veja a foto e escolha, por linha, a data, a pessoa e quantas picagens foram manuais (horas preenchidas no mapa).</div></div>
+    <div style="overflow:auto;padding:0 16px;flex:1;"><a href="${url}" target="_blank"><img src="${url}" style="width:100%;border-radius:10px;border:1px solid var(--line);margin:4px 0 8px;" alt="Mapa de picagens"></a>
+      <div id="pic-man-linhas"></div>
+      <button class="econ-btn" style="margin:6px 0 10px;width:100%;" onclick="__picMan.push({data:'${hoje}',numero:'',n:1,horas:''});picManDesenhar()">+ Mais uma linha</button></div>
+    <div style="display:flex;gap:8px;padding:10px 16px 16px;border-top:1px solid var(--line);"><button class="econ-btn" style="flex:1;margin:0;" onclick="document.getElementById('pic-man').remove()">Cancelar</button><button class="btn-primary" style="flex:2;margin:0;background:#1F7A33;" onclick="picManGuardar(this)">Guardar</button></div></div>`;
+  document.body.appendChild(ov); picManDesenhar();
+}
+function picManDesenhar(){
+  const box = document.getElementById('pic-man-linhas'); if(!box) return;
+  const cols = window.__picCols || [];
+  box.innerHTML = window.__picMan.map((x, i) => `<div style="display:grid;grid-template-columns:118px minmax(0,1fr) 44px 26px;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line);">
+    <input type="date" value="${x.data}" onchange="__picMan[${i}].data=this.value" style="border:1px solid var(--line);border-radius:6px;padding:4px;font-size:12px;">
+    <select onchange="__picMan[${i}].numero=this.value" style="min-width:0;border:1px solid var(--line);border-radius:6px;padding:4px;font-size:12px;"><option value="">— pessoa —</option>${cols.map(c => `<option value="${rpEsc(c.numero_pessoal)}" ${c.numero_pessoal === x.numero ? 'selected' : ''}>${rpEsc(c.nome)}</option>`).join('')}</select>
+    <input type="number" min="1" max="8" value="${x.n}" title="nº de picagens manuais" onchange="__picMan[${i}].n=Number(this.value)||1" style="width:44px;border:1px solid var(--line);border-radius:6px;padding:4px;font-size:13px;text-align:center;">
+    <button class="econ-btn" style="margin:0;padding:4px;" title="Tirar linha" onclick="__picMan.splice(${i},1);picManDesenhar()">✕</button></div>`).join('') || '<div style="font-size:12px;color:var(--ink-soft);padding:6px 0;">Sem linhas.</div>';
+}
+async function picManGuardar(btn){
+  if(!soDona('carregar ficheiros')) return;
+  const cols = window.__picCols || [];
+  const por = {}; (window.__picMan || []).filter(x => x.data && x.numero).forEach(x => { const c = cols.find(c => c.numero_pessoal === x.numero) || {}; const k = x.data + '|' + x.numero;
+    if(por[k]) por[k].n += Number(x.n) || 1; else por[k] = {data: x.data, numero: String(x.numero).padStart(8, '0'), nome: c.nome || '', secao: c.secao || null, horas: x.horas || null, n: Number(x.n) || 1}; });
+  const l = Object.values(por);
+  if(!l.length){ alert('Escolha pelo menos uma pessoa.'); return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'A guardar…'; }
+  try{
+    await sb('loja_picagens_manuais?on_conflict=data,numero', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify(l)});
+    const ov = document.getElementById('pic-man'); if(ov) ov.remove();
+    picMesSel = l[0].data.slice(0, 7);
+    alert(`✓ ${l.length} linha${l.length === 1 ? '' : 's'} de picagens manuais guardada${l.length === 1 ? '' : 's'}.`);
+    if(document.getElementById('formacoes-content')) try{ renderFormacoesScreen(); }catch(e){}
+  }catch(e){ console.error(e); alert('Não consegui guardar as picagens.'); if(btn){ btn.disabled = false; btn.textContent = 'Guardar'; } }
 }
 function picMsg(nomeCompleto, n, mes, dias){
   const pn = String(nomeCompleto || '').trim().split(/\s+/)[0] || '';
@@ -14639,6 +14688,7 @@ async function blocoPicagens(){
   if(!picMesSel || !meses.includes(picMesSel)) picMesSel = meses.includes(hojeM) ? hojeM : (meses[meses.length - 1] || hojeM);
   const mesNome = m => impTitulo(IMP_MESES[Number(m.slice(5, 7)) - 1]) + ' ' + m.slice(0, 4);
   let h = `<div class="section-title">🖐️ Picagens manuais</div><div class="card" id="pic-card">`;
+  if(dona) h += `<input type="file" id="pic-foto" class="hidden" accept="image/*" capture="environment" onchange="picCarregarFicheiro(this)"><button class="btn-primary" style="margin:0 0 6px;background:var(--navy);" onclick="document.getElementById('pic-foto').click()">📷 Tirar fotografia ao mapa de picagens</button>`;
   if(dona) h += `<input type="file" id="pic-fich" class="hidden" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" onchange="picCarregarFicheiro(this)"><button class="btn-primary" style="margin:0 0 4px;background:#1F7A33;" onclick="document.getElementById('pic-fich').click()">📥 Carregar mapa de controlo de picagens (PDF ou imagens)</button><div id="pic-estado" style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"></div>`;
   if(!rows.length) return h + `<div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem picagens manuais carregadas.</div></div>`;
   h += `<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;">${meses.slice(-4).map(m => `<button class="econ-btn" style="margin:0;flex:1;white-space:nowrap;${m === picMesSel ? 'background:var(--navy);color:#fff;' : ''}" onclick="picMesSel='${m}';renderFormacoesScreen()">${mesNome(m)}</button>`).join('')}</div>`;
