@@ -14168,7 +14168,7 @@ async function blocoFundacao(){
   return h;
 }
 // ===== Indicadores RH para Gerentes (horários e descanso) — cartão Recursos Humanos =====
-const IND_MIN_FDS = 5, IND_MIN_DOM = 15, IND_MAX_TROCAS = 7;
+const IND_MIN_FDS = 6, IND_MIN_DOM = 17, IND_MAX_TROCAS = 7;
 function indLerExcel(wb){
   const nm = wb.SheetNames.find(n => /hor[áa]rios e descanso/i.test(n)); if(!nm) return null;
   const R = XLSX.utils.sheet_to_json(wb.Sheets[nm], {header:1, defval:'', raw:true});
@@ -14186,12 +14186,22 @@ function indLerExcel(wb){
   const c = {nome: ci(/conhecido como|^nome/), cargo: ci(/cargo|funcao/), fds: ci(/fds/), dom: ci(/dom /), oc11: ci(/11 horas/), trocas: ci(/total de trocas/), folga: ci(/trocas de folga/), fo: ci(/fo consecutivas/)};
   const pessoas = [];
   for(let i = hi+1; i < R.length; i++){ const r = R[i]; const nome = String(r[c.nome]||'').trim(); if(!nome) continue;
-    const n = k => c[k] >= 0 && r[c[k]] !== '' ? Number(r[c[k]]) : null;
-    pessoas.push({nome, cargo: c.cargo >= 0 ? String(r[c.cargo]||'').trim() : '', fds: n('fds'), dom: n('dom'), oc11: n('oc11') || 0, trocas: n('trocas') || 0, trocas_folga: n('folga') || 0}); }
+    const n = k => { if(c[k] < 0 || r[c[k]] === '') return null; const v = Number(String(r[c[k]]).replace(',', '.')); return isNaN(v) ? null : v; };
+    pessoas.push({nome, cargo: c.cargo >= 0 ? String(r[c.cargo]||'').trim() : '', fds: n('fds'), dom: n('dom'), fo: n('fo'), oc11: n('oc11') || 0, trocas: n('trocas') || 0, trocas_folga: n('folga') || 0}); }
   if(!pessoas.length) return null;
   if(loja.oc11 == null) loja.oc11 = pessoas.reduce((s,p) => s + p.oc11, 0);
   if(loja.trocas == null) loja.trocas = pessoas.reduce((s,p) => s + p.trocas, 0);
   return {data_extracao: extracao || dataLocalISO(new Date()), dados: {loja, pessoas}};
+}
+// passa os fins de semana e domingos gozados (ano) para a ficha de cada colaborador
+async function indAtualizarColaboradores(pessoas){
+  const cols = await sb('loja_colaboradores?select=id,nome') || [];
+  const N = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  for(const p of pessoas){ if(p.fds == null && p.dom == null) continue;
+    const np = N(p.nome).split(' '); const m = cols.filter(c => { const nc = N(c.nome).split(' '); return np.every(w => nc.includes(w)); });
+    if(m.length !== 1) continue;
+    const dados = {}; if(p.fds != null) dados.fds_descansados = p.fds; if(p.dom != null) dados.dom_descansados = p.dom;
+    await sb(`loja_colaboradores?id=eq.${m[0].id}`, {method: 'PATCH', body: JSON.stringify(dados)}); }
 }
 async function indCarregar(input){
   const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar os indicadores de RH')) return;
@@ -14203,6 +14213,7 @@ async function indCarregar(input){
     const r = indLerExcel(wb);
     if(!r) throw new Error('não encontrei a folha "Horários e Descanso" com os fins de semana e domingos');
     await sb('loja_rh_indicadores?on_conflict=data_extracao', {method:'POST', body: JSON.stringify(r), prefer:'resolution=merge-duplicates,return=minimal'});
+    try{ await indAtualizarColaboradores(r.dados.pessoas); }catch(e){ console.warn('fds/dom nos colaboradores', e); }
     msg(`<span style="color:var(--green);">✓ Lido: ${r.dados.pessoas.length} colaboradores · dados de ${r.data_extracao.split('-').reverse().join('/')}</span>`);
     setTimeout(renderFormacoesScreen, 1200);
   }catch(e){ msg('<span style="color:var(--red);">✕ ' + rpEsc(e && e.message || String(e)) + '</span>'); }
@@ -14228,6 +14239,7 @@ async function blocoIndicadoresRH(){
   const fdsBaixo = P.filter(p => p.fds != null && p.fds < espFds).sort((a,b) => a.fds - b.fds);
   const domBaixo = P.filter(p => p.dom != null && p.dom < espDom).sort((a,b) => a.dom - b.dom);
   const oc11 = (d.pessoas||[]).filter(p => p.oc11 > 0).sort((a,b) => b.oc11 - a.oc11);
+  const foTodos = (d.pessoas||[]).filter(p => p.fo != null).sort((a,b) => a.fo - b.fo || String(a.nome).localeCompare(String(b.nome))); const foBaixo = foTodos.filter(p => p.fo <= 1);
   const trocasAcima = (d.pessoas||[]).filter(p => p.trocas > IND_MAX_TROCAS).sort((a,b) => b.trocas - a.trocas);
   const topTrocas = (d.pessoas||[]).filter(p => p.trocas > 0).sort((a,b) => b.trocas - a.trocas).slice(0,5);
   const tile = (ic, tit, val, ok, sub) => `<div class="vs-box"><div class="vs-label">${ic} ${tit}</div><div class="vs-value" style="font-size:22px;color:${ok ? 'var(--green)' : 'var(--red)'};">${val}</div><div style="font-size:10.5px;color:var(--ink-soft);">${sub}</div></div>`;
@@ -14235,6 +14247,7 @@ async function blocoIndicadoresRH(){
     <div class="vs-detail-grid" style="margin-bottom:6px;">
       ${tile('🏖️', 'Fins de semana', fdsBaixo.length, !fdsBaixo.length, `pessoas abaixo do ritmo (mín. ${IND_MIN_FDS}/ano)`)}
       ${tile('☀️', 'Domingos', domBaixo.length, !domBaixo.length, `pessoas abaixo do ritmo (mín. ${IND_MIN_DOM}/ano)`)}
+      ${tile('🛌', 'Folgas juntas', foBaixo.length, !foBaixo.length, 'pessoas com 1 ou nenhuma no mês')}
       ${tile('🌙', 'Descanso < 11h', d.loja && d.loja.oc11 != null ? d.loja.oc11 : oc11.reduce((s,p)=>s+p.oc11,0), !(d.loja && d.loja.oc11) && !oc11.length, 'ocorrências no mês')}
       ${tile('🔁', 'Trocas de horário', trocasAcima.length, !trocasAcima.length, `pessoas com mais de ${IND_MAX_TROCAS} no mês · loja ${d.loja && d.loja.trocas != null ? d.loja.trocas : '—'}`)}
       ${tile('✍️', 'Por assinar', nAss, !nAss, 'alterações de horário no Hello')}
@@ -14242,6 +14255,7 @@ async function blocoIndicadoresRH(){
   const lista = (tit, arr, fmt, vazio) => `<details style="margin-top:6px;" ${arr.length ? '' : ''}><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);padding:4px 0;">${tit} (${arr.length})</summary>${arr.length ? arr.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid var(--line);font-size:12px;"><span>${nome(p.nome)} <span style="color:var(--ink-soft);font-size:10.5px;">${nome(p.cargo)}</span></span><b>${fmt(p)}</b></div>`).join('') : `<div style="font-size:12px;color:var(--green);padding:4px 0;">${vazio}</div>`}</details>`;
   h += lista(`🏖️ Fins de semana gozados abaixo do ritmo (esperado ${espFds.toLocaleString('pt-PT',{maximumFractionDigits:1})} até agora)`, fdsBaixo, p => `${p.fds} de ${IND_MIN_FDS}`, '✓ Todos dentro do ritmo.');
   h += lista(`☀️ Domingos gozados abaixo do ritmo (esperado ${espDom.toLocaleString('pt-PT',{maximumFractionDigits:1})} até agora)`, domBaixo, p => `${p.dom} de ${IND_MIN_DOM}`, '✓ Todos dentro do ritmo.');
+  h += lista('🛌 Folgas juntas (folgas consecutivas no mês) — de quem tem menos para quem tem mais', foTodos, p => `${p.fo} ${p.fo === 1 ? 'vez' : 'vezes'}`, 'Sem dados de folgas juntas neste ficheiro.');
   h += lista('🌙 Menos de 11 horas de descanso entre jornadas', oc11, p => `${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}`, '✓ Sem ocorrências.');
   h += lista(`🔁 Mais de ${IND_MAX_TROCAS} trocas de horário no mês`, trocasAcima, p => `${p.trocas} trocas`, `✓ Ninguém acima de ${IND_MAX_TROCAS}. Mais trocas: ${topTrocas.map(p => nome(String(p.nome).split(' ')[0]) + ' ' + p.trocas).join(', ') || '—'}`);
   h += `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:8px;">"Abaixo do ritmo" = menos do que o mínimo anual proporcional aos meses já passados. A lista completa de alterações por assinar está mais abaixo.</div></div>`;
