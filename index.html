@@ -14513,7 +14513,7 @@ async function blocoAlertasRH(){
   window.__alrP = P; window.__alrData = dataInd;
   // cada tema no seu cartão, com a lista de pessoas e o botão 💬 só desse tema
   const mesN = m => m ? impTitulo(IMP_MESES[Number(m.slice(5, 7)) - 1]) : '';
-  const btn = (p, tema) => dona ? `<span style="display:flex;gap:4px;flex-shrink:0;"><button type="button" onclick="alrEnviar('${p.k}','wa','${tema}')" style="border:0;background:#25D366;color:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;">💬${p.tel ? '' : ' (sem tel.)'}</button><button type="button" onclick="alrEnviar('${p.k}','copiar','${tema}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">📋</button></span>` : '';
+  const btn = (p, tema) => dona ? `<span style="display:flex;gap:4px;flex-shrink:0;"><button type="button" onclick="alrEnviar('${p.k}','wa','${tema}')" style="border:0;background:#25D366;color:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;">💬${telMovel(p.tel) ? '' : ' (sem telemóvel)'}</button><button type="button" onclick="alrEnviar('${p.k}','copiar','${tema}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">📋</button><button type="button" title="Corrigir telemóvel" onclick="telEditar('${p.k}','${rpEsc(p.nome || '').replace(/'/g, '')}','${rpEsc(p.tel || '')}','alr')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">✏️</button></span>` : '';
   const linha = (p, tema, info) => `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--line);"><div style="min-width:0;"><b style="font-size:13px;">${rpEsc(p.curto)}</b><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;">${info}</div></div>${btn(p, tema)}</div>`;
   const cartao = (tit, sub, tema, lst, info, vazio) => `<div class="section-title">${tit} <span style="font-size:12px;font-weight:700;color:var(--ink-soft);">(${lst.length})</span></div><div class="card"><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">${sub}</div>${lst.length ? lst.map(p => linha(p, tema, info(p))).join('') : `<div style="font-size:12.5px;color:#1F7A33;padding:6px 0;">✓ ${vazio}</div>`}</div>`;
   let h = '';
@@ -14544,13 +14544,37 @@ function alrMensagem(p, tema){
   if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:* ${p.falta.join(', ')}. Conclua até ao fim da semana.`);
   return `Olá ${pn},\n\nPara sua informação:\n\n${L.join('\n\n')}\n\nQualquer dúvida, fale comigo.\nObrigada,\nConceição Alves`;
 }
+// telemóvel para WhatsApp: tem de ser 9 algarismos a começar por 91, 92, 93 ou 96 (fixos 2xx não têm WhatsApp)
+function telMovel(t){ let d = String(t || '').replace(/\D/g, ''); if(d.length === 12 && d.startsWith('351')) d = d.slice(3); return /^9[1236]\d{7}$/.test(d) ? d : null; }
+async function telGuardar(numero, tel){
+  const k = String(numero || '').replace(/\D/g, '').replace(/^0+/, ''); if(!k) return;
+  const vs = [...new Set([k, k.padStart(8, '0'), String(numero)])].map(encodeURIComponent).join(',');
+  await sb(`loja_colaboradores?numero_pessoal=in.(${vs})`, {method: 'PATCH', body: JSON.stringify({telefone: tel})});
+}
+// pede o telemóvel quando falta ou não serve; guarda-o na ficha da pessoa
+async function telPedir(numero, nome, atual, forcar){
+  const ok = telMovel(atual); if(ok && !forcar) return ok;
+  const pn = String(nome || '').split(/\s+/)[0];
+  const msg = forcar ? `Telemóvel de ${pn} (9 algarismos):` : (atual ? `O número de ${pn} (${atual}) não é um telemóvel e não tem WhatsApp.\nEscreva o telemóvel correto (9 algarismos):` : `${pn} não tem telemóvel na app.\nEscreva o telemóvel (9 algarismos):`);
+  const r = prompt(msg, forcar ? (telMovel(atual) || atual || '') : ''); if(r == null) return null;
+  const t = telMovel(r); if(!t){ alert('Número inválido. Tem de ter 9 algarismos e começar por 91, 92, 93 ou 96.'); return null; }
+  try{ await telGuardar(numero, t); }catch(e){ alert('Não consegui guardar o número.'); }
+  return t;
+}
+async function telEditar(numero, nome, atual, origem){
+  if(!soDona('alterar dados')) return;
+  const t = await telPedir(numero, nome, atual, true); if(!t) return;
+  alert('✓ Telemóvel guardado.');
+  if(origem === 'pic'){ const c = (window.__picDados && window.__picDados.pessoas || []).find(x => x.numero === numero); if(c) c.tel = t; }
+  if(origem === 'alr'){ const c = (window.__alrP || []).find(x => x.k === numero); if(c) c.tel = t; }
+}
 async function alrEnviar(k, modo, tema){
   if(!soDona('enviar mensagens')) return;
   const p = (window.__alrP || []).find(x => x.k === k); if(!p) return;
   const txt = alrMensagem(p, tema);
   if(modo === 'copiar'){ try{ await navigator.clipboard.writeText(txt); alert('Mensagem copiada.'); }catch(e){ prompt('Copie a mensagem:', txt); } return; }
-  let tel = String(p.tel || '').replace(/\D/g, ''); if(tel.length === 9) tel = '351' + tel;
-  window.open(tel ? `https://wa.me/${tel}?text=${encodeURIComponent(txt)}` : `https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+  const t = await telPedir(p.k, p.nome, p.tel); if(!t) return; p.tel = t;
+  window.open(`https://wa.me/351${t}?text=${encodeURIComponent(txt)}`, '_blank');
 }
 
 // ===================== PICAGENS MANUAIS (mapa de controlo de picagens) → Recursos Humanos =====================
@@ -14672,14 +14696,14 @@ function picMsg(nomeCompleto, n, mes, dias){
   const pn = String(nomeCompleto || '').trim().split(/\s+/)[0] || '';
   return `Olá ${pn},\n\nAlerto para o incumprimento de picagens: tem ${n} picage${n === 1 ? 'm' : 'ns'} manua${n === 1 ? 'l' : 'is'} no mês de ${mes}${dias ? ` (${dias})` : ''}.\n\nA picagem é obrigatória à entrada e à saída. Peço que passe a picar sempre o cartão no relógio para não ter mais picagens manuais.\n\nObrigada,\nConceição Alves`;
 }
-function picAlertar(numero, canal){
+async function picAlertar(numero, canal){
   if(!soDona('enviar mensagens')) return;
   const P = window.__picDados; if(!P) return; const c = P.pessoas.find(x => x.numero === numero); if(!c) return;
   const txt = picMsg(c.nome, c.n, P.mesNome, c.dias.map(d => impDDMM(d)).join(', '));
   if(canal === 'copiar'){ (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => alert('Mensagem copiada.'), () => prompt('Copie a mensagem:', txt)); return; }
   if(canal === 'email'){ location.href = `mailto:${encodeURIComponent(c.email || '')}?subject=${encodeURIComponent('Alerta — incumprimento de picagens (' + P.mesNome + ')')}&body=${encodeURIComponent(txt)}`; return; }
-  let tel = String(c.tel || '').replace(/\D/g, ''); if(tel.length === 9) tel = '351' + tel;
-  window.open(tel ? `https://wa.me/${tel}?text=${encodeURIComponent(txt)}` : `https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+  const t = await telPedir(c.numero, c.nome, c.tel); if(!t) return; c.tel = t;
+  window.open(`https://wa.me/351${t}?text=${encodeURIComponent(txt)}`, '_blank');
 }
 async function blocoPicagens(){
   const dona = currentUser && souDona();
@@ -14712,7 +14736,7 @@ async function blocoPicagens(){
       <div style="height:7px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:3px;"><div style="height:100%;width:${(p.n / mx * 100).toFixed(1)}%;background:${p.n >= 3 ? 'var(--red)' : p.n === 2 ? '#C77F12' : '#2F6DB5'};"></div></div></span>
       <b style="text-align:right;font-size:16px;color:${p.n >= 3 ? 'var(--red)' : 'var(--navy)'};">${p.n}</b>${dona ? `<button class="econ-btn filled" title="Enviar alerta por WhatsApp" style="margin:0;padding:6px 0;font-size:15px;background:#25D366;border-color:#25D366;color:#fff;" onclick="event.preventDefault();event.stopPropagation();picAlertar('${p.numero}','wa')">💬</button>` : ''}</summary>
     <div style="font-size:11.5px;color:var(--ink-soft);padding:4px 0 2px;">${p.linhas.map(r => `${mcDiaCurto(r.data)} · ${rpEsc(r.horas || '')}`).join('<br>')}</div>
-    ${dona ? `<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;"><button class="econ-btn filled" style="margin:0;padding:5px 10px;font-size:11.5px;background:#25D366;border-color:#25D366;color:#fff;" onclick="picAlertar('${p.numero}','wa')">💬 Alerta WhatsApp${p.tel ? '' : ' (sem telefone)'}</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','copiar')">📋 Copiar mensagem</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','email')">✉️ Email</button></div>` : ''}</details>`).join('');
+    ${dona ? `<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;"><button class="econ-btn filled" style="margin:0;padding:5px 10px;font-size:11.5px;background:#25D366;border-color:#25D366;color:#fff;" onclick="picAlertar('${p.numero}','wa')">💬 Alerta WhatsApp${telMovel(p.tel) ? '' : ' (sem telemóvel)'}</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','copiar')">📋 Copiar mensagem</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','email')">✉️ Email</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="telEditar('${p.numero}','${rpEsc(p.nome).replace(/'/g, '')}','${rpEsc(p.tel || '')}','pic')">✏️ Telemóvel${p.tel ? ' ' + rpEsc(p.tel) : ''}</button></div>` : ''}</details>`).join('');
   const ps = {}; R.forEach(r => { const k = r.secao || '—'; ps[k] = (ps[k] || 0) + (Number(r.n) || 1); });
   const ls = Object.entries(ps).sort((a, b) => b[1] - a[1]), mxs = ls[0][1];
   h += `<div style="font-weight:800;font-size:12.5px;color:var(--navy);margin:12px 0 4px;">Por secção</div>` + ls.map(([k, v]) => `<div style="display:grid;grid-template-columns:110px minmax(0,1fr) 26px;gap:8px;align-items:center;padding:2px 0;font-size:12px;"><span>${rpEsc(k)}</span><div style="height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(v / mxs * 100).toFixed(1)}%;background:#2F6DB5;"></div></div><b style="text-align:right;">${v}</b></div>`).join('');
