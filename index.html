@@ -14508,7 +14508,7 @@ async function blocoAlertasRH(){
     const bhDias = gozo.length ? gozo : (c.data_prevista_gozar_horas && c.data_prevista_gozar_horas >= hojeI ? [c.data_prevista_gozar_horas] : []);
     return {k, nome: c.nome, curto: curto(c.nome), tel: c.telefone, oc11: d11Mes ? (d11Por[k] || []).length : (Number(ip.oc11) || 0), d11Datas: (d11Por[k] || []).slice().sort(), trocas: trcMes ? (trcPor[k] || 0) : (Number(ip.trocas) || 0), porAssinar: altPor[k] || 0, altLst: altLst[k] || [], bh, bhn, bhData: c.data_prevista_gozar_horas, bhDias, falta};
   });
-  const tem = {trocas: p => p.trocas > 0, d11: p => p.oc11 > 0, bh: p => p.bh > 0 || p.bhn < 0, assin: p => p.porAssinar > 0, form: p => p.falta.length > 0};
+  const tem = {trocas: p => p.trocas > 0, d11: p => p.oc11 > 0, bh: p => (p.bhDias || []).length > 0, assin: p => p.porAssinar > 0, form: p => p.falta.length > 0};
   const comAlgo = P.filter(p => Object.values(tem).some(f => f(p)));
   window.__alrP = P; window.__alrData = dataInd;
   // cada tema no seu cartão, com a lista de pessoas e o botão 💬 só desse tema
@@ -14519,8 +14519,8 @@ async function blocoAlertasRH(){
   let h = '';
   h += cartao('✍️ Horários por assinar no Hello', 'Alterações de horário que ainda não foram assinadas no Hello.', 'assin', P.filter(tem.assin).sort((a, b) => b.porAssinar - a.porAssinar),
     p => `<b style="color:#8A5A00;">${p.porAssinar} por assinar</b>${p.altLst.length ? ' · ' + p.altLst.map(a => `${a.data_alteracao ? impDDMM(a.data_alteracao) : ''}${a.descricao ? ' ' + rpEsc(String(a.descricao).slice(0, 40)) : ''}`).join(' · ') : ''}`, 'Todos os horários estão assinados.');
-  h += cartao('⏳ Banco de horas e dias a gozar', 'Horas a gozar e os dias já marcados para as gozar.', 'bh', P.filter(tem.bh).sort((a, b) => (b.bh - a.bh) || (a.bhn - b.bhn)),
-    p => p.bh > 0 ? `<b style="color:#1F5C3A;">${p.bh.toLocaleString('pt-PT')} h a gozar</b> · ${p.bhDias.length ? 'dias: ' + p.bhDias.map(d => impDDMM(d)).join(', ') : '<span style="color:var(--red);">sem dias marcados</span>'}` : `<b style="color:var(--red);">${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar</b>`, 'Ninguém com banco de horas por gozar.');
+  h += cartao('⏳ Banco de horas e dias a gozar', 'Só quem tem dias marcados para gozar, a partir de hoje.', 'bh', P.filter(tem.bh).sort((a, b) => String(a.bhDias[0]).localeCompare(String(b.bhDias[0])) || (b.bh - a.bh)),
+    p => `<b style="color:#1F5C3A;">dias a gozar: ${p.bhDias.map(d => impDDMM(d)).join(', ')}</b>${p.bh > 0 ? ` · ${p.bh.toLocaleString('pt-PT')} h no banco` : ''}`, 'Ninguém com dias marcados para gozar a partir de hoje.');
   h += cartao('🌙 Descanso de 11 horas', `Não são permitidos descansos inferiores a 11 horas entre turnos. ${window.__alrD11Mes ? 'Mês de ' + impTitulo(IMP_MESES[Number(window.__alrD11Mes.slice(5, 7)) - 1]) : 'Relatório de ' + (dataInd ? impDDMM(dataInd) : '—')}.`, 'd11', P.filter(tem.d11).sort((a, b) => b.oc11 - a.oc11),
     p => `<b style="color:var(--red);">${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}</b> com menos de 11 h de descanso${(p.d11Datas || []).length ? ' · ' + p.d11Datas.map(d => impDDMM(d)).join(', ') : ''}`, 'Ninguém com menos de 11 h de descanso.');
   h += cartao('🔁 Trocas de horário', `${trcMes ? mesN(trcMes) : 'Relatório de ' + (dataInd ? impDDMM(dataInd) : '—')} · máximo ${TRC_MAX} por pessoa · as alterações são feitas no Hello.`, 'trocas', P.filter(tem.trocas).sort((a, b) => b.trocas - a.trocas),
