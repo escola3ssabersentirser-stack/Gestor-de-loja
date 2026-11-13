@@ -1886,7 +1886,9 @@ function entrarNaTelaInicial(){
 // Só a gestora da loja (Conceição) altera dados e envia mensagens
 const NUMERO_DONA = '1048585';
 function souDona(){ return !!(currentUser && currentUser.role === 'gestora' && String(currentUser.numero || '').replace(/\D/g,'').replace(/^0+/,'') === NUMERO_DONA); }
-function soDona(acao){ if(souDona()) return true; alert('🔒 Só a gestora da loja pode ' + (acao || 'fazer esta alteração') + '.'); return false; }
+function soDona(acao){ if(souDona()) return true; alert(/enviar|partilhar/i.test(acao || '') ? '🔒 Só o gestor de loja pode enviar mensagens.' : '🔒 Só o gestor de loja pode ' + (acao || 'fazer esta alteração') + '.'); return false; }
+// quem vê os botões de enviar mensagens (só o gestor de loja consegue enviar; os outros recebem o aviso)
+function podeVerEnvios(){ return souDona() || !!(currentUser && ['gestora','area','demo','convidado'].includes(currentUser.role)); }
 function isChefe(){
   return currentUser && ['gestora','area','responsavel','demo','convidado'].includes(currentUser.role);
 }
@@ -4690,7 +4692,7 @@ async function renderLembretes(){
     <div class="com-duo"><div><label class="com-lbl" for="anos-dia">Dia</label><input type="number" id="anos-dia" min="1" max="31"></div><div><label class="com-lbl" for="anos-mes">Mês</label><input type="number" id="anos-mes" min="1" max="12"></div></div>
     <button class="btn-primary" onclick="lemGuardarAnos()">Guardar</button></details>` : '';
   const pedidosHtml = (d.pedidos||[]).map(p => `<div class="card lem-item"><div><b>${rpEsc(p.nome)}</b><small>${rpEsc(p.motivo || 'sem motivo indicado')} · pedido às ${new Date(p.criado_em).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})} de ${new Date(p.criado_em).toLocaleDateString('pt-PT')}</small></div><div class="lem-btns"><button class="lem-w" style="background:#1F7A33" onclick="decidirPedidoAcesso(${p.id}, true)">Autorizar 12h</button><button class="lem-x" onclick="decidirPedidoAcesso(${p.id}, false)">Recusar</button></div></div>`).join('');
-  box.innerHTML = (pedidosHtml && souDona() ? sec('🔑','Pedidos de acesso de convidados', d.pedidos.length, pedidosHtml) : '') + `${souDona() ? '' : '<p class="com-ajuda" style="margin:0 4px 12px;">🔒 Só a gestora da loja envia lembretes e mensagens. Aqui pode consultar o que está pendente.</p>'}<p class="com-ajuda" style="margin:0 4px 12px;">Os botões abrem o WhatsApp com a mensagem já escrita — é só carregar em enviar. Semana ${numeroSemanaISO(new Date())}.</p>`
+  box.innerHTML = (pedidosHtml && souDona() ? sec('🔑','Pedidos de acesso de convidados', d.pedidos.length, pedidosHtml) : '') + `${souDona() ? '' : '<p class="com-ajuda" style="margin:0 4px 12px;">🔒 Só o gestor de loja envia lembretes e mensagens. Aqui pode consultar o que está pendente.</p>'}<p class="com-ajuda" style="margin:0 4px 12px;">Os botões abrem o WhatsApp com a mensagem já escrita — é só carregar em enviar. Semana ${numeroSemanaISO(new Date())}.</p>`
     + sec('🎂','Aniversários (próximos 7 dias)', d.anos.filter(a => a.faltam === 0).length, anosHtml, formAnos)
     + sec('📲','Envios da semana', ['resumo-semanal|','ata-semanal|','comunicacao-semanal|'].filter(k => !d.enviados.has(k)).length, semanal)
     + sec('💙','Baixas e ausências', d.ausSemContacto.length, aus, formAus)
@@ -10831,7 +10833,7 @@ async function blocoVendaSugestiva(){
   // ranking por campanha: esta semana e a semana anterior
   const campanhas = [];
   (operadores||[]).forEach(o => { const k = o.artigo || '—'; let c = campanhas.find(x => x.k === k); if(!c){ c = {k, data: o.data_referencia, ops: []}; campanhas.push(c); } c.ops.push(o); });
-  if(souDona() && campanhas.length) html += `<button class="btn-primary" style="margin:0 0 12px;background:#1F7A33;" onclick="vsEnviarPodio()">📧 Enviar imagem do pódio por email</button>`;
+  if(podeVerEnvios() && campanhas.length) html += `<button class="btn-primary" style="margin:0 0 12px;background:#1F7A33;" onclick="vsEnviarPodio()">📧 Enviar imagem do pódio por email</button>`;
   campanhas.forEach(c => c.ops.sort((a, b) => (Number(b.vendas_un) || 0) - (Number(a.vendas_un) || 0)));
   html += vsVencedores4Html(campanhas);
   campanhas.slice(0, 2).forEach((c, ci) => {
@@ -12405,7 +12407,7 @@ async function blocoVozCliente(){
         • Nas caixas: "Obrigado pela sua visita! Vá à App e dê-nos a sua opinião". Cartaz nas zonas sociais: <b>"Cada gesto teu, conta!"</b></div></details>
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">Calendário</summary>
       <div style="font-size:12.5px;line-height:1.6;margin-top:4px;">16/10 · Newsletter e cartaz nas zonas sociais<br>19/10 · <b>Lançamento em todas as lojas</b><br>20/10 · Comunicação em loja para o cliente (caixas e self-checkouts)<br>Depois do lançamento · Sessões de esclarecimento com as equipas de gestão de loja<br>26/10 · <b>Primeiro relatório semanal</b></div></details>
-    ${dona ? `<button class="econ-btn" style="margin-top:10px;" onclick="vocPartilharRegras()">📲 Partilhar regras com a equipa (WhatsApp)</button>` : ''}
+    ${podeVerEnvios() ? `<button class="econ-btn" style="margin-top:10px;" onclick="vocPartilharRegras()">📲 Partilhar regras com a equipa (WhatsApp)</button>` : ''}
   </div>`;
 
   // 4) Supervisão
@@ -14513,7 +14515,7 @@ async function blocoAlertasRH(){
   window.__alrP = P; window.__alrData = dataInd;
   // cada tema no seu cartão, com a lista de pessoas e o botão 💬 só desse tema
   const mesN = m => m ? impTitulo(IMP_MESES[Number(m.slice(5, 7)) - 1]) : '';
-  const btn = (p, tema) => dona ? `<span style="display:flex;gap:4px;flex-shrink:0;"><button type="button" onclick="alrEnviar('${p.k}','wa','${tema}')" style="border:0;background:#25D366;color:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;">💬${telMovel(p.tel) ? '' : ' (sem telemóvel)'}</button><button type="button" onclick="alrEnviar('${p.k}','copiar','${tema}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">📋</button><button type="button" title="Corrigir telemóvel" onclick="telEditar('${p.k}','${rpEsc(p.nome || '').replace(/'/g, '')}','${rpEsc(p.tel || '')}','alr')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">✏️</button></span>` : '';
+  const btn = (p, tema) => podeVerEnvios() ? `<span style="display:flex;gap:4px;flex-shrink:0;"><button type="button" onclick="alrEnviar('${p.k}','wa','${tema}')" style="border:0;background:#25D366;color:#fff;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;">💬${telMovel(p.tel) ? '' : ' (sem telemóvel)'}</button><button type="button" onclick="alrEnviar('${p.k}','copiar','${tema}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">📋</button><button type="button" title="Corrigir telemóvel" onclick="telEditar('${p.k}','${rpEsc(p.nome || '').replace(/'/g, '')}','${rpEsc(p.tel || '')}','alr')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;cursor:pointer;">✏️</button></span>` : '';
   const linha = (p, tema, info) => `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--line);"><div style="min-width:0;"><b style="font-size:13px;">${rpEsc(p.curto)}</b><div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;line-height:1.45;">${info}</div></div>${btn(p, tema)}</div>`;
   const cartao = (tit, sub, tema, lst, info, vazio) => `<div class="section-title">${tit} <span style="font-size:12px;font-weight:700;color:var(--ink-soft);">(${lst.length})</span></div><div class="card"><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">${sub}</div>${lst.length ? lst.map(p => linha(p, tema, info(p))).join('') : `<div style="font-size:12.5px;color:#1F7A33;padding:6px 0;">✓ ${vazio}</div>`}</div>`;
   let h = '';
@@ -14731,12 +14733,12 @@ async function blocoPicagens(){
   h += `<div style="display:flex;gap:8px;margin-bottom:10px;">${caixa(tot, 'picagens manuais em ' + mesNome(picMesSel), null, 'var(--navy)')}${caixa(totL, 'equipa da loja', metaL, totL > metaL ? 'var(--red)' : 'var(--green)')}${caixa(totG, 'gerência (Direcção Loja)', metaG, totG > metaG ? 'var(--red)' : 'var(--green)')}</div>`;
   h += `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">${pessoas.length} pessoas com picagens manuais · toque no botão verde 💬 para enviar o alerta por WhatsApp · toque no nome para ver os dias</div>`;
   const mx = Math.max(...pessoas.map(p => p.n), 1);
-  h += pessoas.map(p => `<details style="border-top:1px solid var(--line);padding:6px 0;"><summary style="cursor:pointer;list-style:none;display:grid;grid-template-columns:minmax(0,1fr) 30px ${dona ? '40px' : ''};gap:8px;align-items:center;">
+  h += pessoas.map(p => `<details style="border-top:1px solid var(--line);padding:6px 0;"><summary style="cursor:pointer;list-style:none;display:grid;grid-template-columns:minmax(0,1fr) 30px ${podeVerEnvios() ? '40px' : ''};gap:8px;align-items:center;">
       <span style="min-width:0;"><b style="font-size:12.5px;">${rpEsc(p.nome)}</b> <span style="font-size:10.5px;color:var(--ink-soft);">${rpEsc(p.secao || '')}</span>
       <div style="height:7px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:3px;"><div style="height:100%;width:${(p.n / mx * 100).toFixed(1)}%;background:${p.n >= 3 ? 'var(--red)' : p.n === 2 ? '#C77F12' : '#2F6DB5'};"></div></div></span>
-      <b style="text-align:right;font-size:16px;color:${p.n >= 3 ? 'var(--red)' : 'var(--navy)'};">${p.n}</b>${dona ? `<button class="econ-btn filled" title="Enviar alerta por WhatsApp" style="margin:0;padding:6px 0;font-size:15px;background:#25D366;border-color:#25D366;color:#fff;" onclick="event.preventDefault();event.stopPropagation();picAlertar('${p.numero}','wa')">💬</button>` : ''}</summary>
+      <b style="text-align:right;font-size:16px;color:${p.n >= 3 ? 'var(--red)' : 'var(--navy)'};">${p.n}</b>${podeVerEnvios() ? `<button class="econ-btn filled" title="Enviar alerta por WhatsApp" style="margin:0;padding:6px 0;font-size:15px;background:#25D366;border-color:#25D366;color:#fff;" onclick="event.preventDefault();event.stopPropagation();picAlertar('${p.numero}','wa')">💬</button>` : ''}</summary>
     <div style="font-size:11.5px;color:var(--ink-soft);padding:4px 0 2px;">${p.linhas.map(r => `${mcDiaCurto(r.data)} · ${rpEsc(r.horas || '')}`).join('<br>')}</div>
-    ${dona ? `<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;"><button class="econ-btn filled" style="margin:0;padding:5px 10px;font-size:11.5px;background:#25D366;border-color:#25D366;color:#fff;" onclick="picAlertar('${p.numero}','wa')">💬 Alerta WhatsApp${telMovel(p.tel) ? '' : ' (sem telemóvel)'}</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','copiar')">📋 Copiar mensagem</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','email')">✉️ Email</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="telEditar('${p.numero}','${rpEsc(p.nome).replace(/'/g, '')}','${rpEsc(p.tel || '')}','pic')">✏️ Telemóvel${p.tel ? ' ' + rpEsc(p.tel) : ''}</button></div>` : ''}</details>`).join('');
+    ${podeVerEnvios() ? `<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;"><button class="econ-btn filled" style="margin:0;padding:5px 10px;font-size:11.5px;background:#25D366;border-color:#25D366;color:#fff;" onclick="picAlertar('${p.numero}','wa')">💬 Alerta WhatsApp${telMovel(p.tel) ? '' : ' (sem telemóvel)'}</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','copiar')">📋 Copiar mensagem</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="picAlertar('${p.numero}','email')">✉️ Email</button><button class="econ-btn" style="margin:0;padding:5px 10px;font-size:11.5px;" onclick="telEditar('${p.numero}','${rpEsc(p.nome).replace(/'/g, '')}','${rpEsc(p.tel || '')}','pic')">✏️ Telemóvel${p.tel ? ' ' + rpEsc(p.tel) : ''}</button></div>` : ''}</details>`).join('');
   const ps = {}; R.forEach(r => { const k = r.secao || '—'; ps[k] = (ps[k] || 0) + (Number(r.n) || 1); });
   const ls = Object.entries(ps).sort((a, b) => b[1] - a[1]), mxs = ls[0][1];
   h += `<div style="font-weight:800;font-size:12.5px;color:var(--navy);margin:12px 0 4px;">Por secção</div>` + ls.map(([k, v]) => `<div style="display:grid;grid-template-columns:110px minmax(0,1fr) 26px;gap:8px;align-items:center;padding:2px 0;font-size:12px;"><span>${rpEsc(k)}</span><div style="height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(v / mxs * 100).toFixed(1)}%;background:#2F6DB5;"></div></div><b style="text-align:right;">${v}</b></div>`).join('');
@@ -16392,7 +16394,7 @@ async function invGridCarregar(){
   html += podeEditar
     ? `<div style="font-size:11px;color:var(--ink-soft);margin:8px 0;">Toque em <b style="color:var(--red);">−</b> para resultado negativo (falta de stock) ou em <b style="color:var(--green);">+</b> para positivo. Deixe em branco as secções sem inventário nesse dia.</div>
        <button class="btn-primary" style="margin-top:4px;" onclick="invGridGuardar()">💾 Guardar resultados</button>`
-    : `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">🔒 Só a gestora da loja pode registar resultados.</div>`;
+    : `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">🔒 Só o gestor de loja pode registar resultados.</div>`;
   box.innerHTML = html;
 }
 
