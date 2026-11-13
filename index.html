@@ -17485,6 +17485,35 @@ async function blocoMapasProducao(){
     ${porSec.map(s => `<tr><td style="text-align:left;font-weight:600;">${rpEsc(s.secao)}</td><td>${un(s.sugestao)}</td><td>${un(s.producao)}</td><td style="color:${pc(s.producao, s.sugestao) > 105 ? 'var(--red)' : 'inherit'};">${Math.round(pc(s.producao, s.sugestao))}%</td><td>${eur(s.vendas_eur)}</td><td>${un(s.quebra_un)} un<br><b style="color:var(--red);">${eur(s.quebra_eur)}</b></td><td><b style="color:${corQ(pc(s.quebra_un, s.producao))};">${pc(s.quebra_un, s.producao).toLocaleString('pt-PT')}%</b></td><td>${un(s.quebra_excesso)} un</td></tr>`).join('')}
     </tbody></table></div>
     <div style="font-size:11.5px;margin-top:8px;"><b>De onde vem a quebra:</b> mínimos ${un(T.quebra_minimo)} un (${pc(T.quebra_minimo, T.quebra_un)}%) · sugestão ${un(T.quebra_sugestao)} un (${pc(T.quebra_sugestao, T.quebra_un)}%) · <b style="color:var(--red);">excesso de produção ${un(T.quebra_excesso)} un (${pc(T.quebra_excesso, T.quebra_un)}%)</b></div></div>`;
+  // 🚦 o que fazer: a) a loja produziu a mais (ciclo extra) → alertar a secção; b) cumpriram o mapa e deu quebra → pedir revisão do mapa
+  {
+    const ks = [...new Set(rows.map(x => x.secao + '|' + x.artigo_cod))];
+    const extra = [], revisao = [];
+    ks.forEach(k => {
+      const l = rows.filter(x => x.secao + '|' + x.artigo_cod === k); const a0 = l[0];
+      const dExc = l.filter(x => N(x.producao) > N(x.sugestao) && N(x.quebra_un) > 0);
+      if(dExc.length && dExc.reduce((t, x) => t + N(x.quebra_un), 0) >= 3){ const aMais = dExc.reduce((t, x) => t + N(x.producao) - N(x.sugestao), 0), q = dExc.reduce((t, x) => t + N(x.quebra_un), 0), qe = dExc.reduce((t, x) => t + N(x.quebra_eur), 0);
+        extra.push({secao: a0.secao, artigo: a0.artigo, dias: dExc.map(x => x.data).sort(), aMais, q, qe}); }
+      const dMapa = l.filter(x => N(x.producao) <= N(x.sugestao) && N(x.producao) > 0 && N(x.quebra_minimo) + N(x.quebra_sugestao) > 0);
+      if(dMapa.length >= 3 && dMapa.reduce((t, x) => t + N(x.quebra_minimo) + N(x.quebra_sugestao), 0) >= 4){ const q = dMapa.reduce((t, x) => t + N(x.quebra_minimo) + N(x.quebra_sugestao), 0), qe = dMapa.reduce((t, x) => t + N(x.quebra_eur), 0);
+        const qMin = dMapa.reduce((t, x) => t + N(x.quebra_minimo), 0);
+        const sug = Math.round(l.reduce((t, x) => t + N(x.sugestao), 0) / l.length), min = Math.round(l.reduce((t, x) => t + N(x.minimos), 0) / l.length), vend = Math.round(l.reduce((t, x) => t + N(x.vendas_un), 0) / l.length * 10) / 10;
+        revisao.push({secao: a0.secao, artigo: a0.artigo, cod: a0.artigo_cod, dias: dMapa.length, q, qe, sug, min, vend, minimos: qMin >= q / 2}); }
+    });
+    extra.sort((a, b) => b.qe - a.qe); revisao.sort((a, b) => b.qe - a.qe);
+    window.__mpAcao = {extra, revisao, periodo: `${impDDMM(datas[0])} a ${impDDMM(datas[nDias - 1])}`};
+    const env = podeVerEnvios();
+    const linha = (tit, sub, dir) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--line);"><div style="min-width:0;"><div style="font-size:13px;font-weight:600;">${tit}</div><div style="font-size:11.5px;color:var(--ink-soft);">${sub}</div></div><div style="flex-shrink:0;text-align:right;font-size:12.5px;font-weight:700;">${dir}</div></div>`;
+    h += `<div class="section-title">🚦 O que fazer com os mapas</div>`;
+    h += `<div class="card" style="border-left:5px solid var(--red);"><h3 style="margin-bottom:2px;color:var(--red);">🔴 A loja produziu a mais (ciclo extra) <span style="font-weight:600;">· ${extra.length}</span></h3>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Produziram acima do que o mapa pedia e sobrou: a quebra é da loja. Alertar a secção para seguir o mapa.</div>
+      ${extra.length ? extra.slice(0, 12).map(a => linha(rpEsc(a.artigo), `${rpEsc(a.secao)} · ${a.aMais} un a mais em ${a.dias.length} dia${a.dias.length === 1 ? '' : 's'} (${a.dias.map(impDDMM).join(', ')})`, `<span style="color:var(--red);">${a.q} un<br>${eur(a.qe)}</span>`)).join('') + (extra.length > 12 ? `<div style="font-size:11.5px;color:var(--ink-soft);padding-top:6px;">+ ${extra.length - 12} artigos (vão todos na mensagem)</div>` : '') : '<div style="font-size:13px;color:var(--green);font-weight:600;">✓ Ninguém produziu acima do mapa nestes dias.</div>'}
+      ${extra.length && env ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">${[...new Set(extra.map(a => a.secao))].map(sc => `<button class="econ-btn filled" style="margin:0;background:#25D366;border-color:#25D366;color:#fff;font-size:12px;" onclick="mpAlertarExtra('${rpEsc(sc).replace(/'/g, '')}')">💬 Alertar ${rpEsc(sc)}</button>`).join('')}</div>` : ''}</div>`;
+    h += `<div class="card" style="border-left:5px solid var(--amber);"><h3 style="margin-bottom:2px;color:#B26A00;">🟠 Cumpriram o mapa e deu quebra — pedir revisão <span style="font-weight:600;">· ${revisao.length}</span></h3>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Produziram o que o mapa pedia (ou menos) e mesmo assim sobrou, em 3 dias ou mais: o mapa está acima das vendas. Pedir revisão ao DM.</div>
+      ${revisao.length ? revisao.slice(0, 15).map(a => linha(rpEsc(a.artigo), `${rpEsc(a.secao)} · ${a.minimos ? `mínimo ${a.min}/dia` : `mapa ${a.sug}/dia`} · vende ${a.vend.toLocaleString('pt-PT')}/dia · ${a.dias} dias com quebra`, `<span style="color:#B26A00;">${a.q} un<br>${eur(a.qe)}</span>`)).join('') + (revisao.length > 15 ? `<div style="font-size:11.5px;color:var(--ink-soft);padding-top:6px;">+ ${revisao.length - 15} artigos (vão todos no pedido)</div>` : '') : '<div style="font-size:13px;color:var(--green);font-weight:600;">✓ Nenhum artigo precisa de revisão nestes dias.</div>'}
+      ${revisao.length && env ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"><button class="econ-btn filled" style="margin:0;font-size:12px;" onclick="mpPedirRevisao('email')">📧 Pedir revisão por email</button><button class="econ-btn" style="margin:0;font-size:12px;" onclick="mpPedirRevisao('wa')">💬 WhatsApp</button><button class="econ-btn" style="margin:0;font-size:12px;" onclick="mpPedirRevisao('copiar')">📋 Copiar</button></div>` : ''}</div>`;
+  }
   // por artigo
   const chaves = [...new Set(rows.map(x => x.secao + '|' + x.artigo_cod))];
   const arts = chaves.map(k => { const l = rows.filter(x => x.secao + '|' + x.artigo_cod === k); return {secao: l[0].secao, artigo: l[0].artigo, dias: l.length, ...soma(l)}; });
@@ -17515,6 +17544,20 @@ async function blocoMapasProducao(){
   return h;
 }
 
+function mpAlertarExtra(secao){
+  if(!soDona('enviar mensagens')) return;
+  const A = window.__mpAcao || {}; const l = (A.extra || []).filter(a => a.secao === secao); if(!l.length) return;
+  const txt = `Para sua informação — ${secao} (${A.periodo}):\nA loja produziu acima do que o mapa de produção pedia (ciclo extra) e estes artigos deram quebra:\n\n` + l.map(a => `• ${a.artigo}: ${a.aMais} un a mais (${a.dias.map(impDDMM).join(', ')}) → ${a.q} un de quebra`).join('\n') + `\n\nPeço que se siga o mapa de produção. Se acharem que o mapa pede pouco, falem comigo para pedirmos revisão.\nObrigada, ${currentUser && currentUser.name ? String(currentUser.name).split(' ')[0] : 'Conceição'}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+}
+function mpPedirRevisao(canal){
+  if(!soDona('enviar mensagens')) return;
+  const A = window.__mpAcao || {}; const l = A.revisao || []; if(!l.length) return;
+  const txt = `Pedido de revisão dos mapas de produção — Loja 747 Viana do Castelo – Portuzelo (${A.periodo})\n\nEstes artigos foram produzidos de acordo com o mapa (ou abaixo) e mesmo assim deram quebra em vários dias. Peço revisão da sugestão/mínimos:\n\n` + l.map(a => `• ${a.cod ? a.cod + ' ' : ''}${a.artigo} (${a.secao}): ${a.minimos ? 'mínimo ' + a.min : 'mapa ' + a.sug}/dia · vende ${a.vend.toLocaleString('pt-PT')}/dia · ${a.q} un de quebra em ${a.dias} dias`).join('\n') + `\n\nObrigada,\nConceição Alves`;
+  if(canal === 'copiar'){ (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => alert('Texto copiado.'), () => prompt('Copie o texto:', txt)); return; }
+  if(canal === 'email'){ location.href = `mailto:?subject=${encodeURIComponent('Pedido de revisão dos mapas de produção — Loja 747')}&body=${encodeURIComponent(txt)}`; return; }
+  window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+}
 async function ppRefrescar(){const el = document.getElementById('pp-wrap'); if(el) el.innerHTML = await blocoPlanoProducao(); }
 async function ppMarcar(id, feito){
   if(!paPodeMarcar()){ alert('🔒 Só responsáveis, gestores e a gestora podem marcar ações.'); return; }
