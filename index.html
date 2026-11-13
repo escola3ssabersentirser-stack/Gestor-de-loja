@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-13-1950';
+const APP_V='2026-11-13-2210';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -6915,7 +6915,7 @@ const CHECKLIST_TAREFAS = [
 "Rotinas das secções realizadas até às 8h e enviar fotos",
 "Volta à loja e verificar câmaras",
 "Listas de reposição feitas até às 10h da manhã",
-"Garantir automáticas de hora a hora (9h–22h)",
+"Garantir automáticas de hora a hora (5h–23h)",
 "Produtos sem stock analisados (verificar sem stock da padaria e take away)",
 "Garantir a 2.ª igualização e tratamento de roturas",
 "Frentes organizadas e alinhadas do livre serviço (alturas alinhadas)",
@@ -16584,6 +16584,8 @@ async function impAutomaticas(wb){
 // mês escolhido na Melhoria Contínua: 'atual' ou 'anterior'
 let mcMesSel = 'atual';
 let mcSep = 'resumo';
+// horário das listas automáticas: das 5h às 23h (a última hora começa às 22h)
+const MC_H_INI = 5, MC_H_FIM = 23;
 const MC_SEPS = [['resumo', '📊', 'Resumo'], ['equipa', '🏆', 'Quem repõe'], ['auto', '🔁', 'Automáticas'], ['massiva', '🚚', 'Paletes'], ['visivel', '👀', 'Visível'], ['ruturas', '🔗', 'Ruturas']];
 const MC_SEP_AJUDA = {
   resumo: 'Os números do período escolhido: quantos artigos se repuseram, quantos ficaram em rutura e o peso de cada tipo de lista.',
@@ -16681,14 +16683,14 @@ async function blocoAutomaticas(){
   const mesNome = impTitulo(IMP_MESES[Number(datas[0].slice(5, 7)) - 1]);
   const porTipo = {}; rows.forEach(r => { porTipo[r.tipo] = (porTipo[r.tipo] || 0) + r.linhas; });
   const tile = (v, t, cor) => `<div style="flex:1;min-width:100px;background:var(--bg-soft,#F6F4EF);border-radius:10px;padding:8px 10px;"><div style="font-size:19px;font-weight:800;color:${cor || 'var(--ink)'};">${v}</div><div style="font-size:11px;color:var(--ink-soft);">${t}</div></div>`;
-  // hora a hora: entre as 9h e as 22h, todas as horas com automáticas
+  // hora a hora: entre as 5h e as 23h, todas as horas com automáticas
   const auto = rows.filter(r => /autom/i.test(r.tipo));
-  const falhas = datas.map(d => { const hs = new Set(auto.filter(r => r.data === d).map(r => r.hora)); const sem = []; for(let hh = 9; hh <= 21; hh++) if(!hs.has(hh)) sem.push(hh); return {d, sem}; });
+  const falhas = datas.map(d => { const hs = new Set(auto.filter(r => r.data === d).map(r => r.hora)); const sem = []; for(let hh = MC_H_INI; hh < MC_H_FIM; hh++) if(!hs.has(hh)) sem.push(hh); return {d, sem}; });
   const cumpre = falhas.filter(f => !f.sem.length).length;
   h += `<div class="card"><div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${mesNome} · ${impDDMM(datas[0])} a ${impDDMM(datas[nD - 1])} · ${nD} dias</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;">
       ${tile(tot.toLocaleString('pt-PT'), 'linhas de reposição no período')}${tile(Math.round(tot / nD).toLocaleString('pt-PT'), 'por dia (média)')}
-      ${tile(Math.round(cumpre / nD * 100) + '%', `dias com automáticas hora a hora, 9h–22h (${cumpre}/${nD})`, cumpre === nD ? 'var(--green)' : cumpre / nD >= .8 ? 'var(--amber)' : 'var(--red)')}
+      ${tile(Math.round(cumpre / nD * 100) + '%', `dias com automáticas hora a hora, ${MC_H_INI}h–${MC_H_FIM}h (${cumpre}/${nD})`, cumpre === nD ? 'var(--green)' : cumpre / nD >= .8 ? 'var(--amber)' : 'var(--red)')}
       ${tile(soma(rows, 'rutura').toLocaleString('pt-PT'), 'linhas em rutura', 'var(--red)')}${tile(soma(rows, 'sem_stock').toLocaleString('pt-PT'), 'sem stock', 'var(--amber)')}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">${Object.entries(porTipo).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<span style="background:var(--bg-soft,#F6F4EF);border-radius:8px;padding:4px 9px;font-size:12px;"><b>${rpEsc(t)}</b> ${Math.round(n / tot * 100)}% · ${n.toLocaleString('pt-PT')}</span>`).join('')}</div></div>`;
   // por pessoa
@@ -16821,14 +16823,14 @@ function mcMontarExcel(l, rut, nomes, M, col){
 // resumo da reposição hora a hora (9h–22h): artigos da automática, dias em que a lista falhou nessa hora e artigos picados na visível
 function blocoResumoReposicao(RD){
   const {l} = RD; if(!l || !l.length) return '';
-  const H = []; for(let x = 9; x < 22; x++) H.push(x);
+  const H = []; for(let x = MC_H_INI; x < MC_H_FIM; x++) H.push(x);
   const hr = x => parseInt(String(x.hora || '').slice(0, 2), 10);
   const datas = [...new Set(l.map(x => x.data))].sort(); const nd = datas.length;
   const au = l.filter(x => /autom/i.test(x.tipo || '')), vi = l.filter(x => /vis[ií]vel/i.test(x.tipo || ''));
   const temLista = new Set(au.map(x => x.data + '|' + hr(x)));
   const HV = [...new Set([...vi.map(hr).filter(n => !isNaN(n)), ...H])].sort((a, b) => a - b);
   const L = HV.map(h => { const aOk = au.filter(x => hr(x) === h && Number(x.reposicao) > 0).length; const v = vi.filter(x => hr(x) === h).length;
-    const dentro = h >= 9 && h < 22; const falhou = dentro ? datas.filter(d => !temLista.has(d + '|' + h)) : []; return {h, aOk, v, falhou, dentro}; });
+    const dentro = h >= MC_H_INI && h < MC_H_FIM; const falhou = dentro ? datas.filter(d => !temLista.has(d + '|' + h)) : []; return {h, aOk, v, falhou, dentro}; });
   const mxA = Math.max(...L.map(x => x.aOk), 1), mxV = Math.max(...L.map(x => x.v), 1);
   const totF = L.reduce((a, x) => a + x.falhou.length, 0), totV = L.reduce((a, x) => a + x.v, 0), totA = L.reduce((a, x) => a + x.aOk, 0);
   const piores = [...L].sort((a, b) => b.falhou.length - a.falhou.length).filter(x => x.falhou.length).slice(0, 3);
@@ -16854,7 +16856,7 @@ function blocoResumoReposicao(RD){
       <td style="padding:5px 4px;"><div style="display:flex;align-items:center;gap:5px;"><div style="flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.aOk / mxA * 100).toFixed(1)}%;background:#1F7A33;"></div></div><b style="min-width:30px;text-align:right;">${x.aOk}</b></div></td>
       <td style="padding:5px 2px;text-align:center;"><b style="color:${x.dentro ? corF(x.falhou.length) : '#C5C9CF'};">${!x.dentro ? '—' : x.falhou.length ? x.falhou.length + '×' : '✓'}</b>${x.falhou.length ? `<div style="font-size:9.5px;color:var(--ink-soft);line-height:1.35;">${x.falhou.map(d => MC_SEM_CURTO[mcDow(d)] + ' ' + impDDMM(d)).join('<br>')}</div>` : ''}</td>
       <td style="padding:5px 4px;"><div style="display:flex;align-items:center;gap:5px;"><div style="flex:1;height:9px;border-radius:5px;background:var(--line);overflow:hidden;"><div style="height:100%;width:${(x.v / mxV * 100).toFixed(1)}%;background:#C77F12;"></div></div><b style="min-width:26px;text-align:right;">${x.v}</b></div></td></tr>`).join('') +
-    `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">${nd} dia${nd > 1 ? 's' : ''} com dados. «Lista falhou» = número de dias em que não houve nenhuma lista automática nessa hora (só conta das 9h às 22h). A visível aparece em todas as horas em que foi feita.</div>
+    `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">${nd} dia${nd > 1 ? 's' : ''} com dados. «Lista falhou» = número de dias em que não houve nenhuma lista automática nessa hora (só conta das ${MC_H_INI}h às ${MC_H_FIM}h). A visível aparece em todas as horas em que foi feita.</div>
     <div style="font-weight:800;font-size:13px;color:var(--red);margin:14px 0 4px;">🔴 Top 10 ruturas prolongadas (mais de 3 dias)</div>
     ${top10.length ? `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#FBEAEA;"><th style="text-align:left;padding:5px 4px;">Artigo</th><th style="padding:5px 2px;">Dias</th><th style="padding:5px 2px;">Desde</th><th style="padding:5px 2px;">Picado</th></tr></thead><tbody>` + top10.map((x, i) => `<tr style="border-top:1px solid var(--line);"><td style="padding:5px 4px;"><b>${i + 1}.</b> ${rpEsc(x.artigo)}<div style="font-size:9.5px;color:var(--ink-soft);">${x.k} · picado por ${rpEsc(String(x.quem || '').split(' ')[0])}</div></td><td style="text-align:center;"><b style="color:var(--red);font-size:14px;">${x.dias}</b></td><td style="text-align:center;white-space:nowrap;">${impDDMM(x.desde)}</td><td style="text-align:center;white-space:nowrap;">${impDDMM(x.picado)}</td></tr>`).join('') + `</tbody></table><div style="font-size:10.5px;color:var(--ink-soft);margin-top:4px;">Dias entre a última vez que alguém mexeu no artigo e o dia em que foi picado com rutura.</div>` : `<div style="font-size:12px;color:var(--ink-soft);">✓ Nenhuma rutura com mais de 3 dias neste período.</div>`}</div>`;
   return h;
@@ -16866,9 +16868,9 @@ function mcResumoDia(linhas, d){
   const hr = x => parseInt(String(x.hora || '').slice(0, 2), 10);
   const L = linhas.filter(x => x.data === d); if(!L.length) return null;
   const au = L.filter(x => /autom/i.test(x.tipo || '')), auOk = au.filter(x => Number(x.reposicao) > 0), vi = L.filter(x => /vis[ií]vel/i.test(x.tipo || '')), ma = L.filter(x => /massiva/i.test(x.tipo || ''));
-  const agora = new Date(); const ate = d === impISO(agora) ? Math.min(22, agora.getHours()) : 22; // hoje: só as horas que já passaram
-  const comLista = new Set(au.map(hr)); const falhou = []; for(let h = 9; h < ate; h++) if(!comLista.has(h)) falhou.push(h);
-  const horas = []; for(let h = 5; h < 24; h++){ const a = auOk.filter(x => hr(x) === h).length, v = vi.filter(x => hr(x) === h).length; if(a || v || (h >= 9 && h < ate)) horas.push({h, a, v, falhou: h >= 9 && h < ate && !comLista.has(h)}); }
+  const agora = new Date(); const ate = d === impISO(agora) ? Math.min(MC_H_FIM, agora.getHours()) : MC_H_FIM; // hoje: só as horas que já passaram
+  const comLista = new Set(au.map(hr)); const falhou = []; for(let h = MC_H_INI; h < ate; h++) if(!comLista.has(h)) falhou.push(h);
+  const horas = []; for(let h = Math.min(5, MC_H_INI); h < 24; h++){ const a = auOk.filter(x => hr(x) === h).length, v = vi.filter(x => hr(x) === h).length; if(a || v || (h >= MC_H_INI && h < ate)) horas.push({h, a, v, falhou: h >= MC_H_INI && h < ate && !comLista.has(h)}); }
   return {d, auOk: auOk.length, vi: vi.length, ma: ma.length, falhou, horas};
 }
 async function blocoSemanasReposicao(){
@@ -16893,7 +16895,7 @@ function mcSemanasHtml(){
     return `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center;"><b>${dn} ${impDDMM(d)}</b><button type="button" onclick="mcImagemDia('${d}')" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:3px 8px;font-size:11px;cursor:pointer;">📷 Dia</button></div>
       <div style="margin-top:2px;line-height:1.5;">${r.falhou.length ? `<span style="color:var(--red);font-weight:700;">❌ Falhou: lista das ${r.falhou.map(x => x + 'h').join(', ')}</span>` : '<span style="color:#1F7A33;font-weight:700;">✓ Listas em todas as horas</span>'}<br>🔁 ${r.auOk} artigos repostos na automática · 👀 ${r.vi} na visível${r.ma ? ` · 🚚 ${r.ma} da massiva` : ''}</div></div>`; }).join('');
   h += `<button type="button" onclick="mcImagemSemana()" style="width:100%;margin-top:10px;border:0;background:#25D366;color:#fff;border-radius:12px;padding:10px;font-size:14px;font-weight:800;cursor:pointer;">📷 Imagem da semana para enviar</button>
-    <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Guarda as últimas 4 semanas. «Falhou» = hora entre as 9h e as 22h sem nenhuma lista automática.</div>`;
+    <div style="font-size:10.5px;color:var(--ink-soft);margin-top:6px;">Guarda as últimas 4 semanas. «Falhou» = hora entre as ${MC_H_INI}h e as ${MC_H_FIM}h sem nenhuma lista automática.</div>`;
   return h;
 }
 // desenha uma imagem simples (para WhatsApp) com título e linhas de texto
@@ -16997,7 +16999,7 @@ function mcResumoTexto(){
   t += `*Hora a hora* (automática · lista falhou · visível)\n`;
   t += R.L.map(x => `${p2(x.h)}h–${p2(x.h + 1)}h: ${x.aOk} · ${!x.dentro ? '—' : x.falhou.length ? `❌ ${x.falhou.length}× (${x.falhou.map(d => MC_SEM_CURTO[mcDow(d)] + ' ' + impDDMM(d)).join(', ')})` : '✓'} · ${x.v}`).join('\n');
   t += `\n\n*🔴 Top 10 ruturas prolongadas (mais de 3 dias)*\n` + (R.top10.length ? R.top10.map((x, i) => `${i + 1}. ${x.artigo} — *${x.dias} dias* (${impDDMM(x.desde)} a ${impDDMM(x.picado)})`).join('\n') : 'Nenhuma rutura com mais de 3 dias.');
-  t += `\n\n«Lista falhou» = dias sem nenhuma lista automática nessa hora (9h–22h). ${R.nd} dia${R.nd > 1 ? 's' : ''} com dados.`;
+  t += `\n\n«Lista falhou» = dias sem nenhuma lista automática nessa hora (${MC_H_INI}h–${MC_H_FIM}h). ${R.nd} dia${R.nd > 1 ? 's' : ''} com dados.`;
   return t;
 }
 async function mcResumoWhatsApp(){
@@ -17081,7 +17083,7 @@ async function blocoReposicaoDia(D){
   D = D || await reposDados(); const {l, nome} = D; const M = mcMesIntervalo();
   let h = `<div class="section-title">🔁 Automáticas hora a hora — ${M.nome}</div>`;
   if(!l.length) return h + `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda sem dados de ${M.nome}. Carregue o relatório de reposição em "📥 Carregar relatórios".</div></div>`;
-  const H = Array.from({length: 13}, (_, i) => i + 9);   // 9h … 21h (a última hora vai até às 22h)
+  const H = Array.from({length: MC_H_FIM - MC_H_INI}, (_, i) => i + MC_H_INI);   // 5h … 22h (a última hora vai até às 23h)
   const hr = x => parseInt(String(x.hora || '').slice(0, 2), 10);
   const datas = [...new Set(l.map(x => x.data))].sort();
   const au = l.filter(x => /autom/i.test(x.tipo || '') && Number(x.reposicao) > 0);
@@ -17100,7 +17102,7 @@ async function blocoReposicaoDia(D){
   h += `<div class="card" id="mc-hora-sem">${mcHoraSemHtml('todos')}</div>`;
   // grelha dia × hora
   const cumpre = porDia.filter(x => !x.semHoras).length;
-  h += `<div class="card"><h3 style="margin-bottom:4px;">Hora a hora (9h–22h)</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Cada quadrado = artigos repostos nessa hora. <span style="background:#FBE3DE;padding:0 5px;border-radius:3px;">rosa</span> = hora sem automáticas. Cumprido em <b style="color:${cumpre === datas.length ? 'var(--green)' : 'var(--red)'};">${cumpre} de ${datas.length} dias</b>.</div>
+  h += `<div class="card"><h3 style="margin-bottom:4px;">Hora a hora (${MC_H_INI}h–${MC_H_FIM}h)</h3><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Cada quadrado = artigos repostos nessa hora. <span style="background:#FBE3DE;padding:0 5px;border-radius:3px;">rosa</span> = hora sem automáticas. Cumprido em <b style="color:${cumpre === datas.length ? 'var(--green)' : 'var(--red)'};">${cumpre} de ${datas.length} dias</b>.</div>
     <div style="overflow-x:auto;"><table style="border-collapse:separate;border-spacing:2px;font-size:10px;"><tr><th></th>${H.map(hh => `<th style="font-weight:600;color:var(--ink-soft);width:20px;">${hh}</th>`).join('')}<th style="color:var(--ink-soft);">falt.</th></tr>
     ${[...porDia].reverse().map((x, i, arr) => `${i === 0 || mcSemanaDe(x.d).ini !== mcSemanaDe(arr[i - 1].d).ini ? `<tr><td colspan="${H.length + 2}" style="padding:6px 0 1px;font-size:10.5px;font-weight:800;color:var(--navy);">📅 ${mcSemanaTxt(x.d)}</td></tr>` : ''}<tr><td style="white-space:nowrap;color:${mcDow(x.d) === 0 ? 'var(--red)' : 'var(--ink-soft)'};${mcDow(x.d) === 0 ? 'font-weight:800;' : ''}padding-right:3px;">${mcDiaCurto(x.d)}</td>${H.map(hh => { const n = cel[x.d + '|' + hh] ? cel[x.d + '|' + hh].size : 0; return `<td title="${impDDMM(x.d)} ${hh}h: ${n} artigos" style="width:20px;height:18px;text-align:center;border-radius:3px;background:${corCel(n)};color:${n >= 15 ? '#fff' : '#1d2a22'};">${n || ''}</td>`; }).join('')}<td style="text-align:center;font-weight:800;color:${x.semHoras ? 'var(--red)' : 'var(--green)'};">${x.semHoras || '✓'}</td></tr>`).join('')}
     </table></div></div>`;
