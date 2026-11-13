@@ -1697,6 +1697,20 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 <div class="save-toast" id="save-toast">Guardado</div>
 
 <script>
+// versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
+const APP_V='2026-11-13-1950';
+async function verificarAtualizacao(){
+  try{
+    const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
+    const m = (await r.text()).match(/const APP_V='([^']+)'/);
+    if(m && m[1] !== APP_V){
+      let n = 0; try{ n = Number(sessionStorage.getItem('app_reload_' + m[1]) || 0); sessionStorage.setItem('app_reload_' + m[1], n + 1); }catch(e){}
+      if(n < 2) location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]) + location.hash);
+    }
+  }catch(e){}
+}
+window.addEventListener('load', () => setTimeout(verificarAtualizacao, 1500));
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') verificarAtualizacao(); });
 let currentUser = null;
 
 const SUPABASE_URL = "https://hspekqrhttxeckghtryi.supabase.co";
