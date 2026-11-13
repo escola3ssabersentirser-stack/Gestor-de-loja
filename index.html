@@ -726,6 +726,7 @@
 
       <button class="btn-primary" id="btn-login" onclick="login()">Entrar</button>
       <p class="login-note" style="cursor:pointer;text-decoration:underline;" onclick="toggleModoConvidado()" id="toggle-convidado-link">Entrar como convidado</p>
+      <p class="login-note" style="cursor:pointer;text-decoration:underline;" onclick="entrarComCodigoDemo()">🎟️ Tenho um código de convidado</p>
 
       <p class="login-note">🔒 Acesso reservado à gestão da loja, gestores de área e responsáveis de secção. Os convidados só entram com autorização da gestora.</p>
     </div>
@@ -1678,7 +1679,7 @@
   <div class="drawer-list" id="drawer-list"></div>
   <div class="drawer-footer hidden" id="drawer-footer-gestora">
     <button onclick="abrirCodigosEquipa()">🔑 Códigos de acesso da equipa</button>
-    <button onclick="definirCodigoDemo()">🎟️ Código de demonstração</button>
+    <button onclick="definirCodigoDemo()">🎟️ Código de convidado (1 semana)</button>
   </div>
   <div class="drawer-footer hidden" id="drawer-footer-codigo">
     <button onclick="mudarMeuCodigo()">🔒 Mudar o meu código</button>
@@ -1963,15 +1964,24 @@ function openMenu(){
   document.getElementById('drawer-overlay').classList.add('open');
 }
 
+// gera um código de convidado novo: dá para ver a app (só leitura) durante 7 dias; depois bloqueia sozinho
 async function definirCodigoDemo(){
-  if(!soDona('mudar o código de demonstração')) return;
-  const novo = prompt('Novo código de demonstração (mínimo 6 caracteres).\nQuem tiver este código vê a app em modo só de leitura durante 12 horas.');
-  if(!novo || !novo.trim()) return;
+  if(!soDona('gerar códigos de convidado')) return;
+  let estado = null; try{ estado = await rpc('loja_estado_codigo_demo'); }catch(e){}
+  const dt = t => new Date(t).toLocaleString('pt-PT', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+  const aviso = estado && estado.ativo ? `Há um código ativo até ${dt(estado.expira)}.\nSe gerar um novo, o antigo deixa de funcionar e quem entrou com ele sai.\n\n` : '';
+  if(!confirm(aviso + 'Gerar um código de convidado novo?\nO convidado vê a app como o gestor de loja, só para consultar, durante 1 semana. Depois o código bloqueia sozinho.')) return;
+  const L = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; const r8 = crypto.getRandomValues(new Uint32Array(8));
+  const codigo = [...r8].map(n => L[n % L.length]).join('');
   try{
-    const r = await rpc('loja_definir_codigo_demo', {p_codigo: novo.trim()});
-    if(r && r.erro){ alert(r.erro); return; }
-    showToast(); closeMenu();
-  }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
+    const r = await rpc('loja_definir_codigo_demo', {p_codigo: codigo});
+    if(!r || r.erro){ alert((r && r.erro) || 'Não consegui gerar o código.'); return; }
+    closeMenu();
+    const ate = dt(r.expira);
+    const txt = `Olá! Tem acesso de convidado à app da loja 747 Portuzelo até ${ate}.\n1) Abra ${location.origin + location.pathname}\n2) Carregue em «🎟️ Tenho um código de convidado»\n3) Escreva o código: ${codigo}`;
+    if(confirm(`✓ Código de convidado: ${codigo}\nVálido até ${ate}.\n\nQuer enviá-lo agora por WhatsApp?`)) window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+    else prompt('Copie o código e as instruções:', txt);
+  }catch(e){ alert('Não consegui gerar o código. Tente novamente.'); }
 }
 
 function closeMenu(){
@@ -5162,15 +5172,15 @@ function terminarSessaoLocal(){
 }
 
 function entrarComCodigoDemo(){
-  abrirFormularioGenerico('🔑 Código de Demonstração', [
-    {id:'codigo', label:'Introduza o código de demonstração', tipo:'password'}
+  abrirFormularioGenerico('🔑 Código de convidado', [
+    {id:'codigo', label:'Introduza o código de convidado', tipo:'password'}
   ], async (valores)=>{
     try{
       const r = await rpc('loja_entrar_demo', {p_codigo: valores.codigo || ''});
       if(!r || r.erro || !r.token){ alert((r && r.erro) || 'Código inválido.'); return; }
       guardarToken(r.token);
       modoDemo = true;
-      currentUser = {name: 'Acesso de Demonstração', role: 'demo'};
+      currentUser = {name: 'Convidado', role: 'demo'};
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('header-name').textContent = currentUser.name;
       selectMenu('dashboard', 'Dashboard');
