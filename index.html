@@ -17559,7 +17559,7 @@ async function renderControloQuebra(){
 
   try{ html += await blocoTopQuebraVQ(); }catch(e){ console.error('top quebra VQ', e); }
   try{ html += blocoRegrasQuebra(); }catch(e){ console.error('regras quebra', e); }
-  try{ html += `<div id="pp-wrap">${await blocoPlanoProducao()}</div>`; }catch(e){ console.error('plano produção', e); }
+  // o plano de ação («Ações do plano») saiu das quebras a pedido da gestora
   try{ html += await blocoMapasProducao(); }catch(e){ console.error('mapas produção', e); }
   if(INV_VISIVEL) html += await blocoInventarioPorSecao();
   html += await blocoScoreValidades();
