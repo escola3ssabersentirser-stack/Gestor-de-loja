@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-13-2210';
+const APP_V='2026-11-15-0900';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2517,6 +2517,9 @@ function renderPainelResumo(){
     h += `</tbody></table></div>`;
   }
 
+  // ---- Secções: vendas e quebra do mês comparadas com o mesmo período de 2025 (ficheiro «Vendas e Quebras Mensal»)
+  h += `<div id="rp-secoes-aa"></div>`;
+
   // ---- Vendas e quebra mês a mês
   if((r.meses||[]).length){
     h += `<div class="rp-bloco-tit">Vendas e quebra mês a mês</div>
@@ -2547,10 +2550,43 @@ function renderPainelResumo(){
   }
 
   box.innerHTML = h;
+  rpSecoesAA().catch(e => console.warn('secções vs ano anterior', e));
   renderDatasDados().catch(()=>{});
   renderFaixaLembretes().catch(()=>{});
 }
 
+
+// divisões do ficheiro «Vendas e Quebras Mensal» agrupadas pelas secções da loja
+const RP_SECOES_AA = [
+  ['🥩 Talho', /^talho/i], ['🐟 Peixaria', /^peixaria/i], ['🍎 Fruta e Legumes', /frutas/i], ['🥖 Padaria', /^padaria/i],
+  ['🍗 Pronto a Comer', /take-?away|pronto a comer|restaura/i], ['🧀 Charcutaria e Queijos', /charcutaria|queijos/i], ['💐 Flores', /^flores/i]
+];
+async function rpSecoesAA(){
+  const box = document.getElementById('rp-secoes-aa'); if(!box) return;
+  const cats = await impTodos('loja_categorias_perda_vendas?select=divisao,venda_ac,venda_aa,quebra_ac,quebra_ac_pct,delta_quebra_pp,data_referencia').catch(() => []);
+  if(!cats.length){ box.innerHTML = ''; return; }
+  const N = v => Number(v) || 0;
+  const grupos = {}; const ordem = [...RP_SECOES_AA.map(x => x[0]), '🛒 Livre Serviço'];
+  cats.forEach(c => { const g = (RP_SECOES_AA.find(([, re]) => re.test(c.divisao || '')) || ['🛒 Livre Serviço'])[0];
+    const o = grupos[g] = grupos[g] || {vac: 0, vaa: 0, qac: 0, qaa: 0, divs: new Set()};
+    o.vac += N(c.venda_ac); o.vaa += N(c.venda_aa); o.qac += Math.abs(N(c.quebra_ac)); o.qaa += Math.abs((N(c.quebra_ac_pct) - N(c.delta_quebra_pp)) / 100 * N(c.venda_aa)); o.divs.add(c.divisao); });
+  const linhas = ordem.filter(g => grupos[g] && (grupos[g].vac || grupos[g].vaa)).map(g => { const o = grupos[g];
+    return {g, ...o, dv: o.vaa ? (o.vac / o.vaa - 1) * 100 : null, pq: o.vac ? o.qac / o.vac * 100 : 0, pqa: o.vaa ? o.qaa / o.vaa * 100 : 0}; });
+  const tot = linhas.reduce((t, x) => ({vac: t.vac + x.vac, vaa: t.vaa + x.vaa, qac: t.qac + x.qac, qaa: t.qaa + x.qaa}), {vac: 0, vaa: 0, qac: 0, qaa: 0});
+  const ref = cats.map(c => c.data_referencia).filter(Boolean).sort().pop();
+  const e0 = v => Math.round(v).toLocaleString('pt-PT') + ' €';
+  const chip = (v, bomSeSobe, suf) => { if(v == null || !isFinite(v)) return '<span style="color:var(--ink-soft);">–</span>'; const bom = bomSeSobe ? v >= 0 : v <= 0; const cor = Math.abs(v) < (suf === ' pp' ? 0.1 : 0.5) ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
+    return `<b style="color:${cor};white-space:nowrap;">${v > 0 ? '▲ +' : v < 0 ? '▼ ' : ''}${v.toLocaleString('pt-PT', {maximumFractionDigits: 1, minimumFractionDigits: 1})}${suf}</b>`; };
+  const linha = (x, total) => `<div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);${total ? 'font-weight:800;' : ''}">
+    <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;">${x.g}</div><div style="font-size:11px;color:var(--ink-soft);">${e0(x.vac)} · 2025: ${e0(x.vaa)}</div></div>
+    <div style="text-align:right;font-size:13.5px;">${chip(x.dv, true, '%')}<div style="font-size:10.5px;color:var(--ink-soft);">vendas</div></div>
+    <div style="text-align:right;font-size:13.5px;">${chip(x.pq - x.pqa, false, ' pp')}<div style="font-size:10.5px;color:var(--ink-soft);">quebra ${x.pq.toLocaleString('pt-PT', {maximumFractionDigits: 1})}% <span style="opacity:.8;">(2025: ${x.pqa.toLocaleString('pt-PT', {maximumFractionDigits: 1})}%)</span></div></div></div>`;
+  const T = {g: 'Total da loja', ...tot, dv: tot.vaa ? (tot.vac / tot.vaa - 1) * 100 : null, pq: tot.vac ? tot.qac / tot.vac * 100 : 0, pqa: tot.vaa ? tot.qaa / tot.vaa * 100 : 0};
+  box.innerHTML = `<div class="rp-bloco-tit">Secções: este mês vs 2025</div>
+    <div class="h3s-card"><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Mês até ${ref ? impDDMM(ref) : '—'}, comparado com o mesmo período de 2025. Vendas: verde = cresce. Quebra: em pontos percentuais (pp) das vendas — verde = baixou.</div>
+    ${linhas.map(x => linha(x)).join('')}${linha(T, true)}
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12px;color:var(--navy);font-weight:700;">Que divisões entram em cada secção</summary><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5;">${linhas.map(x => `<b>${x.g}</b>: ${[...x.divs].join(', ')}`).join('<br>')}</div></details></div>`;
+}
 
 // ===================== CARREGAR FICHEIROS DO DIA (Excel) → SUPABASE =====================
 // Reconhece sozinho: Resumo_Loja_Automatico, Bom Dia, Markdown da Loja, Vendas e Quebras Mensal,
