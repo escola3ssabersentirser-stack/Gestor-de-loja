@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-15-0935';
+const APP_V='2026-11-15-0945';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2518,7 +2518,7 @@ function renderPainelResumo(){
   }
 
   // ---- Secções: vendas e quebra do mês comparadas com o mesmo período de 2025 (ficheiro «Vendas e Quebras Mensal»)
-  h += `<div id="rp-secoes-aa"></div>`;
+  h += `<div class="rp-bloco-tit">Secções vs ano anterior</div><div class="sec-aa" data-tipo="v"></div><div class="sec-aa" data-tipo="q"></div>`;
 
   // ---- Vendas e quebra mês a mês
   if((r.meses||[]).length){
@@ -2550,7 +2550,7 @@ function renderPainelResumo(){
   }
 
   box.innerHTML = h;
-  rpSecoesAA().catch(e => console.warn('secções vs ano anterior', e));
+  secAAPreencher(0, true).catch(e => console.warn('secções vs ano anterior', e));
   renderDatasDados().catch(()=>{});
   renderFaixaLembretes().catch(()=>{});
 }
@@ -2574,40 +2574,55 @@ async function rpSecoesGuardarMes(lista, dataRef){
   if(rows.length) await sb('loja_secoes_mes', {method: 'POST', body: JSON.stringify(rows)});
 }
 let rpSecMes = null;
-async function rpSecoesAA(escolha){
-  const box = document.getElementById('rp-secoes-aa'); if(!box) return;
+// cartões «Vendas por secção» (tipo v) e «Quebra por secção» (tipo q) vs ano anterior: escolher o mês (jan a dez) ou o total do ano
+async function rpSecoesAA(escolha){ if(escolha) rpSecMes = escolha; return secAAPreencher(); }
+// preenche os cartões; quando o ecrã ainda está a ser montado, espera pelos cartões novos (até ~6 s)
+async function secAAPreencher(tentativa, soNovos){
+  const els = [...document.querySelectorAll('.sec-aa')].filter(el => !soNovos || !el.dataset.ok);
+  if(!els.length){ if((tentativa || 0) < 40) setTimeout(() => secAAPreencher((tentativa || 0) + 1, soNovos), 150); return; }
   const todos = await impTodos('loja_secoes_mes?select=*&order=mes.asc').catch(() => []);
-  if(!todos.length){ box.innerHTML = ''; return; }
+  els.forEach(el => { el.innerHTML = secAAHtml(el.dataset.tipo, todos); el.dataset.ok = '1'; });
+}
+function secAAHtml(tipo, todos){
+  const NOMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], NOMES_L = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const meses = [...new Set(todos.map(r => r.mes))].sort();
-  const ano = (escolha && escolha.startsWith('ano-')) ? escolha.slice(4) : (rpSecMes && rpSecMes.startsWith('ano-') ? rpSecMes.slice(4) : null);
-  if(escolha) rpSecMes = escolha; if(!rpSecMes || (!rpSecMes.startsWith('ano-') && !meses.includes(rpSecMes))) rpSecMes = meses[meses.length - 1];
-  const anos = [...new Set(meses.map(m => m.slice(0, 4)))];
-  const sel = rpSecMes.startsWith('ano-') ? todos.filter(r => r.mes.startsWith(rpSecMes.slice(4))) : todos.filter(r => r.mes === rpSecMes);
-  const N = v => Number(v) || 0, NOMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-  const g = {}; sel.forEach(r => { const o = g[r.secao] = g[r.secao] || {g: r.secao, ordem: r.ordem || 9, vac: 0, vaa: 0, qac: 0, qaa: 0, divs: new Set()}; o.vac += N(r.vendas); o.vaa += N(r.vendas_aa); o.qac += N(r.quebra); o.qaa += N(r.quebra_aa); String(r.divisoes || '').split(', ').filter(Boolean).forEach(d => o.divs.add(d)); });
+  const anoSel = (rpSecMes && rpSecMes.startsWith('ano-')) ? rpSecMes.slice(4) : (rpSecMes ? rpSecMes.slice(0, 4) : (meses.length ? meses[meses.length - 1].slice(0, 4) : String(new Date().getFullYear())));
+  if(!rpSecMes) rpSecMes = meses.length ? meses[meses.length - 1] : 'ano-' + anoSel;
+  const anoAnt = Number(anoSel) - 1, eAno = rpSecMes.startsWith('ano-');
+  const sel = eAno ? todos.filter(r => r.mes.startsWith(anoSel)) : todos.filter(r => r.mes === rpSecMes);
+  const N = v => Number(v) || 0;
+  const g = {}; sel.forEach(r => { const o = g[r.secao] = g[r.secao] || {g: r.secao, ordem: r.ordem || 9, vac: 0, vaa: 0, qac: 0, qaa: 0}; o.vac += N(r.vendas); o.vaa += N(r.vendas_aa); o.qac += N(r.quebra); o.qaa += N(r.quebra_aa); });
   const fin = o => ({...o, dv: o.vaa ? (o.vac / o.vaa - 1) * 100 : null, pq: o.vac ? o.qac / o.vac * 100 : 0, pqa: o.vaa ? o.qaa / o.vaa * 100 : 0});
   const linhas = Object.values(g).sort((a, b) => a.ordem - b.ordem).map(fin);
   const T = fin(linhas.reduce((t, x) => ({g: 'Total da loja', vac: t.vac + x.vac, vaa: t.vaa + x.vaa, qac: t.qac + x.qac, qaa: t.qaa + x.qaa}), {vac: 0, vaa: 0, qac: 0, qaa: 0}));
-  const e0 = v => Math.round(v).toLocaleString('pt-PT') + ' €';
-  const chip = (v, bomSeSobe, suf) => { if(v == null || !isFinite(v)) return '<span style="color:var(--ink-soft);">–</span>'; if(Math.abs(v) < 0.05) return '<b style="color:var(--ink-soft);">= 0' + suf + '</b>'; const bom = bomSeSobe ? v >= 0 : v <= 0; const cor = Math.abs(v) < (suf === ' pp' ? 0.1 : 0.5) ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
-    return `<b style="color:${cor};white-space:nowrap;">${v > 0 ? '▲ +' : v < 0 ? '▼ ' : ''}${v.toLocaleString('pt-PT', {maximumFractionDigits: 1, minimumFractionDigits: 1})}${suf}</b>`; };
-  const anoAnt = (rpSecMes.startsWith('ano-') ? Number(rpSecMes.slice(4)) : Number(rpSecMes.slice(0, 4))) - 1;
-  const linha = (x, total) => `<div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);${total ? 'font-weight:800;' : ''}">
-    <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;">${x.g}</div><div style="font-size:11px;color:var(--ink-soft);">${e0(x.vac)} · ${anoAnt}: ${e0(x.vaa)}</div></div>
-    <div style="text-align:right;font-size:13.5px;">${chip(x.dv, true, '%')}<div style="font-size:10.5px;color:var(--ink-soft);">vendas</div></div>
-    <div style="text-align:right;font-size:13.5px;">${chip(x.pq - x.pqa, false, ' pp')}<div style="font-size:10.5px;color:var(--ink-soft);">quebra ${x.pq.toLocaleString('pt-PT', {maximumFractionDigits: 1})}% <span style="opacity:.8;">(${anoAnt}: ${x.pqa.toLocaleString('pt-PT', {maximumFractionDigits: 1})}%)</span></div></div></div>`;
-  const btn = (k, t) => `<button type="button" onclick="rpSecoesAA('${k}')" style="border:1px solid ${rpSecMes === k ? 'var(--navy)' : 'var(--line)'};background:${rpSecMes === k ? 'var(--navy)' : '#fff'};color:${rpSecMes === k ? '#fff' : 'var(--navy)'};border-radius:14px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">${t}</button>`;
+  const e0 = v => Math.round(v).toLocaleString('pt-PT') + ' €', p1 = v => v.toLocaleString('pt-PT', {maximumFractionDigits: 1, minimumFractionDigits: 1});
+  const chip = (v, bomSeSobe, suf) => { if(v == null || !isFinite(v)) return '<span style="color:var(--ink-soft);">–</span>'; if(Math.abs(v) < 0.05) return '<b style="color:var(--ink-soft);">= 0' + suf + '</b>';
+    const bom = bomSeSobe ? v >= 0 : v <= 0; return `<b style="color:${bom ? '#1F7A33' : 'var(--red)'};white-space:nowrap;">${v > 0 ? '▲ +' : '▼ '}${p1(v)}${suf}</b>`; };
   const ateMes = m => { const r = todos.find(x => x.mes === m); return r && r.ate ? r.ate : null; };
   const fimMes = m => { const [a, mm] = m.split('-').map(Number); return impISO(new Date(a, mm, 0)); };
+  const btn = (k, t, tem) => `<button type="button" onclick="rpSecoesAA('${k}')" style="border:1px ${tem ? 'solid' : 'dashed'} ${rpSecMes === k ? 'var(--navy)' : 'var(--line)'};background:${rpSecMes === k ? 'var(--navy)' : '#fff'};color:${rpSecMes === k ? '#fff' : tem ? 'var(--navy)' : '#A9B0B8'};border-radius:14px;padding:5px 0;font-size:12px;font-weight:700;cursor:pointer;">${t}</button>`;
+  const chips = `<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;margin-bottom:6px;">${NOMES.map((n, i) => { const k = `${anoSel}-${String(i + 1).padStart(2, '0')}`; return btn(k, n, meses.includes(k)); }).join('')}</div>
+    <div style="margin-bottom:8px;">${btn('ano-' + anoSel, 'Total ' + anoSel, meses.some(m => m.startsWith(anoSel))).replace('padding:5px 0', 'padding:6px 14px')}</div>`;
   let periodo;
-  if(rpSecMes.startsWith('ano-')){ const ms = meses.filter(m => m.startsWith(rpSecMes.slice(4))); const parciais = ms.filter(m => ateMes(m) && ateMes(m) < fimMes(m));
-    periodo = `Ano ${rpSecMes.slice(4)}: soma dos meses carregados (${ms.map(m => NOMES[Number(m.slice(5)) - 1]).join(', ')})${parciais.length ? ` · ${parciais.map(m => NOMES[Number(m.slice(5)) - 1] + ' até ' + impDDMM(ateMes(m))).join(', ')}` : ''}. Falta algum mês? Carregue o «Vendas e Quebras Mensal» do último dia desse mês.`; }
-  else { const a = ateMes(rpSecMes); periodo = `${NOMES[Number(rpSecMes.slice(5)) - 1]} ${rpSecMes.slice(0, 4)}${a && a < fimMes(rpSecMes) ? ' até ' + impDDMM(a) : ' (mês completo)'}, comparado com o mesmo período de ${anoAnt}.`; }
-  box.innerHTML = `<div class="rp-bloco-tit">Secções: vendas e quebra vs ano anterior</div>
-    <div class="h3s-card"><div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">${meses.map(m => btn(m, NOMES[Number(m.slice(5)) - 1] + (anos.length > 1 ? ' ' + m.slice(2, 4) : ''))).join('')}${anos.map(a => btn('ano-' + a, 'Total ' + a)).join('')}</div>
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">${periodo} Vendas: verde = cresce. Quebra em pontos percentuais (pp) das vendas: verde = baixou.</div>
-    ${linhas.map(x => linha(x)).join('')}${linha(T, true)}
-    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12px;color:var(--navy);font-weight:700;">Que divisões entram em cada secção</summary><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5;">${linhas.map(x => `<b>${x.g}</b>: ${[...x.divs].join(', ')}`).join('<br>')}</div></details></div>`;
+  if(eAno){ const ms = meses.filter(m => m.startsWith(anoSel)); const falta = NOMES_L.filter((n, i) => `${anoSel}-${String(i + 1).padStart(2, '0')}` < impISO(new Date()).slice(0, 7) && !ms.includes(`${anoSel}-${String(i + 1).padStart(2, '0')}`));
+    periodo = `Total ${anoSel} = soma de ${ms.length} ${ms.length === 1 ? 'mês' : 'meses'} (${ms.map(m => NOMES[Number(m.slice(5)) - 1]).join(', ') || '—'})${falta.length ? ` · <b style="color:var(--red);">faltam ${falta.join(', ')}</b>` : ''}.`; }
+  else { const a = ateMes(rpSecMes); periodo = `${NOMES_L[Number(rpSecMes.slice(5)) - 1]} ${rpSecMes.slice(0, 4)}${a && a < fimMes(rpSecMes) ? ' até ' + impDDMM(a) : ''} vs o mesmo período de ${anoAnt}.`; }
+  const vazio = !linhas.length ? `<div style="font-size:12.5px;color:var(--ink-soft);padding:12px 0;border-top:1px solid var(--line);">Sem dados ${eAno ? 'deste ano' : 'de ' + NOMES_L[Number(rpSecMes.slice(5)) - 1]}. Carregue em «📥 Carregar relatórios» o «Vendas e Quebras Mensal» desse mês (tirado no último dia do mês).</div>` : '';
+  const grid = 'display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,0.9fr);gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);';
+  let corpo;
+  if(tipo === 'q'){
+    const ln = (x, t) => `<div style="${grid}${t ? 'font-weight:800;' : ''}"><div style="min-width:0;font-size:13.5px;font-weight:700;">${x.g}</div>
+      <div style="text-align:right;"><div style="font-size:13.5px;font-weight:700;">${e0(x.qac)} · ${p1(x.pq)}%</div><div style="font-size:10.5px;color:var(--ink-soft);">${anoAnt}: ${e0(x.qaa)} · ${p1(x.pqa)}%</div></div>
+      <div style="text-align:right;font-size:13.5px;">${chip(x.pq - x.pqa, false, ' pp')}</div></div>`;
+    corpo = `<div style="${grid}font-size:10.5px;color:var(--ink-soft);font-weight:700;border-top:none;padding-top:0;"><span>Secção</span><span style="text-align:right;">Quebra (€ · % das vendas)</span><span style="text-align:right;">vs ${anoAnt}</span></div>` + linhas.map(x => ln(x)).join('') + (linhas.length ? ln(T, true) : '');
+  } else {
+    const ln = (x, t) => `<div style="${grid}${t ? 'font-weight:800;' : ''}"><div style="min-width:0;font-size:13.5px;font-weight:700;">${x.g}</div>
+      <div style="text-align:right;"><div style="font-size:13.5px;font-weight:700;">${e0(x.vac)}</div><div style="font-size:10.5px;color:var(--ink-soft);">${anoAnt}: ${e0(x.vaa)}</div></div>
+      <div style="text-align:right;font-size:13.5px;">${chip(x.dv, true, '%')}</div></div>`;
+    corpo = `<div style="${grid}font-size:10.5px;color:var(--ink-soft);font-weight:700;border-top:none;padding-top:0;"><span>Secção</span><span style="text-align:right;">Vendas</span><span style="text-align:right;">vs ${anoAnt}</span></div>` + linhas.map(x => ln(x)).join('') + (linhas.length ? ln(T, true) : '');
+  }
+  return `<div class="h3s-card" style="margin-bottom:12px;"><div class="rp-graf-tit">${tipo === 'q' ? '🗑️ Quebra por secção' : '💶 Vendas por secção'} vs ${anoAnt}</div>${chips}
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">${periodo} ${tipo === 'q' ? 'Verde = a quebra baixou (em pontos percentuais das vendas).' : 'Verde = vende mais do que no ano anterior.'}</div>${vazio || corpo}</div>`;
 }
 
 // ===================== CARREGAR FICHEIROS DO DIA (Excel) → SUPABASE =====================
@@ -13440,6 +13455,7 @@ async function renderPainelVendas(){
 
   let html = await blocoVendasDiaMesAno(r);
   try{ if(!resumoPainel) resumoPainel = RESUMO_PADRAO; html += rpTabelaSecoes(rpSincronizarMesAtual(resumoPainel)); }catch(e){ console.error('secções', e); }
+  html += `<div class="sec-aa" data-tipo="v"></div>`; setTimeout(() => secAAPreencher(0, true).catch(() => {}), 80);
   html += `<div class="section-title">💶 Vendas</div>`;
   html += `<div class="card">
     <div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="font-size:12.5px;color:var(--ink-soft);">Ontem</span><span style="font-size:15px;font-weight:800;color:var(--navy);">${vendasDia.length?fmtEuro(vendasDia[0].vendas_real):'—'}</span></div>
@@ -17692,6 +17708,7 @@ async function renderControloQuebra(){
 
   let html = '';
 
+  html += `<div class="sec-aa" data-tipo="q"></div>`; setTimeout(() => secAAPreencher(0, true).catch(() => {}), 80);
   try{ html += await blocoTopQuebraVQ(); }catch(e){ console.error('top quebra VQ', e); }
   try{ html += blocoRegrasQuebra(); }catch(e){ console.error('regras quebra', e); }
   // o plano de ação («Ações do plano») saiu das quebras a pedido da gestora
