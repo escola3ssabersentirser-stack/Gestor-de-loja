@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-15-0900';
+const APP_V='2026-11-15-0920';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2561,29 +2561,51 @@ const RP_SECOES_AA = [
   ['🥩 Talho', /^talho/i], ['🐟 Peixaria', /^peixaria/i], ['🍎 Fruta e Legumes', /frutas/i], ['🥖 Padaria', /^padaria/i],
   ['🍗 Pronto a Comer', /take-?away|pronto a comer|restaura/i], ['🧀 Charcutaria e Queijos', /charcutaria|queijos/i], ['💐 Flores', /^flores/i]
 ];
-async function rpSecoesAA(){
+function rpSecaoDe(div){ const i = RP_SECOES_AA.findIndex(([, re]) => re.test(div || '')); return i >= 0 ? [RP_SECOES_AA[i][0], i + 1] : ['🛒 Livre Serviço', RP_SECOES_AA.length + 1]; }
+async function rpSecoesGuardarMes(lista, dataRef){
+  const N = v => Number(v) || 0, mes = dataRef.slice(0, 7);
+  const ant = await sb(`loja_secoes_mes?mes=eq.${mes}&select=ate&limit=1`).catch(() => []);
+  if(ant && ant[0] && ant[0].ate && ant[0].ate > dataRef) return; // já há dados mais recentes desse mês
+  const g = {};
+  lista.forEach(c => { const [sec, ordem] = rpSecaoDe(c.divisao); const o = g[sec] = g[sec] || {mes, secao: sec, ordem, vendas: 0, vendas_aa: 0, quebra: 0, quebra_aa: 0, divs: new Set(), ate: dataRef};
+    o.vendas += N(c.venda_ac); o.vendas_aa += N(c.venda_aa); o.quebra += Math.abs(N(c.quebra_ac)); o.quebra_aa += Math.abs((N(c.quebra_ac_pct) - N(c.delta_quebra_pp)) / 100 * N(c.venda_aa)); o.divs.add(c.divisao); });
+  const rows = Object.values(g).map(o => ({mes: o.mes, secao: o.secao, ordem: o.ordem, vendas: impR2(o.vendas), vendas_aa: impR2(o.vendas_aa), quebra: impR2(o.quebra), quebra_aa: impR2(o.quebra_aa), divisoes: [...o.divs].join(', '), ate: o.ate, atualizado_em: new Date().toISOString()}));
+  await sb(`loja_secoes_mes?mes=eq.${mes}`, {method: 'DELETE'});
+  if(rows.length) await sb('loja_secoes_mes', {method: 'POST', body: JSON.stringify(rows)});
+}
+let rpSecMes = null;
+async function rpSecoesAA(escolha){
   const box = document.getElementById('rp-secoes-aa'); if(!box) return;
-  const cats = await impTodos('loja_categorias_perda_vendas?select=divisao,venda_ac,venda_aa,quebra_ac,quebra_ac_pct,delta_quebra_pp,data_referencia').catch(() => []);
-  if(!cats.length){ box.innerHTML = ''; return; }
-  const N = v => Number(v) || 0;
-  const grupos = {}; const ordem = [...RP_SECOES_AA.map(x => x[0]), '🛒 Livre Serviço'];
-  cats.forEach(c => { const g = (RP_SECOES_AA.find(([, re]) => re.test(c.divisao || '')) || ['🛒 Livre Serviço'])[0];
-    const o = grupos[g] = grupos[g] || {vac: 0, vaa: 0, qac: 0, qaa: 0, divs: new Set()};
-    o.vac += N(c.venda_ac); o.vaa += N(c.venda_aa); o.qac += Math.abs(N(c.quebra_ac)); o.qaa += Math.abs((N(c.quebra_ac_pct) - N(c.delta_quebra_pp)) / 100 * N(c.venda_aa)); o.divs.add(c.divisao); });
-  const linhas = ordem.filter(g => grupos[g] && (grupos[g].vac || grupos[g].vaa)).map(g => { const o = grupos[g];
-    return {g, ...o, dv: o.vaa ? (o.vac / o.vaa - 1) * 100 : null, pq: o.vac ? o.qac / o.vac * 100 : 0, pqa: o.vaa ? o.qaa / o.vaa * 100 : 0}; });
-  const tot = linhas.reduce((t, x) => ({vac: t.vac + x.vac, vaa: t.vaa + x.vaa, qac: t.qac + x.qac, qaa: t.qaa + x.qaa}), {vac: 0, vaa: 0, qac: 0, qaa: 0});
-  const ref = cats.map(c => c.data_referencia).filter(Boolean).sort().pop();
+  const todos = await impTodos('loja_secoes_mes?select=*&order=mes.asc').catch(() => []);
+  if(!todos.length){ box.innerHTML = ''; return; }
+  const meses = [...new Set(todos.map(r => r.mes))].sort();
+  const ano = (escolha && escolha.startsWith('ano-')) ? escolha.slice(4) : (rpSecMes && rpSecMes.startsWith('ano-') ? rpSecMes.slice(4) : null);
+  if(escolha) rpSecMes = escolha; if(!rpSecMes || (!rpSecMes.startsWith('ano-') && !meses.includes(rpSecMes))) rpSecMes = meses[meses.length - 1];
+  const anos = [...new Set(meses.map(m => m.slice(0, 4)))];
+  const sel = rpSecMes.startsWith('ano-') ? todos.filter(r => r.mes.startsWith(rpSecMes.slice(4))) : todos.filter(r => r.mes === rpSecMes);
+  const N = v => Number(v) || 0, NOMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const g = {}; sel.forEach(r => { const o = g[r.secao] = g[r.secao] || {g: r.secao, ordem: r.ordem || 9, vac: 0, vaa: 0, qac: 0, qaa: 0, divs: new Set()}; o.vac += N(r.vendas); o.vaa += N(r.vendas_aa); o.qac += N(r.quebra); o.qaa += N(r.quebra_aa); String(r.divisoes || '').split(', ').filter(Boolean).forEach(d => o.divs.add(d)); });
+  const fin = o => ({...o, dv: o.vaa ? (o.vac / o.vaa - 1) * 100 : null, pq: o.vac ? o.qac / o.vac * 100 : 0, pqa: o.vaa ? o.qaa / o.vaa * 100 : 0});
+  const linhas = Object.values(g).sort((a, b) => a.ordem - b.ordem).map(fin);
+  const T = fin(linhas.reduce((t, x) => ({g: 'Total da loja', vac: t.vac + x.vac, vaa: t.vaa + x.vaa, qac: t.qac + x.qac, qaa: t.qaa + x.qaa}), {vac: 0, vaa: 0, qac: 0, qaa: 0}));
   const e0 = v => Math.round(v).toLocaleString('pt-PT') + ' €';
   const chip = (v, bomSeSobe, suf) => { if(v == null || !isFinite(v)) return '<span style="color:var(--ink-soft);">–</span>'; const bom = bomSeSobe ? v >= 0 : v <= 0; const cor = Math.abs(v) < (suf === ' pp' ? 0.1 : 0.5) ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
     return `<b style="color:${cor};white-space:nowrap;">${v > 0 ? '▲ +' : v < 0 ? '▼ ' : ''}${v.toLocaleString('pt-PT', {maximumFractionDigits: 1, minimumFractionDigits: 1})}${suf}</b>`; };
+  const anoAnt = (rpSecMes.startsWith('ano-') ? Number(rpSecMes.slice(4)) : Number(rpSecMes.slice(0, 4))) - 1;
   const linha = (x, total) => `<div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);${total ? 'font-weight:800;' : ''}">
-    <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;">${x.g}</div><div style="font-size:11px;color:var(--ink-soft);">${e0(x.vac)} · 2025: ${e0(x.vaa)}</div></div>
+    <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;">${x.g}</div><div style="font-size:11px;color:var(--ink-soft);">${e0(x.vac)} · ${anoAnt}: ${e0(x.vaa)}</div></div>
     <div style="text-align:right;font-size:13.5px;">${chip(x.dv, true, '%')}<div style="font-size:10.5px;color:var(--ink-soft);">vendas</div></div>
-    <div style="text-align:right;font-size:13.5px;">${chip(x.pq - x.pqa, false, ' pp')}<div style="font-size:10.5px;color:var(--ink-soft);">quebra ${x.pq.toLocaleString('pt-PT', {maximumFractionDigits: 1})}% <span style="opacity:.8;">(2025: ${x.pqa.toLocaleString('pt-PT', {maximumFractionDigits: 1})}%)</span></div></div></div>`;
-  const T = {g: 'Total da loja', ...tot, dv: tot.vaa ? (tot.vac / tot.vaa - 1) * 100 : null, pq: tot.vac ? tot.qac / tot.vac * 100 : 0, pqa: tot.vaa ? tot.qaa / tot.vaa * 100 : 0};
-  box.innerHTML = `<div class="rp-bloco-tit">Secções: este mês vs 2025</div>
-    <div class="h3s-card"><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Mês até ${ref ? impDDMM(ref) : '—'}, comparado com o mesmo período de 2025. Vendas: verde = cresce. Quebra: em pontos percentuais (pp) das vendas — verde = baixou.</div>
+    <div style="text-align:right;font-size:13.5px;">${chip(x.pq - x.pqa, false, ' pp')}<div style="font-size:10.5px;color:var(--ink-soft);">quebra ${x.pq.toLocaleString('pt-PT', {maximumFractionDigits: 1})}% <span style="opacity:.8;">(${anoAnt}: ${x.pqa.toLocaleString('pt-PT', {maximumFractionDigits: 1})}%)</span></div></div></div>`;
+  const btn = (k, t) => `<button type="button" onclick="rpSecoesAA('${k}')" style="border:1px solid ${rpSecMes === k ? 'var(--navy)' : 'var(--line)'};background:${rpSecMes === k ? 'var(--navy)' : '#fff'};color:${rpSecMes === k ? '#fff' : 'var(--navy)'};border-radius:14px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;">${t}</button>`;
+  const ateMes = m => { const r = todos.find(x => x.mes === m); return r && r.ate ? r.ate : null; };
+  const fimMes = m => { const [a, mm] = m.split('-').map(Number); return impISO(new Date(a, mm, 0)); };
+  let periodo;
+  if(rpSecMes.startsWith('ano-')){ const ms = meses.filter(m => m.startsWith(rpSecMes.slice(4))); const parciais = ms.filter(m => ateMes(m) && ateMes(m) < fimMes(m));
+    periodo = `Ano ${rpSecMes.slice(4)}: soma dos meses carregados (${ms.map(m => NOMES[Number(m.slice(5)) - 1]).join(', ')})${parciais.length ? ` · ${parciais.map(m => NOMES[Number(m.slice(5)) - 1] + ' até ' + impDDMM(ateMes(m))).join(', ')}` : ''}. Falta algum mês? Carregue o «Vendas e Quebras Mensal» do último dia desse mês.`; }
+  else { const a = ateMes(rpSecMes); periodo = `${NOMES[Number(rpSecMes.slice(5)) - 1]} ${rpSecMes.slice(0, 4)}${a && a < fimMes(rpSecMes) ? ' até ' + impDDMM(a) : ' (mês completo)'}, comparado com o mesmo período de ${anoAnt}.`; }
+  box.innerHTML = `<div class="rp-bloco-tit">Secções: vendas e quebra vs ano anterior</div>
+    <div class="h3s-card"><div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">${meses.map(m => btn(m, NOMES[Number(m.slice(5)) - 1] + (anos.length > 1 ? ' ' + m.slice(2, 4) : ''))).join('')}${anos.map(a => btn('ano-' + a, 'Total ' + a)).join('')}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">${periodo} Vendas: verde = cresce. Quebra em pontos percentuais (pp) das vendas: verde = baixou.</div>
     ${linhas.map(x => linha(x)).join('')}${linha(T, true)}
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12px;color:var(--navy);font-weight:700;">Que divisões entram em cada secção</summary><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5;">${linhas.map(x => `<b>${x.g}</b>: ${[...x.divs].join(', ')}`).join('<br>')}</div></details></div>`;
 }
@@ -3078,20 +3100,38 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   }
   if(!lista.length) throw new Error('sem categorias');
   lista.sort((a,b)=>(a.delta_pct ?? 9999)-(b.delta_pct ?? 9999));
-  let totalLoja = 0;
+  let totalLoja = 0, totalLojaAA = 0;
   const S = impLinhas(wb.Sheets['Sumario por loja']);
   const hs = impCabecalho(S, ['Area','Venda AC']) || impCabecalho(S, ['Area','Venda AC'.trim()]);
-  if(hs){ const cv = (S[hs.i]||[]).map(impTxt).indexOf('Venda AC'), ca = hs.col('Area'); let soma = 0, tot = null; for(let i=hs.i+1;i<S.length;i++){ const r = S[i]||[]; const v = impNum(r[cv]); if(impTxt(r[ca]).toLowerCase() === 'total'){ tot = v; break; } if(v) soma += v; } totalLoja = tot || soma; }
+  if(hs){ const cv = (S[hs.i]||[]).map(impTxt).indexOf('Venda AC'), cva = (S[hs.i]||[]).map(impTxt).indexOf('Venda AA'), ca = hs.col('Area'); let soma = 0, somaA = 0, tot = null, totA = null; for(let i=hs.i+1;i<S.length;i++){ const r = S[i]||[]; const v = impNum(r[cv]), va = cva >= 0 ? impNum(r[cva]) : null; if(impTxt(r[ca]).toLowerCase() === 'total'){ tot = v; totA = va; break; } if(v) soma += v; if(va) somaA += va; } totalLoja = tot || soma; totalLojaAA = totA || somaA; }
   let dataRef = totalLoja ? await impDataPorTotal(totalLoja) : null, estimada = false;
+  // ficheiro de um mês já fechado: reconhece o mês pelo total do ano anterior (ou do ano) do painel mês a mês
+  if(!dataRef && (totalLoja || totalLojaAA)){
+    try{ const P = resumoPainel || ((await sb('loja_resumo_painel?id=eq.1&select=dados')) || [])[0]?.dados || {};
+      const hoje = new Date(); let melhor = null;
+      (P.meses || []).forEach((m, i) => { const d1 = m.v_ant > 0 && totalLojaAA ? Math.abs(m.v_ant - totalLojaAA) / m.v_ant : 9, d2 = m.v > 0 && totalLoja ? Math.abs(m.v - totalLoja) / m.v : 9; const d = Math.min(d1, d2); if(d < 0.01 && (!melhor || d < melhor.d)) melhor = {i, d}; });
+      if(melhor && melhor.i !== hoje.getMonth()){ const a = melhor.i > hoje.getMonth() ? hoje.getFullYear() - 1 : hoje.getFullYear(); dataRef = impISO(new Date(a, melhor.i + 1, 0)); }
+    }catch(e){}
+  }
+  if(!dataRef && typeof prompt === 'function'){
+    const r = prompt('Não consegui saber de que mês é este «Vendas e Quebras Mensal».\nEscreva o número do mês (1 a 12) se for de um mês já fechado, ou deixe vazio se for do mês atual:', '');
+    const mm = Number(String(r || '').trim()); const hoje = new Date();
+    if(mm >= 1 && mm <= 12 && mm !== hoje.getMonth() + 1){ const a = mm > hoje.getMonth() + 1 ? hoje.getFullYear() - 1 : hoje.getFullYear(); dataRef = impISO(new Date(a, mm, 0)); }
+  }
   if(!dataRef){
     const m = String(nomeFicheiro||'').match(/(\d{4})-(\d{2})-(\d{2})/);
     dataRef = m ? impMenosUmDia(`${m[1]}-${m[2]}-${m[3]}`) : impMenosUmDia(impISO(dataFicheiro ? new Date(dataFicheiro) : new Date()));
     estimada = true;
   }
+  // mês anterior ao que a app já tem: guarda só no histórico das secções (não mexe no ecrã de vendas)
+  { const d = await impDatas(); if(d.categorias && dataRef < d.categorias){ await rpSecoesGuardarMes(lista, dataRef);
+      return `${['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][Number(dataRef.slice(5, 7)) - 1]} ${dataRef.slice(0, 4)} guardado no histórico das secções (vs ano anterior) · o ecrã de vendas continua com o ficheiro mais recente`; } }
   await impVerificarData('categorias', dataRef);
   // guarda as 10 que mais perdem em € e as 10 que mais perdem em % (sem repetir)
   const porEuro = [...lista].sort((a,b) => (b.venda_aa - b.venda_ac) - (a.venda_aa - a.venda_ac)).slice(0,10);
   const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro, ...lista].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
+  // guarda o mês por secção (histórico para comparar com o ano anterior mês a mês e no ano)
+  try{ await rpSecoesGuardarMes(lista, dataRef); }catch(e){ console.warn('secções do mês', e); }
   await sb('loja_categorias_perda_vendas?id=gt.0', {method:'DELETE'});
   for(let i = 0; i < top.length; i += 300) await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top.slice(i, i + 300))});
   await impGuardarData('categorias', dataRef);
