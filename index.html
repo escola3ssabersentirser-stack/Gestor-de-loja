@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-15-0920';
+const APP_V='2026-11-15-0935';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2589,7 +2589,7 @@ async function rpSecoesAA(escolha){
   const linhas = Object.values(g).sort((a, b) => a.ordem - b.ordem).map(fin);
   const T = fin(linhas.reduce((t, x) => ({g: 'Total da loja', vac: t.vac + x.vac, vaa: t.vaa + x.vaa, qac: t.qac + x.qac, qaa: t.qaa + x.qaa}), {vac: 0, vaa: 0, qac: 0, qaa: 0}));
   const e0 = v => Math.round(v).toLocaleString('pt-PT') + ' €';
-  const chip = (v, bomSeSobe, suf) => { if(v == null || !isFinite(v)) return '<span style="color:var(--ink-soft);">–</span>'; const bom = bomSeSobe ? v >= 0 : v <= 0; const cor = Math.abs(v) < (suf === ' pp' ? 0.1 : 0.5) ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
+  const chip = (v, bomSeSobe, suf) => { if(v == null || !isFinite(v)) return '<span style="color:var(--ink-soft);">–</span>'; if(Math.abs(v) < 0.05) return '<b style="color:var(--ink-soft);">= 0' + suf + '</b>'; const bom = bomSeSobe ? v >= 0 : v <= 0; const cor = Math.abs(v) < (suf === ' pp' ? 0.1 : 0.5) ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
     return `<b style="color:${cor};white-space:nowrap;">${v > 0 ? '▲ +' : v < 0 ? '▼ ' : ''}${v.toLocaleString('pt-PT', {maximumFractionDigits: 1, minimumFractionDigits: 1})}${suf}</b>`; };
   const anoAnt = (rpSecMes.startsWith('ano-') ? Number(rpSecMes.slice(4)) : Number(rpSecMes.slice(0, 4))) - 1;
   const linha = (x, total) => `<div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);${total ? 'font-weight:800;' : ''}">
