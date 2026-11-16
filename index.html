@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-15-0945';
+const APP_V='2026-11-16-0740';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2733,6 +2733,7 @@ function impTipo(wb){
     const R = impLinhas(wb.Sheets[n]);
     if(impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','PRODUÇÃO','QUEBRAS UN','QUEBRA SUGESTÃO'])) return 'mapasproducao';
     if(impCabecalho(R, ['Codigo do Artigo','Descricao Artigo','PA'])) return 'ruturas';
+    if(impCabecalho(R, ['Txt.brv.material','Atrasos']) && R.slice(0, 8).some(r => (r || []).some(c => /niv\.? ?serv/i.test(String(c || ''))))) return 'rutcausas';
     if(impCabecalho(R, ['Hora','Txt.brv.material','Tipo Repos','Data'])) return 'automaticas';
     if(impCabecalho(R, ['Nome Operador','Vendas Operador'])) return 'vendasugestiva';
     if(impCabecalho(R, ['Numero Factura','Valor Fact']) || impCabecalho(R, ['Loja','Numero Factura','Numero da Transaccao'])) return 'notascredito';
@@ -3374,7 +3375,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3436,7 +3437,7 @@ async function impExtraCorrer(tipo, f){
 let impResHTML = '';
 // depois de carregar, cada ficheiro tem um botão para abrir a área onde ficou (e enviar as mensagens dessa área)
 const _RH = ['formacoes', 'Banco de Horas, Horários e Formação', 'Recursos Humanos'];
-const IMP_DESTINO = {descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
+const IMP_DESTINO = {rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
   automaticas: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], reposicao: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], ruturas: ['markdown', 'Ruturas', 'Ruturas'],
   mapasproducao: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'], validades: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'],
   categorias: ['painel-vendas', 'Vendas', 'Vendas'], bomdia: ['painel-vendas', 'Vendas', 'Vendas'], resumo: ['painel-vendas', 'Vendas', 'Vendas'],
@@ -3513,7 +3514,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {rutcausas: impRutCausas, descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -17404,6 +17405,33 @@ function rutLerExcel(wb){
   }
   return out;
 }
+// ---------- DETALHES DAS RUTURAS: causa de cada rutura (Alt. MRP, Nível de serviço, Atrasos, Reg. Stock, Promoção) ----------
+const RUT_CAUSAS = [['alt_mrp', 'Alteração MRP', 'parâmetros de encomenda (MRP) alterados'], ['niv_serv', 'Nível de serviço', 'o entreposto/fornecedor não entregou tudo'], ['atrasos', 'Atraso na entrega', 'a mercadoria chegou atrasada'], ['reg_stock', 'Regularização de stock', 'o stock foi acertado (inventário/quebra)'], ['promocao', 'Promoção', 'vendeu acima do previsto na promoção']];
+async function impRutCausas(wb){
+  // folha "plana" (uma linha por artigo e dia); se não houver, usa a tabela dinâmica (sem dia → hoje)
+  let linhas = [];
+  for(const n of wb.SheetNames){
+    const R = impLinhas(wb.Sheets[n]); const h = impCabecalho(R, ['Txt.brv.material','Atrasos']); if(!h) continue;
+    const H = (R[h.i] || []).map(c => impNorm(c)); const ci = re => H.findIndex(x => re.test(x));
+    const c = {mat: ci(/^material$/), art: ci(/txt\.?brv/), data: ci(/criado em/), loja: ci(/^centro$/), alt: ci(/alt\.? ?mrp/), niv: ci(/niv\.? ?serv/), atr: ci(/atrasos/), reg: ci(/reg\.? ?stock/), pro: ci(/promo/), tot: ci(/totais/)};
+    if(c.mat < 0) continue;
+    const L = [];
+    R.slice(h.i + 1).forEach(r => { const mat = impTxt(r && r[c.mat]); if(!/^\d+$/.test(mat)) return; if(c.loja >= 0 && impTxt(r[c.loja]) && !impEhNossaLoja(impTxt(r[c.loja]))) return;
+      const v = k => c[k] >= 0 ? Math.round(impNum(r[c[k]]) || 0) : 0;
+      L.push({data: c.data >= 0 ? horIso(r[c.data]) : impISO(new Date()), material: mat.replace(/^0+/, ''), artigo: impTxt(r[c.art]), alt_mrp: v('alt'), niv_serv: v('niv'), atrasos: v('atr'), reg_stock: v('reg'), promocao: v('pro'), totais: v('tot')}); });
+    if(L.length && (c.data >= 0 || !linhas.length)) linhas = L;
+    if(c.data >= 0 && L.length) break;
+  }
+  linhas = linhas.filter(x => x.data);
+  if(!linhas.length) throw new Error('não encontrei linhas de ruturas com causa');
+  const vistos = new Set(); linhas = linhas.filter(x => { const k = x.data + '|' + x.material; if(vistos.has(k)) return false; vistos.add(k); return true; });
+  const datas = [...new Set(linhas.map(x => x.data))].sort();
+  await sb(`loja_ruturas_causas?data=gte.${datas[0]}&data=lte.${datas[datas.length - 1]}`, {method: 'DELETE'});
+  for(let i = 0; i < linhas.length; i += 400) await sb('loja_ruturas_causas', {method: 'POST', body: JSON.stringify(linhas.slice(i, i + 400))});
+  const ult = linhas.filter(x => x.data === datas[datas.length - 1]);
+  const top = RUT_CAUSAS.map(([k, t]) => [t, ult.reduce((s, x) => s + (x[k] > 0 ? 1 : 0), 0)]).sort((a, b) => b[1] - a[1]).filter(x => x[1]);
+  return `${linhas.length} ruturas com causa de ${impDDMM(datas[0])} a ${impDDMM(datas[datas.length - 1])} · ${impDDMM(datas[datas.length - 1])}: ${ult.length} artigos${top.length ? ' · mais frequente: ' + top[0][0] + ' (' + top[0][1] + ')' : ''}`;
+}
 async function impRuturas(wb, nomeFicheiro, dataFicheiro){
   const l = rutLerExcel(wb);
   if(!l.length) throw new Error('não encontrei artigos em rutura da loja ' + IMP_LOJA);
@@ -17454,6 +17482,22 @@ async function blocoRuturas(){
     ${D.ant ? tile(novas.length, 'novas ruturas', 'var(--amber)') : ''}
     ${D.ant ? tile(resolvidas.length, 'resolvidas', 'var(--green)') : ''}
     ${tile(repetidas.length, 'repetidas (2+ relatórios seguidos)', repetidas.length ? 'var(--red)' : 'var(--green)')}</div></div>`;
+  // causas (ficheiro «Detalhes de ruturas»): dia mais recente até à data do KPI
+  let causaDe = {};
+  try{
+    const ult = await sb(`loja_ruturas_causas?data=lte.${D.datas[0]}&select=data&order=data.desc&limit=1`);
+    if(ult && ult[0]){
+      const dC = ult[0].data, C = await impTodos(`loja_ruturas_causas?data=eq.${dC}&select=*`);
+      C.forEach(x => { causaDe[String(x.material).replace(/^0+/, '')] = RUT_CAUSAS.filter(([k]) => x[k] > 0).map(([, t]) => t); });
+      const cont = RUT_CAUSAS.map(([k, t, ex]) => ({t, ex, n: C.filter(x => x[k] > 0).length})).filter(x => x.n).sort((a, b) => b.n - a.n);
+      const sem = C.filter(x => !RUT_CAUSAS.some(([k]) => x[k] > 0)).length, mx = Math.max(1, ...cont.map(x => x.n), sem);
+      const kpiCods = new Set(D.hoje.map(x => String(x.artigo_cod).replace(/^0+/, ''))), comCausa = D.hoje.filter(x => causaDe[String(x.artigo_cod).replace(/^0+/, '')]).length;
+      const barra = (t, n, ex, cor) => `<div style="margin:7px 0;"><div style="display:flex;justify-content:space-between;font-size:12.5px;"><span><b>${t}</b>${ex ? ` <span style="color:var(--ink-soft);font-size:11px;">· ${ex}</span>` : ''}</span><b>${n}</b></div><div style="height:8px;border-radius:5px;background:var(--line);margin-top:3px;"><div style="height:100%;width:${(n / mx * 100).toFixed(0)}%;background:${cor};border-radius:5px;"></div></div></div>`;
+      h += `<div class="card"><h3 style="margin-bottom:2px;">🔎 Porque estão em rutura <span style="font-weight:600;color:var(--ink-soft);font-size:12px;">· ${impDDMM(dC)} · ${C.length} artigos</span></h3>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Do ficheiro «Detalhes de ruturas». Um artigo pode ter mais do que uma causa. ${comCausa} dos ${D.hoje.length} artigos do KPI têm causa registada.</div>
+        ${cont.map(x => barra(x.t, x.n, x.ex, '#C0392B')).join('')}${sem ? barra('Sem causa atribuída', sem, 'rutura sem motivo de sistema: verificar na loja (stock fantasma, artigo no armazém, não reposto)', '#E0A030') : ''}</div>`;
+    }
+  }catch(e){ console.warn('causas ruturas', e); }
   // por área
   const conta = (l, k) => { const o = {}; l.forEach(x => { const v = x[k] || '—'; o[v] = (o[v] || 0) + 1; }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
   const areas = conta(D.hoje, 'area'), max = areas[0] ? areas[0][1] : 1;
@@ -17468,7 +17512,7 @@ async function blocoRuturas(){
     const ds = D.datas.slice(0, 20).reverse(), tot = ds.map(d => D.rows.filter(r => r.data === d).length), mx = Math.max(...tot, 1);
     h += `<div class="card"><h3 style="margin-bottom:8px;">Evolução</h3><div class="rchart" style="height:90px;">${tot.map(t => `<div class="bars"><div class="bar" style="height:${(t / mx * 100).toFixed(1)}%;background:var(--red);" title="${t}"></div></div>`).join('')}</div><div class="rchart-labels">${ds.map((d, i) => `<span style="font-size:8px;">${impDDMM(d)}<br>${tot[i]}</span>`).join('')}</div></div>`;
   }
-  const linha = (x, extra) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><span style="min-width:0;">${rpEsc(x.artigo)}<div style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod} · ${rpEsc(x.area || '')}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</div></span>${extra || ''}</div>`;
+  const linha = (x, extra) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><span style="min-width:0;">${rpEsc(x.artigo)}<div style="font-size:10.5px;color:var(--ink-soft);">${x.artigo_cod} · ${rpEsc(x.area || '')}${x.pa ? ' · ' + rpEsc(x.pa) : ''}</div>${(causaDe[String(x.artigo_cod).replace(/^0+/, '')] || []).map(c => `<span style="display:inline-block;margin:3px 4px 0 0;padding:1px 7px;border-radius:9px;background:#FBE3DE;color:#9A2A1D;font-size:10.5px;font-weight:700;">${c}</span>`).join('')}</span>${extra || ''}</div>`;
   const linhaRep = x => linha(x, `<b style="white-space:nowrap;color:var(--red);">${x.seg} relatórios</b>`);
   if(repetidas.length) h += `<div class="card"><h3 style="margin-bottom:4px;color:var(--red);">🔁 Repetidas — continuam em rutura (${repetidas.length})</h3>${repetidas.slice(0, 12).map(linhaRep).join('')}${repetidas.length > 12 ? `<details><summary style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 0;">Ver mais ${repetidas.length - 12}</summary>${repetidas.slice(12).map(linhaRep).join('')}</details>` : ''}<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Verificar stock real, pedidos em curso e se o artigo está na loja (armazém, outra morada).</div></div>`;
   if(novas.length) h += `<details class="card"><summary style="cursor:pointer;font-weight:700;">🆕 Novas ruturas (${novas.length})</summary>${novas.map(x => linha(x)).join('')}</details>`;
