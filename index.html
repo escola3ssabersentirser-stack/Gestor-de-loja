@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-16-0740';
+const APP_V='2026-11-16-1130';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2732,6 +2732,7 @@ function impTipo(wb){
   for(const n of nomes){
     const R = impLinhas(wb.Sheets[n]);
     if(impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','PRODUÇÃO','QUEBRAS UN','QUEBRA SUGESTÃO'])) return 'mapasproducao';
+    if(impCabecalho(R, ['TxtBreveMaterial','Quebra Total Valor EUR'])) return 'economato';
     if(impCabecalho(R, ['Codigo do Artigo','Descricao Artigo','PA'])) return 'ruturas';
     if(impCabecalho(R, ['Txt.brv.material','Atrasos']) && R.slice(0, 8).some(r => (r || []).some(c => /niv\.? ?serv/i.test(String(c || ''))))) return 'rutcausas';
     if(impCabecalho(R, ['Hora','Txt.brv.material','Tipo Repos','Data'])) return 'automaticas';
@@ -3375,7 +3376,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {economato:'Consumo de economato da semana → Custos', rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3437,7 +3438,7 @@ async function impExtraCorrer(tipo, f){
 let impResHTML = '';
 // depois de carregar, cada ficheiro tem um botão para abrir a área onde ficou (e enviar as mensagens dessa área)
 const _RH = ['formacoes', 'Banco de Horas, Horários e Formação', 'Recursos Humanos'];
-const IMP_DESTINO = {rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
+const IMP_DESTINO = {economato: ['painel-custos', 'Custos', 'Custos'], rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
   automaticas: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], reposicao: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], ruturas: ['markdown', 'Ruturas', 'Ruturas'],
   mapasproducao: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'], validades: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'],
   categorias: ['painel-vendas', 'Vendas', 'Vendas'], bomdia: ['painel-vendas', 'Vendas', 'Vendas'], resumo: ['painel-vendas', 'Vendas', 'Vendas'],
@@ -3514,7 +3515,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {rutcausas: impRutCausas, descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {economato: impEconomatoSemana, rutcausas: impRutCausas, descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -13696,6 +13697,7 @@ async function renderPainelCustos(){
   // 5) economato — registos
   const porDiaEco = {}; eco.forEach(e => { porDiaEco[e.data] = (porDiaEco[e.data]||0) + Number(e.valor||0); });
   const es = somaPeriodo(porDiaEco, ...P.sem), esa = somaPeriodo(porDiaEco, ...P.semAnt), em = somaPeriodo(porDiaEco, ...P.mes), ema = somaPeriodo(porDiaEco, ...P.mesAnt);
+  try{ h += await blocoEconomatoSemanas(); }catch(e){ console.warn('economato semanas', e); }
   h += `<div class="section-title">🧴 Economato — valores</div><div class="card">
     <div class="vs-detail-grid" style="margin-bottom:10px;">
       <div class="vs-box"><div class="vs-label">Esta semana (até hoje)</div><div class="vs-value" style="font-size:18px;color:var(--navy);">${cEur(es || 0)}</div>${varTxt(es, esa)}<div style="font-size:10.5px;color:var(--ink-soft);">semana passada ${cEur(esa || 0)}</div></div>
@@ -17404,6 +17406,58 @@ function rutLerExcel(wb){
     }
   }
   return out;
+}
+// ---------- ECONOMATO: consumo da semana (relatório de quebras de material de economato; a semana vem do nome do ficheiro «de 09 a 15_11») ----------
+function ecoSemanaDoNome(nome){
+  const n = String(nome || '').replace(/^[0-9a-f]{8}-/i, '').replace(/\.[a-z]+$/i, '');
+  const m = n.match(/(\d{1,2})\D{0,4}a\D{0,3}(\d{1,2})(?:\D+(\d{1,2}))?/i); if(!m) return null;
+  const d1 = Number(m[1]), d2 = Number(m[2]), mm = m[3] ? Number(m[3]) : null, hoje = new Date(); const cands = [];
+  for(let k = 0; k < 14; k++){ const ref = new Date(hoje.getFullYear(), hoje.getMonth() - k, 1); cands.push([ref.getFullYear(), ref.getMonth()]); }
+  const ok = ([a, mes]) => { const ini = new Date(a, mes, d1); const fim = d2 >= d1 ? new Date(a, mes, d2) : new Date(a, mes + 1, d2); return ini.getMonth() === mes && ini.getDay() === 1 && fim <= hoje ? [impISO(ini), impISO(fim)] : null; };
+  if(mm && mm >= 1 && mm <= 12){ for(const c of cands) if(c[1] === mm - 1){ const r = ok(c); if(r) return r; } }
+  for(const c of cands){ const r = ok(c); if(r) return r; }
+  return null;
+}
+async function impEconomatoSemana(wb, nome){
+  const sh = wb.Sheets.RawData || wb.Sheets.Format || wb.Sheets[wb.SheetNames[0]];
+  const R = impLinhas(sh); const h = impCabecalho(R, ['TxtBreveMaterial','Quebra Total Valor EUR']); if(!h) throw new Error('não encontrei a tabela de materiais');
+  const H = (R[h.i] || []).map(c => impTxt(c)); const ci = t => H.findIndex(x => x === t);
+  const cM = ci('Material'), cA = ci('TxtBreveMaterial'), cQ = ci('Quebra Total Qtd'), cV = ci('Quebra Total Valor EUR');
+  let sem = ecoSemanaDoNome(nome);
+  if(!sem && typeof prompt === 'function'){ const r = prompt('De que semana é este economato? Escreva a data de segunda-feira (dd/mm):', ''); const m = String(r || '').match(/(\d{1,2})\D(\d{1,2})/); if(m){ const hoje = new Date(); let ini = new Date(hoje.getFullYear(), Number(m[2]) - 1, Number(m[1])); if(ini > hoje) ini = new Date(hoje.getFullYear() - 1, Number(m[2]) - 1, Number(m[1])); const fim = new Date(ini); fim.setDate(fim.getDate() + 6); sem = [impISO(ini), impISO(fim)]; } }
+  if(!sem) throw new Error('não consegui saber a semana (o nome do ficheiro deve ter «de 09 a 15_11»)');
+  const linhas = []; const vistos = {};
+  R.slice(h.i + 1).forEach(r => { const mat = impTxt(r && r[cM]).replace(/^0+/, ''); if(!/^\d+$/.test(mat)) return; const v = Math.abs(impNum(r[cV]) || 0), q = Math.abs(impNum(r[cQ]) || 0);
+    if(vistos[mat]){ vistos[mat].valor = impR2(vistos[mat].valor + v); vistos[mat].qtd += q; return; }
+    const o = {semana: sem[0], ate: sem[1], material: mat, artigo: impTxt(r[cA]), qtd: q, valor: impR2(v)}; vistos[mat] = o; linhas.push(o); });
+  if(!linhas.length) throw new Error('o ficheiro não tem materiais');
+  await sb(`loja_economato_semana?semana=eq.${sem[0]}`, {method: 'DELETE'});
+  await sb('loja_economato_semana', {method: 'POST', body: JSON.stringify(linhas)});
+  // o total da semana entra também nos «Economato — valores» (uma linha por semana, substitui se carregar outra vez)
+  const tot = impR2(linhas.reduce((t, x) => t + x.valor, 0)), desc = `Consumo economato ${impDDMM(sem[0])} a ${impDDMM(sem[1])} (ficheiro)`;
+  try{ await sb(`loja_economato_custos?descricao=eq.${encodeURIComponent(desc)}`, {method: 'DELETE'}); await sb('loja_economato_custos', {method: 'POST', body: JSON.stringify({data: sem[0], valor: tot, descricao: desc, criado_por: currentUser ? currentUser.name : null})}); }catch(e){ console.warn('economato custos', e); }
+  let txt = `semana de ${impDDMM(sem[0])} a ${impDDMM(sem[1])} · ${linhas.length} materiais · ${tot.toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2})} €`;
+  try{ const ant = await sb(`loja_economato_semana?semana=lt.${sem[0]}&select=semana,valor&order=semana.desc&limit=200`) || []; const s0 = ant[0] && ant[0].semana; if(s0){ const ta = ant.filter(x => x.semana === s0).reduce((t, x) => t + Number(x.valor || 0), 0); if(ta) txt += ` · ${tot >= ta ? '▲ +' : '▼ '}${Math.round((tot / ta - 1) * 100)}% vs semana anterior`; } }catch(e){}
+  return txt;
+}
+// cartão «Economato por semana» (painel de custos)
+async function blocoEconomatoSemanas(){
+  const L = await impTodos('loja_economato_semana?select=*&order=semana.desc').catch(() => []);
+  if(!L.length) return `<div class="section-title">🧴 Economato por semana</div><div class="card"><div style="font-size:12.5px;color:var(--ink-soft);">Ainda sem semanas. Carregue em «📥 Carregar relatórios» o ficheiro do economato da semana (ex.: «economato de 09 a 15_11»).</div></div>`;
+  const sems = [...new Set(L.map(x => x.semana))].sort().reverse();
+  const tot = s => L.filter(x => x.semana === s).reduce((t, x) => t + Number(x.valor || 0), 0);
+  const e2 = v => v.toLocaleString('pt-PT', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' €';
+  const fimDe = s => (L.find(x => x.semana === s) || {}).ate;
+  const s0 = sems[0], s1 = sems[1], t0 = tot(s0), t1 = s1 ? tot(s1) : null, mx = Math.max(...sems.slice(0, 8).map(tot), 1);
+  const varr = (a, b) => b ? `<b style="color:${a <= b ? '#1F7A33' : 'var(--red)'};">${a <= b ? '▼ ' : '▲ +'}${Math.abs(Math.round((a / b - 1) * 100))}%</b>` : '';
+  let h = `<div class="section-title">🧴 Economato por semana <span class="count">· ${sems.length} semana${sems.length === 1 ? '' : 's'}</span></div><div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px;"><div><div style="font-size:12px;color:var(--ink-soft);">Semana de ${impDDMM(s0)} a ${impDDMM(fimDe(s0))}</div><div style="font-size:24px;font-weight:800;color:var(--navy);">${e2(t0)}</div></div>
+    ${t1 != null ? `<div style="text-align:right;font-size:13px;">${varr(t0, t1)}<div style="font-size:11px;color:var(--ink-soft);">semana anterior ${e2(t1)}</div></div>` : ''}</div>
+    <div style="margin-top:10px;">${sems.slice(0, 8).map(s => `<div style="display:grid;grid-template-columns:86px minmax(0,1fr) 78px;gap:8px;align-items:center;margin:5px 0;font-size:12px;"><span>${impDDMM(s)} a ${impDDMM(fimDe(s))}</span><div style="height:10px;border-radius:6px;background:var(--line);"><div style="height:100%;width:${(tot(s) / mx * 100).toFixed(0)}%;background:${s === s0 ? 'var(--navy)' : '#9BB0C8'};border-radius:6px;"></div></div><b style="text-align:right;">${e2(tot(s))}</b></div>`).join('')}</div>`;
+  const a0 = L.filter(x => x.semana === s0).sort((a, b) => b.valor - a.valor), ant = {}; if(s1) L.filter(x => x.semana === s1).forEach(x => { ant[x.material] = Number(x.valor || 0); });
+  h += `<details style="margin-top:8px;" open><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">O que se gastou na semana de ${impDDMM(s0)} (${a0.length} materiais)</summary>
+    ${a0.map(x => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12.5px;"><span style="min-width:0;">${rpEsc(x.artigo)}<div style="font-size:10.5px;color:var(--ink-soft);">${Number(x.qtd).toLocaleString('pt-PT')} un${s1 ? ` · semana anterior ${ant[x.material] != null ? e2(ant[x.material]) : '—'}` : ''}</div></span><b style="white-space:nowrap;">${e2(Number(x.valor))}</b></div>`).join('')}</details></div>`;
+  return h;
 }
 // ---------- DETALHES DAS RUTURAS: causa de cada rutura (Alt. MRP, Nível de serviço, Atrasos, Reg. Stock, Promoção) ----------
 const RUT_CAUSAS = [['alt_mrp', 'Alteração MRP', 'parâmetros de encomenda (MRP) alterados'], ['niv_serv', 'Nível de serviço', 'o entreposto/fornecedor não entregou tudo'], ['atrasos', 'Atraso na entrega', 'a mercadoria chegou atrasada'], ['reg_stock', 'Regularização de stock', 'o stock foi acertado (inventário/quebra)'], ['promocao', 'Promoção', 'vendeu acima do previsto na promoção']];
