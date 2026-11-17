@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-16-1130';
+const APP_V='2026-11-17-1010';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2580,7 +2580,20 @@ async function rpSecoesAA(escolha){ if(escolha) rpSecMes = escolha; return secAA
 async function secAAPreencher(tentativa, soNovos){
   const els = [...document.querySelectorAll('.sec-aa')].filter(el => !soNovos || !el.dataset.ok);
   if(!els.length){ if((tentativa || 0) < 40) setTimeout(() => secAAPreencher((tentativa || 0) + 1, soNovos), 150); return; }
-  const todos = await impTodos('loja_secoes_mes?select=*&order=mes.asc').catch(() => []);
+  let todos = await impTodos('loja_secoes_mes?select=*&order=mes.asc').catch(() => []);
+  // mês em curso: usa o LFL oficial do Bom Dia (dias comparáveis do ano anterior), igual ao «Vendas vs ano passado» do painel
+  try{
+    if(!resumoPainel && typeof carregarResumoPainel === 'function') await carregarResumoPainel();
+    const P = resumoPainel || {}; const ate = P.dados_ate, S = P.secoes || [];
+    if(ate && S.length && S.some(x => x.vsaa != null)){
+      const mes = ate.slice(0, 7), g = {};
+      S.forEach(x => { const real = Number(x.real) || 0; if(!real) return; const [sec, ordem] = rpSecaoDe(x.sec); const vaa = x.vsaa != null && x.vsaa > -1 ? real / (1 + Number(x.vsaa)) : 0;
+        const o = g[sec] = g[sec] || {mes, secao: sec, ordem, vendas: 0, vendas_aa: 0, quebra: 0, quebra_aa: 0, divisoes: [], ate, lfl: true};
+        o.vendas += real; o.vendas_aa += vaa; o.quebra += Math.abs(Number(x.q) || 0); o.quebra_aa += Math.abs((Number(x.qp_aa) || 0) * vaa); o.divisoes.push(x.sec); });
+      const novos = Object.values(g).map(o => ({...o, divisoes: o.divisoes.join(', ')}));
+      if(novos.length) todos = [...todos.filter(r => r.mes !== mes), ...novos];
+    }
+  }catch(e){ console.warn('LFL Bom Dia nas secções', e); }
   els.forEach(el => { el.innerHTML = secAAHtml(el.dataset.tipo, todos); el.dataset.ok = '1'; });
 }
 function secAAHtml(tipo, todos){
@@ -2606,7 +2619,7 @@ function secAAHtml(tipo, todos){
   let periodo;
   if(eAno){ const ms = meses.filter(m => m.startsWith(anoSel)); const falta = NOMES_L.filter((n, i) => `${anoSel}-${String(i + 1).padStart(2, '0')}` < impISO(new Date()).slice(0, 7) && !ms.includes(`${anoSel}-${String(i + 1).padStart(2, '0')}`));
     periodo = `Total ${anoSel} = soma de ${ms.length} ${ms.length === 1 ? 'mês' : 'meses'} (${ms.map(m => NOMES[Number(m.slice(5)) - 1]).join(', ') || '—'})${falta.length ? ` · <b style="color:var(--red);">faltam ${falta.join(', ')}</b>` : ''}.`; }
-  else { const a = ateMes(rpSecMes); periodo = `${NOMES_L[Number(rpSecMes.slice(5)) - 1]} ${rpSecMes.slice(0, 4)}${a && a < fimMes(rpSecMes) ? ' até ' + impDDMM(a) : ''} vs o mesmo período de ${anoAnt}.`; }
+  else { const a = ateMes(rpSecMes), lfl = sel.some(r => r.lfl); periodo = `${NOMES_L[Number(rpSecMes.slice(5)) - 1]} ${rpSecMes.slice(0, 4)}${a && a < fimMes(rpSecMes) ? ' até ' + impDDMM(a) : ''} vs ${lfl ? `${anoAnt} em LFL (dias comparáveis, do Bom Dia)` : 'o mesmo período de ' + anoAnt}.`; }
   const vazio = !linhas.length ? `<div style="font-size:12.5px;color:var(--ink-soft);padding:12px 0;border-top:1px solid var(--line);">Sem dados ${eAno ? 'deste ano' : 'de ' + NOMES_L[Number(rpSecMes.slice(5)) - 1]}. Carregue em «📥 Carregar relatórios» o «Vendas e Quebras Mensal» desse mês (tirado no último dia do mês).</div>` : '';
   const grid = 'display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,0.9fr);gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line);';
   let corpo;
