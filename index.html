@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-18-0845';
+const APP_V='2026-11-18-1700';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -14569,6 +14569,12 @@ const TRC_MAX = 7;
 function trcEhTrocas(wb){ try{ if(!wb.Sheets.RawData) return false; const R = impLinhas(wb.Sheets.RawData); return R.slice(0, 5).some(r => (r || []).some(c => /trocas total/i.test(String(c || '')))) || trcListaCab(R) != null; }catch(e){ return false; } }
 // formato em lista (uma linha por troca: Dia, Horário Ant., Horário Novo, Tipo de Troca, Data da Troca, Status Tarefa)
 function trcListaCab(R){ const hi = R.slice(0, 10).findIndex(r => (r || []).some(c => /tipo de troca/i.test(String(c || ''))) && (r || []).some(c => /nome de colaborador/i.test(String(c || ''))) && (r || []).some(c => /hor[áa]rio novo/i.test(String(c || '')))); return hi >= 0 ? hi : null; }
+// passa o nº de trocas do mês para a ficha de cada colaborador (ecrãs das secções), 0 para quem não tem
+async function trcSincronizarColab(mes){
+  const [cols, trc] = await Promise.all([sb('loja_colaboradores?select=id,numero_pessoal,trocas_horario') , sb(`loja_trocas_horario?mes=eq.${mes}&select=numero,n`)]);
+  const k0 = n => String(n || '').replace(/\D/g, '').replace(/^0+/, ''); const por = {}; (trc || []).forEach(r => { por[k0(r.numero)] = Number(r.n) || 0; });
+  for(const c of (cols || [])){ const n = por[k0(c.numero_pessoal)] || 0; if(Number(c.trocas_horario || 0) !== n) await sb(`loja_colaboradores?id=eq.${c.id}`, {method: 'PATCH', body: JSON.stringify({trocas_horario: n})}); }
+}
 async function impTrocasLista(wb, nomeF, R, hi){
   const H = R[hi].map(c => impNorm(c)); const ci = re => H.findIndex(h => re.test(h));
   const cNum = ci(/n.? ?de colaborador/), cNome = ci(/nome de colaborador/), cSec = ci(/^seccao|^secao/), cDia = ci(/^dia$/), cLoja = ci(/nome da sub/), cSt = ci(/status/), cAnt = ci(/horario ant/), cNovo = ci(/horario novo/), cTipo = ci(/tipo de troca/), cDt = ci(/data da troca/);
@@ -14586,6 +14592,7 @@ async function impTrocasLista(wb, nomeF, R, hi){
   const l = Object.values(por);
   await sb(`loja_trocas_horario?mes=eq.${mes}`, {method: 'DELETE'});
   if(l.length) await sb('loja_trocas_horario', {method: 'POST', body: JSON.stringify(l)});
+  try{ await trcSincronizarColab(mes); }catch(e){ console.warn('trocas na ficha', e); }
   // as que aguardam consentimento ficam «por assinar no Hello»; as que já não aguardam saem da lista
   const aguarda = L.filter(x => /aguarda|pendente|por assinar|consentimento/i.test(x.status));
   const feitas = new Set(L.filter(x => !/aguarda|pendente|por assinar|consentimento/i.test(x.status)).map(x => horChave(x.numero, horDesc(x))));
@@ -14615,6 +14622,7 @@ async function impTrocas(wb, nomeF){
     .map(r => ({mes, numero: impTxt(r[cNum]).replace(/\D/g, '').padStart(8, '0'), nome: impTxt(r[cNome]), secao: impTxt(r[cSec]).replace(/^0?324\s+/, ''), n: Number(String(r[cN] || '0').trim()) || 0}));
   await sb(`loja_trocas_horario?mes=eq.${mes}`, {method: 'DELETE'});
   if(l.length) await sb('loja_trocas_horario', {method: 'POST', body: JSON.stringify(l)});
+  try{ await trcSincronizarColab(mes); }catch(e){ console.warn('trocas na ficha', e); }
   const acima = l.filter(x => x.n > TRC_MAX).length;
   return `${l.length} pessoa${l.length === 1 ? '' : 's'} com trocas em ${impTitulo(IMP_MESES[Number(mes.slice(5, 7)) - 1])}${acima ? ` · ⚠️ ${acima} acima do máximo de ${TRC_MAX}` : ` · ninguém acima de ${TRC_MAX}`}`;
 }
