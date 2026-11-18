@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-18-0835';
+const APP_V='2026-11-18-0845';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -14685,7 +14685,10 @@ function alrMensagem(p, tema){
   if(so('trocas') && p.trocas) L.push(`🔁 *Trocas de horário:* tem ${p.trocas} troca${p.trocas === 1 ? '' : 's'} de horário${mesT ? ' em ' + mesT : ''}${p.trocas > TRC_MAX ? `, acima do máximo de ${TRC_MAX} por mês` : p.trocas === TRC_MAX ? `, o máximo de ${TRC_MAX} por mês` : ` (máximo ${TRC_MAX} por mês)`}. As alterações de horário são feitas no Hello.`);
   if(so('d11') && p.oc11) L.push(`🌙 *Descanso de 11 horas:* lembro que não são permitidos períodos de descanso inferiores a 11 horas entre o fim de um turno e o início do seguinte. ${mesD ? 'Em ' + mesD : 'No último relatório'} teve ${p.oc11} ${p.oc11 === 1 ? 'situação' : 'situações'} com menos de 11 horas${(p.d11Datas || []).length ? ' (' + p.d11Datas.map(d => impDDMM(d)).join(', ') + ')' : ''}.`);
   if(so('assin') && p.porAssinar) L.push(`✍️ *Assinatura de horário:* tem ${p.porAssinar} alteraç${p.porAssinar === 1 ? 'ão' : 'ões'} de horário para assinar no Hello${(p.altLst || []).length ? ' (' + p.altLst.map(a => a.data_alteracao ? impDDMM(a.data_alteracao) : '').filter(Boolean).join(', ') + ')' : ''}.`);
-  if(so('bh') && p.bh > 0) L.push(`⏳ *Banco de horas:* tem ${p.bh.toLocaleString('pt-PT')} h a gozar${p.bhDias.length ? `. Marcado para gozar: ${(p.bhTxt && p.bhTxt.length ? p.bhTxt : p.bhDias.map(d => impDDMM(d))).join('; ')}` : ', ainda sem dias marcados'}.`);
+  if(so('bh') && (p.bh > 0 || (p.bhDias || []).length)){
+    const dias = p.bhTxt && p.bhTxt.length ? p.bhTxt : (p.bhDias || []).map(d => impDDMM(d));
+    L.push(`⏳ *Banco de horas:*${p.bh > 0 ? ` tem ${p.bh.toLocaleString('pt-PT')} h a gozar.` : ''}${dias.length ? `\nTem de gozar as horas:\n${dias.map(d => '• ' + d).join('\n')}` : ' Ainda sem dias marcados.'}`);
+  }
   if(so('bh') && p.bhn < 0) L.push(`⏳ *Banco de horas:* tem ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar.`);
   if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:* ${p.falta.join(', ')}. Conclua até ao fim da semana.`);
   return `Olá ${pn},\n\nPara sua informação:\n\n${L.join('\n\n')}\n\nQualquer dúvida, fale comigo.\nObrigada,\nConceição Alves`;
