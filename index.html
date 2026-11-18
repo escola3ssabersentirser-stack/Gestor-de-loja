@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-17-1010';
+const APP_V='2026-11-18-0840';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2746,6 +2746,7 @@ function impTipo(wb){
     const R = impLinhas(wb.Sheets[n]);
     if(impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','PRODUÇÃO','QUEBRAS UN','QUEBRA SUGESTÃO'])) return 'mapasproducao';
     if(impCabecalho(R, ['TxtBreveMaterial','Quebra Total Valor EUR'])) return 'economato';
+    if(impCabecalho(R, ['SAP ID','Curso','Data Fim'])) return 'convocatorias';
     if(impCabecalho(R, ['Codigo do Artigo','Descricao Artigo','PA'])) return 'ruturas';
     if(impCabecalho(R, ['Txt.brv.material','Atrasos']) && R.slice(0, 8).some(r => (r || []).some(c => /niv\.? ?serv/i.test(String(c || ''))))) return 'rutcausas';
     if(impCabecalho(R, ['Hora','Txt.brv.material','Tipo Repos','Data'])) return 'automaticas';
@@ -3389,7 +3390,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {economato:'Consumo de economato da semana → Custos', rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {convocatorias:'Convocatórias da Escola de Formação JM → Formação', economato:'Consumo de economato da semana → Custos', rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3451,7 +3452,7 @@ async function impExtraCorrer(tipo, f){
 let impResHTML = '';
 // depois de carregar, cada ficheiro tem um botão para abrir a área onde ficou (e enviar as mensagens dessa área)
 const _RH = ['formacoes', 'Banco de Horas, Horários e Formação', 'Recursos Humanos'];
-const IMP_DESTINO = {economato: ['painel-custos', 'Custos', 'Custos'], rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
+const IMP_DESTINO = {convocatorias: _RH, economato: ['painel-custos', 'Custos', 'Custos'], rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
   automaticas: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], reposicao: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], ruturas: ['markdown', 'Ruturas', 'Ruturas'],
   mapasproducao: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'], validades: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'],
   categorias: ['painel-vendas', 'Vendas', 'Vendas'], bomdia: ['painel-vendas', 'Vendas', 'Vendas'], resumo: ['painel-vendas', 'Vendas', 'Vendas'],
@@ -3528,7 +3529,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {economato: impEconomatoSemana, rutcausas: impRutCausas, descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {convocatorias: impConvocatorias, economato: impEconomatoSemana, rutcausas: impRutCausas, descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -17419,6 +17420,31 @@ function rutLerExcel(wb){
     }
   }
   return out;
+}
+// ---------- CONVOCATÓRIAS da Escola de Formação JM (Power Apps → Excel): entram nos percursos/formações em falta ----------
+async function impConvocatorias(wb){
+  let linhas = [];
+  for(const n of wb.SheetNames){
+    const R = impLinhas(wb.Sheets[n]); const h = impCabecalho(R, ['SAP ID','Curso','Data Fim']); if(!h) continue;
+    const H = (R[h.i] || []).map(c => impNorm(c)); const ci = re => H.findIndex(x => re.test(x));
+    const c = {id: ci(/^sap id$/), nome: ci(/^nome$/), loja: ci(/^loja$/), curso: ci(/^curso$/), local: ci(/^local$/), ini: ci(/^data inicio$/), fim: ci(/^data fim$/), hora: ci(/^hora$/), obs: ci(/^obs/)};
+    R.slice(h.i + 1).forEach(r => { const id = impTxt(r && r[c.id]).replace(/\D/g, ''); if(!id) return; if(c.loja >= 0 && impTxt(r[c.loja]) && !impEhNossaLoja(r[c.loja])) return;
+      const t = k => c[k] >= 0 ? impTxt(r[c[k]]) : '';
+      linhas.push({numero: id.replace(/^0+/, ''), nome: t('nome'), curso: t('curso'), local: t('local'), ini: horIso(r[c.ini]), fim: horIso(r[c.fim]), hora: t('hora'), obs: t('obs')}); });
+  }
+  if(!linhas.length) throw new Error('não encontrei convocatórias da loja');
+  const atuais = await sb('loja_formacoes_percurso?select=id,numero_pessoal,curso') || [];
+  const N = t => impNorm(t).replace(/[^a-z0-9]/g, '');
+  let novas = 0, atual = 0;
+  for(const x of linhas){
+    const obs = `Convocatória: ${x.local || '—'}, ${x.ini ? impDDMM(x.ini) : ''}${x.fim && x.fim !== x.ini ? ' a ' + impDDMM(x.fim) : ''}${x.hora ? ', ' + x.hora : ''}${x.obs ? ' · ' + x.obs : ''}`;
+    const e = atuais.find(a => String(a.numero_pessoal).replace(/^0+/, '') === x.numero && N(a.curso) === N(x.curso));
+    const dados = {data_prevista: x.fim || x.ini || null, observacoes: obs, atualizado_em: new Date().toISOString()};
+    if(e){ await sb(`loja_formacoes_percurso?id=eq.${e.id}`, {method: 'PATCH', body: JSON.stringify(dados)}); atual++; }
+    else { await sb('loja_formacoes_percurso', {method: 'POST', body: JSON.stringify({numero_pessoal: x.numero, nome: x.nome, curso: x.curso, ...dados})}); atuais.push({numero_pessoal: x.numero, curso: x.curso}); novas++; }
+  }
+  const pes = new Set(linhas.map(x => x.numero)).size;
+  return `${linhas.length} convocatórias de ${pes} pessoas · ${novas} novas, ${atual} atualizadas`;
 }
 // ---------- ECONOMATO: consumo da semana (relatório de quebras de material de economato; a semana vem do nome do ficheiro «de 09 a 15_11») ----------
 function ecoSemanaDoNome(nome){
