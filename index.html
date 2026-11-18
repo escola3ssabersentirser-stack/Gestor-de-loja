@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-18-1705';
+const APP_V='2026-11-18-1710';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -14634,19 +14634,23 @@ let alrFiltro = 'todos';
 const ALR_FORM = {codigo_conduta: 'Código de Conduta', data_privacy: 'Data Privacy', politica_anticorrupcao: 'Política Anticorrupção', seguranca_protecao: 'Segurança e Proteção'};
 async function blocoAlertasRH(){
   const dona = currentUser && souDona();
-  const [cols, ind, comp, alt, trc, d11] = await Promise.all([
+  const [cols, ind, comp, alt, trc, d11, perc] = await Promise.all([
     sb('loja_colaboradores?select=numero_pessoal,nome,telefone,bh_positivo,bh_negativo,data_prevista_gozar_horas,bh_gozo&order=nome.asc').catch(() => []),
     sb('loja_rh_indicadores?select=data_extracao,dados&order=data_extracao.desc&limit=1').catch(() => []),
     impTodos('loja_formacao_compliance?select=numero_pessoal,codigo_conduta,data_privacy,politica_anticorrupcao,seguranca_protecao').catch(() => []),
     sb('loja_alteracoes_horario?assinado=not.is.true&select=colaborador_numero,colaborador_nome,descricao,data_alteracao&order=data_alteracao.asc').catch(() => []),
     sb('loja_trocas_horario?select=mes,numero,n&order=mes.desc').catch(() => []),
-    impTodos('loja_descanso_11h?select=data,numero&order=data.desc').catch(() => [])
+    impTodos('loja_descanso_11h?select=data,numero&order=data.desc').catch(() => []),
+    sb('loja_formacoes_percurso?select=numero_pessoal,curso,data_prevista,observacoes&order=data_prevista.asc').catch(() => [])
   ]);
   const N = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
   const k0 = n => String(n || '').replace(/^0+/, '');
   const I = ind && ind[0] && ind[0].dados ? ind[0].dados.pessoas || [] : []; const dataInd = ind && ind[0] ? ind[0].data_extracao : null;
   const indDe = c => { const nc = N(c.nome).split(' '); return I.find(p => { const np = N(p.nome).split(' '); return np.length && np.every(w => nc.includes(w)); }); };
   const compPor = {}; (comp || []).forEach(r => { compPor[k0(r.numero_pessoal)] = r; });
+  // percursos / convocatórias da Escola de Formação JM (curso + data-limite)
+  const ddP = d => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '';
+  const percPor = {}; (perc || []).filter(r => !/retirad|conclu/i.test(r.observacoes || '')).forEach(r => { (percPor[k0(r.numero_pessoal)] = percPor[k0(r.numero_pessoal)] || []).push(`${(c => c === c.toUpperCase() ? c.toLowerCase().replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase()).replace(/\b(A|De|Do|Da|E)\b/g, w => w.toLowerCase()) : c)(String(r.curso || '').replace(/_?AAF.*$/i, '').replace(/\s+/g, ' ').trim())}${r.data_prevista ? ' (até ' + ddP(r.data_prevista) + ')' : ''}`); });
   const trcMes = trc && trc[0] ? trc[0].mes : null; const trcPor = {}; (trc || []).filter(r => r.mes === trcMes).forEach(r => { trcPor[k0(r.numero)] = Number(r.n) || 0; });
   window.__alrTrcMes = trcMes;
   const d11Mes = d11 && d11[0] ? d11[0].data.slice(0, 7) : null; const d11Por = {}; (d11 || []).filter(r => r.data.slice(0, 7) === d11Mes).forEach(r => { (d11Por[k0(r.numero)] = d11Por[k0(r.numero)] || []).push(r.data); });
@@ -14655,7 +14659,7 @@ async function blocoAlertasRH(){
   const curto = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 ? p[0] + ' ' + p[p.length - 1] : p[0]; };
   const P = (cols || []).filter(c => c.numero_pessoal && !/^0*(123456|9990001)$/.test(c.numero_pessoal)).map(c => {
     const k = k0(c.numero_pessoal), ip = indDe(c) || {}, cp = compPor[k];
-    const falta = cp ? Object.entries(ALR_FORM).filter(([f]) => /a formar|pendente|n[ãa]o/i.test(String(cp[f] || ''))).map(([, t]) => t) : [];
+    const falta = [...(cp ? Object.entries(ALR_FORM).filter(([f]) => /a formar|pendente|n[ãa]o/i.test(String(cp[f] || ''))).map(([, t]) => t) : []), ...(percPor[k] || [])];
     const bh = Number(c.bh_positivo) || 0, bhn = Number(c.bh_negativo) || 0;
     const hojeI = impISO(new Date()); const gozo = (Array.isArray(c.bh_gozo) ? c.bh_gozo : []).filter(x => x && x.data && x.data >= hojeI).map(x => x.data).sort();
     const bhDias = gozo.length ? gozo : (c.data_prevista_gozar_horas && c.data_prevista_gozar_horas >= hojeI ? [c.data_prevista_gozar_horas] : []);
@@ -14681,7 +14685,7 @@ async function blocoAlertasRH(){
     p => `<b style="color:var(--red);">${p.oc11} ${p.oc11 === 1 ? 'vez' : 'vezes'}</b> com menos de 11 h de descanso${(p.d11Datas || []).length ? ' · ' + p.d11Datas.map(d => impDDMM(d)).join(', ') : ''}`, 'Ninguém com menos de 11 h de descanso.');
   h += cartao('🔁 Trocas de horário', `${trcMes ? mesN(trcMes) : 'Relatório de ' + (dataInd ? impDDMM(dataInd) : '—')} · máximo ${TRC_MAX} por pessoa · as alterações são feitas no Hello.`, 'trocas', P.filter(tem.trocas).sort((a, b) => b.trocas - a.trocas),
     p => `<b style="color:${p.trocas >= TRC_MAX ? 'var(--red)' : '#8A5A00'};">${p.trocas}/${TRC_MAX} trocas</b>${p.trocas > TRC_MAX ? ' — acima do máximo' : p.trocas === TRC_MAX ? ' — no limite' : ''}`, 'Ninguém com trocas de horário.');
-  h += cartao('🎓 Formação pendente', 'Formações de compliance por concluir.', 'form', P.filter(tem.form).sort((a, b) => b.falta.length - a.falta.length),
+  h += cartao('🎓 Formação pendente', 'Percursos e convocatórias da Escola de Formação e formações de compliance por concluir.', 'form', P.filter(tem.form).sort((a, b) => b.falta.length - a.falta.length),
     p => `<b style="color:#2F4FA0;">${p.falta.join(', ')}</b>`, 'Todas as formações concluídas.');
   return h;
 }
@@ -14700,7 +14704,7 @@ function alrMensagem(p, tema){
     L.push(`⏳ *Banco de horas:*${p.bh > 0 ? ` tem ${p.bh.toLocaleString('pt-PT')} h a gozar.` : ''}${dias.length ? `\nTem de gozar as horas:\n${dias.map(d => '• ' + d).join('\n')}` : ' Ainda sem dias marcados.'}`);
   }
   if(so('bh') && p.bhn < 0) L.push(`⏳ *Banco de horas:* tem ${Math.abs(p.bhn).toLocaleString('pt-PT')} h a compensar.`);
-  if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:* ${p.falta.join(', ')}. Conclua até ao fim da semana.`);
+  if(so('form') && p.falta.length) L.push(`🎓 *Formação pendente:*\n${p.falta.map(f => '• ' + f).join('\n')}\n${p.falta.some(f => /\(até /.test(f)) ? 'Conclua dentro do prazo indicado.' : 'Conclua até ao fim da semana.'}`);
   return `Olá ${pn},\n\nPara sua informação:\n\n${L.join('\n\n')}\n\nQualquer dúvida, fale comigo.\nObrigada,\nConceição Alves`;
 }
 // telemóvel para WhatsApp: tem de ser 9 algarismos a começar por 91, 92, 93 ou 96 (fixos 2xx não têm WhatsApp)
