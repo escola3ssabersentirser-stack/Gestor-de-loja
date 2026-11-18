@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-18-1700';
+const APP_V='2026-11-18-1705';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -14594,8 +14594,10 @@ async function impTrocasLista(wb, nomeF, R, hi){
   if(l.length) await sb('loja_trocas_horario', {method: 'POST', body: JSON.stringify(l)});
   try{ await trcSincronizarColab(mes); }catch(e){ console.warn('trocas na ficha', e); }
   // as que aguardam consentimento ficam «por assinar no Hello»; as que já não aguardam saem da lista
-  const aguarda = L.filter(x => /aguarda|pendente|por assinar|consentimento/i.test(x.status));
-  const feitas = new Set(L.filter(x => !/aguarda|pendente|por assinar|consentimento/i.test(x.status)).map(x => horChave(x.numero, horDesc(x))));
+  // «Aguarda consentimento» = por assinar no Hello; «Consentimento efetuado» (ou sem tarefa) = já assinado
+  const porAssinar = st => /aguarda|pendente|por assinar/i.test(st) && !/efetuad|conclu|assinad/i.test(st);
+  const aguarda = L.filter(x => porAssinar(x.status));
+  const feitas = new Set(L.filter(x => !porAssinar(x.status)).map(x => horChave(x.numero, horDesc(x))));
   let novasAss = 0;
   try{
     const atuais = await sb('loja_alteracoes_horario?assinado=eq.false&select=id,colaborador_numero,descricao') || [];
