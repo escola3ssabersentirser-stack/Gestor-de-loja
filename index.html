@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-18-1710';
+const APP_V='2026-11-18-1945';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -3421,11 +3421,30 @@ function impTipoTexto(texto, nome){
   return null;
 }
 // corre o carregamento próprio de cada cartão com o ficheiro e guarda logo
+// «Indicadores RH para Gerentes» (drh_gerente): a folha «BH e HE Semanal» é atualizada todas as semanas → saldo do banco de horas de cada pessoa
+async function indBHSemanal(wb){
+  const ler = (nome, re) => { const n = wb.SheetNames.find(x => re.test(x)); if(!n) return null; const R = XLSX.utils.sheet_to_json(wb.Sheets[n], {header: 1, defval: '', raw: true});
+    const hi = R.findIndex(r => r.some(c => /n\.?º de colaborador/i.test(String(c))) && r.some(c => /nome de colaborador/i.test(String(c)))); if(hi < 0) return null;
+    const H = R[hi].map(c => rhN(c)); const ext = (R.find(r => r.some(c => /extra[çc][ãa]o de sap/i.test(String(c)))) || []).find(c => typeof c === 'number');
+    return {H, L: R.slice(hi + 1).filter(r => String(r[H.findIndex(h => /^n.{0,3}de colaborador/.test(h))] || '').replace(/\D/g, '')), ext: ext ? horIso(ext) : null}; };
+  const T = ler('bh', /BH e HE Semanal/i); if(!T) return null;
+  const ci = re => T.H.findIndex(h => re.test(h)), num = ci(/^n.{0,3}de colaborador/), pos = ci(/saldo total de horas positivas/) >= 0 ? ci(/saldo total de horas positivas/) : ci(/saldo de bh positivo/), neg = ci(/saldo de horas negativas/), he = ci(/horas aprovadas/);
+  const C = ler('comp', /compensa[çc][ãa]o bh/i); const comp = {};
+  if(C){ const cn = C.H.findIndex(h => /^n.{0,3}de colaborador/.test(h)), cp = C.H.findIndex(h => /compensacao de bh positivo/.test(h)), cg = C.H.findIndex(h => /compensacao de bh negativo/.test(h));
+    C.L.forEach(r => { comp[String(r[cn]).replace(/\D/g, '').replace(/^0+/, '')] = {p: rhNum(r[cp]) || 0, n: rhNum(r[cg]) || 0}; }); }
+  const cols = await sb('loja_colaboradores?select=id,numero_pessoal') || []; const k0 = v => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
+  let n = 0;
+  for(const r of T.L){ const k = k0(r[num]); const c = cols.find(x => k0(x.numero_pessoal) === k); if(!c) continue;
+    const d = {bh_positivo: rhNum(r[pos]) || 0, bh_negativo: -Math.abs(rhNum(r[neg]) || 0)}; if(he >= 0) d.horas_extra_aprovadas = rhNum(r[he]) || 0;
+    if(comp[k]){ d.bh_compensar_positivo = comp[k].p; d.bh_compensar_negativo = comp[k].n; }
+    await sb(`loja_colaboradores?id=eq.${c.id}`, {method: 'PATCH', body: JSON.stringify(d)}); n++; }
+  return `banco de horas de ${n} pessoas atualizado${T.ext ? ' (SAP ' + impDDMM(T.ext) + ')' : ''}`;
+}
 async function impExtraCorrer(tipo, f){
   const falso = {files: [f], value: '', __auto: true};
   const caixa = id => { let el = document.getElementById(id); if(!el){ el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); } el.innerHTML = ''; return el; };
   const cfg = {
-    indrh: ['ind-estado', () => indCarregar(falso)],
+    indrh: ['ind-estado', async () => { await indCarregar(falso); try{ const wb = XLSX.read(await f.arrayBuffer(), {type: 'array'}); const r = await indBHSemanal(wb); if(r){ const el = document.getElementById('ind-estado'); if(el) el.innerHTML += ' · ' + r; } }catch(e){ console.warn('BH semanal', e); } }],
     gozo: ['rh-estado-bh', async () => { await rhCarregar(falso, 'bh'); if(rhGozo && rhGozo.length) await rhGuardarGozo(); }],
     bancohoras: ['rh-estado-bh', async () => { await rhCarregar(falso, 'bh'); if(rhLidos && rhLidos.tipo === 'bh') await rhGuardar(); }],
     formacoes: ['rh-estado-form', async () => { await rhCarregar(falso, 'form'); if(rhLidos && rhLidos.tipo === 'form') await rhGuardar(); }],
