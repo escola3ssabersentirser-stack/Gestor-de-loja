@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-18-1945';
+const APP_V='2026-11-18-1950';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -14109,11 +14109,12 @@ function rhLerGozoBH(wb){
       o.datas.push({data, horas: c.horas >= 0 ? (Number(r[c.horas]) || 0) : null, hora_inicio: rhHora(c.hini >= 0 ? r[c.hini] : r[c.ini]), hora_fim: rhHora(c.hfim >= 0 ? r[c.hfim] : (c.fim >= 0 ? r[c.fim] : null))});
     }
     const lista = Object.values(pess); if(!lista.length) continue;
+    const todasD = lista.flatMap(p => p.datas.map(d => d.data)).sort(); lista.periodoAte = todasD[todasD.length - 1] || null;
     const hoje = dataLocalISO(new Date());
     // só contam os dias a partir do dia em que o ficheiro é carregado
     lista.forEach(p => { p.datas = p.datas.filter(d => d.data >= hoje).sort((a,b) => a.data.localeCompare(b.data)); const fut = p.datas;
       p.proxima = fut.length ? fut[0].data : null; p.horas_marcadas = Math.round(p.datas.reduce((s,d)=>s+(d.horas||0),0)*100)/100; p.dias_futuros = fut.length; });
-    lista.sort((a,b) => String(a.proxima || '9').localeCompare(String(b.proxima || '9')));
+    const ate = lista.periodoAte; lista.sort((a,b) => String(a.proxima || '9').localeCompare(String(b.proxima || '9'))); lista.periodoAte = ate;
     return lista;
   }
   return [];
@@ -14131,7 +14132,7 @@ async function rhGuardarGozo(){
       await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({data_prevista_gozar_horas: p.proxima, bh_gozo: p.datas})}); ok++; tratados.add(c.id);
     }
     for(const c of colabs){ if(tratados.has(c.id)) continue; const g = Array.isArray(c.bh_gozo) ? c.bh_gozo : [];
-      const fut = g.filter(x => x && x.data && x.data >= hojeG).sort((a, b) => a.data.localeCompare(b.data));
+      const fut = g.filter(x => x && x.data && x.data >= hojeG && !(rhGozo.periodoAte && x.data <= rhGozo.periodoAte)).sort((a, b) => a.data.localeCompare(b.data));
       if(fut.length !== g.length || (c.data_prevista_gozar_horas && c.data_prevista_gozar_horas < hojeG)) await sb(`loja_colaboradores?id=eq.${c.id}`, {method:'PATCH', body: JSON.stringify({bh_gozo: fut, data_prevista_gozar_horas: fut.length ? fut[0].data : null})}); }
     alert(`Guardado ✓\n\n${ok} pessoas com dias de gozo de banco de horas marcados${falta.length ? '\n\nNão encontrei na app: ' + falta.join(', ') : ''}`);
     lemDados = null; renderFormacoesScreen();
