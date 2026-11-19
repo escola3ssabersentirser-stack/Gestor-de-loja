@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-19-1710';
+const APP_V='2026-11-19-1730';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -4245,6 +4245,73 @@ function lerScoreImagem(texto){
   return d;
 }
 // grava (mantém o que já existia desse mês e não veio na imagem: lojas da área, top 3, bottom 3)
+// cada atualização do score fica guardada com a data: é daqui que sai a evolução por semana
+async function valGuardarHist(d){
+  if(!d || d.score == null) return;
+  const data = d.atualizacao || dataLocalISO(new Date());
+  try{ await sb('loja_validades_score_hist?on_conflict=data', {method: 'POST', headers: {'Prefer': 'resolution=merge-duplicates'}, body: JSON.stringify({data, mes: d.mes || null, score: d.score, posicao: d.posicao ?? null, total_lojas: d.total_lojas ?? null, execucao: d.execucao ?? null, aceitacao: d.aceitacao ?? null, mnr_pct: d.mnr_pct ?? null})}); }catch(e){ console.warn('histórico do score', e); }
+}
+function scSemana(iso){ const d = new Date(iso + 'T12:00:00'); const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dia = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - dia); const a = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - a) / 864e5 + 1) / 7); }
+// gráfico de linha simples (SVG) com o valor escrito em cada ponto
+function scLinha(pts, o){
+  o = o || {}; const W = 340, H = o.h || 150, pL = 10, pR = 10, pT = 22, pB = 36;
+  if(!pts.length) return '';
+  const vs = pts.map(p => p.v), lo = o.min != null ? o.min : Math.floor(Math.min(...vs, o.obj ?? Infinity) - 1), hi = o.max != null ? o.max : Math.ceil(Math.max(...vs, o.obj ?? -Infinity) + 1);
+  const X = i => pts.length === 1 ? W / 2 : pL + i * (W - pL - pR) / (pts.length - 1), Y = v => o.inv ? pT + (v - lo) / ((hi - lo) || 1) * (H - pT - pB) : H - pB - (v - lo) / ((hi - lo) || 1) * (H - pT - pB);
+  const cor = v => o.cor ? o.cor(v) : 'var(--navy)';
+  let g = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;" role="img">`;
+  if(o.obj != null) g += `<line x1="0" x2="${W}" y1="${Y(o.obj)}" y2="${Y(o.obj)}" stroke="#1F7A33" stroke-dasharray="4 4" stroke-width="1"/><text x="${W - 2}" y="${Y(o.obj) - 4}" font-size="10" text-anchor="end" fill="#1F7A33">objetivo ${o.fmt(o.obj)}</text>`;
+  if(pts.length > 1) g += `<polyline points="${pts.map((p, i) => X(i) + ',' + Y(p.v)).join(' ')}" fill="none" stroke="#9AA8B8" stroke-width="2.5" stroke-linejoin="round"/>`;
+  pts.forEach((p, i) => { const anc = i === 0 && pts.length > 1 ? 'start' : i === pts.length - 1 && pts.length > 1 ? 'end' : 'middle';
+    g += `<circle cx="${X(i)}" cy="${Y(p.v)}" r="5" fill="${cor(p.v)}" stroke="#fff" stroke-width="2"/><text x="${X(i)}" y="${Y(p.v) - 9}" font-size="12" font-weight="800" text-anchor="${anc}" fill="${cor(p.v)}">${o.fmt(p.v)}</text>
+      <text x="${X(i)}" y="${H - 14}" font-size="11" font-weight="700" text-anchor="${anc}" fill="#4A5563">${rpEsc(p.l)}</text>${p.sub ? `<text x="${X(i)}" y="${H - 2}" font-size="9.5" text-anchor="${anc}" fill="#7A8594">${rpEsc(p.sub)}</text>` : ''}`; });
+  return g + '</svg>';
+}
+async function blocoScoreMC(){
+  let H = [], NL = [], M = [];
+  try{ H = await sb('loja_validades_score_hist?select=*&order=data.asc') || []; }catch(e){}
+  try{ NL = await sb('loja_newsletter_mc?select=semana,dados&order=semana.asc') || []; }catch(e){}
+  try{ M = await sb('loja_validades_score?select=dados&order=ano.desc,data_atualizacao.desc.nullslast&limit=1') || []; }catch(e){}
+  if(!H.length) return `<div class="card" style="font-size:13px;color:var(--ink-soft);">Ainda sem score guardado. Carregue o email ou as imagens do Score Mensal em Gestão de Validades.</div>`;
+  // uma leitura por semana (a última da semana)
+  const sem = {}; H.forEach(r => { const k = r.data.slice(0, 4) + '-' + String(scSemana(r.data)).padStart(2, '0'); sem[k] = {...r, sem: scSemana(r.data)}; });
+  NL.forEach(n => { const m = n.dados && n.dados.markdown; if(!m || m.score == null) return; const k = Math.floor(n.semana / 100) + '-' + String(n.semana % 100).padStart(2, '0'); if(!sem[k]) sem[k] = {data: null, sem: n.semana % 100, mes: '', score: m.score, posicao: m.posicao, execucao: m.execucao, aceitacao: m.aceitacao, mnr_pct: m.nao_realizado}; });
+  const S = Object.keys(sem).sort().map(k => sem[k]).slice(-10);
+  const u = S[S.length - 1], a = S.length > 1 ? S[S.length - 2] : null, D = (M[0] && M[0].dados) || {};
+  const corS = v => v == null ? 'var(--ink-soft)' : v >= 90 ? '#1F7A33' : v >= 85 ? '#C77F12' : '#B4231A';
+  const f2 = v => v == null ? '—' : Number(v).toLocaleString('pt-PT', {minimumFractionDigits: 1, maximumFractionDigits: 2});
+  const dif = a && a.score != null ? u.score - a.score : null, difP = a && a.posicao && u.posicao ? a.posicao - u.posicao : null;
+  const seta = (v, suf) => v == null ? '' : `<span style="color:${v >= 0 ? '#1F7A33' : '#B4231A'};font-weight:800;">${v >= 0 ? '▲' : '▼'} ${Math.abs(v).toLocaleString('pt-PT', {maximumFractionDigits: 2})}${suf}</span>`;
+  const ddmm = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '';
+  let h = `<div class="card" style="padding:14px;">
+    <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px;align-items:center;">
+      <div style="text-align:center;background:${corS(u.score)}14;border-radius:14px;padding:10px 4px;"><div style="font-size:12px;color:var(--ink-soft);font-weight:700;">SCORE</div>
+        <div style="font-size:44px;font-weight:900;line-height:1;color:${corS(u.score)};">${f2(u.score)}<span style="font-size:22px;">%</span></div>
+        <div style="font-size:12px;margin-top:4px;">${dif != null ? seta(dif, ' pp') + ' vs semana anterior' : ''}</div></div>
+      <div style="text-align:center;"><div style="font-size:12px;color:var(--ink-soft);font-weight:700;">LUGAR NO PAÍS</div>
+        <div style="font-size:36px;font-weight:900;color:var(--navy);line-height:1.1;">${u.posicao ? u.posicao + '.º' : '—'}</div>
+        <div style="font-size:12px;color:var(--ink-soft);">${u.total_lojas ? 'de ' + u.total_lojas + ' lojas' : ''}</div><div style="font-size:12px;margin-top:2px;">${difP != null ? seta(difP, difP === 1 || difP === -1 ? ' lugar' : ' lugares') : ''}</div></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-soft);text-align:center;margin-top:6px;">${rpEsc(u.mes || '')}${u.data ? ' · atualizado a ' + ddmm(u.data) : ''} · verde ≥ 90% · laranja ≥ 85% · vermelho abaixo</div>`;
+  // 3 partes do score, com barra
+  const parte = (t, v, peso, bom, medio, inv) => { const c = v == null ? 'var(--ink-soft)' : (inv ? v <= bom : v >= bom) ? '#1F7A33' : (inv ? v <= medio : v >= medio) ? '#C77F12' : '#B4231A';
+    const w = v == null ? 0 : inv ? Math.max(4, 100 - v * 5) : v; return `<div style="margin-top:9px;"><div style="display:flex;justify-content:space-between;font-size:12.5px;"><span><b>${t}</b> <small style="color:var(--ink-soft);">${peso}</small></span><b style="color:${c};">${f2(v)}%</b></div><div style="height:10px;background:#EEF1F4;border-radius:6px;overflow:hidden;margin-top:3px;"><div style="width:${Math.min(100, w)}%;height:100%;background:${c};"></div></div></div>`; };
+  h += `<div style="margin-top:6px;">${parte('Execução da rotina', u.execucao, '· 25% do score', 98, 95)}${parte('Taxa de aceitação', u.aceitacao, '· etiquetas vendidas', 85, 75)}${parte('Markdown não realizado', u.mnr_pct, '· quanto menos melhor', 3, 6, true)}</div></div>`;
+  // evolução por semana
+  const pts = S.filter(x => x.score != null).map(x => ({l: 'S' + x.sem, sub: x.posicao ? x.posicao + '.º' : '', v: Number(x.score)}));
+  h += `<div class="card"><b>📈 Score por semana</b><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Por baixo de cada semana: o lugar no país. O score é do mês e recomeça no início de cada mês.</div>${scLinha(pts, {fmt: v => f2(v) + '%', obj: 90, cor: corS})}</div>`;
+  const pp = S.filter(x => x.posicao).map(x => ({l: 'S' + x.sem, v: Number(x.posicao)}));
+  if(pp.length > 1) h += `<div class="card"><b>🏁 Lugar no país por semana</b> <span style="font-size:11.5px;color:var(--ink-soft);">(quanto mais acima, melhor)</span>${scLinha(pp, {fmt: v => v + '.º', inv: true, h: 130, cor: () => 'var(--navy)'})}</div>`;
+  const ac = S.filter(x => x.aceitacao != null).map(x => ({l: 'S' + x.sem, v: Number(x.aceitacao)}));
+  if(ac.length > 1) h += `<div class="card"><b>🏷️ Taxa de aceitação por semana</b>${scLinha(ac, {fmt: v => f2(v) + '%', h: 130, cor: v => v >= 85 ? '#1F7A33' : v >= 75 ? '#C77F12' : '#B4231A'})}</div>`;
+  // secções: aceitação, da pior para a melhor
+  const sec = (D.secoes || []).filter(x => x.aceitacao != null).sort((x, y) => x.aceitacao - y.aceitacao);
+  if(sec.length) h += `<div class="card"><b>🧺 Aceitação por secção</b> <span style="font-size:11.5px;color:var(--ink-soft);">(${rpEsc(D.mes || '')}, da pior para a melhor)</span>${sec.map(x => { const c = x.aceitacao >= 85 ? '#1F7A33' : x.aceitacao >= 75 ? '#C77F12' : '#B4231A'; return `<div style="margin-top:7px;font-size:12.5px;"><div style="display:flex;justify-content:space-between;"><span>${rpEsc(x.secao)}</span><b style="color:${c};">${f2(x.aceitacao)}%</b></div><div style="height:9px;background:#EEF1F4;border-radius:6px;overflow:hidden;margin-top:2px;"><div style="width:${x.aceitacao}%;height:100%;background:${c};"></div></div></div>`; }).join('')}</div>`;
+  // reposição seletiva (da newsletter), se houver
+  const rp = NL.filter(n => n.dados && n.dados.reposicao && n.dados.reposicao.score != null).map(n => ({l: 'S' + (n.semana % 100), v: n.dados.reposicao.score}));
+  if(rp.length) h += `<div class="card"><b>🔁 Score de reposição seletiva por semana</b> <span style="font-size:11.5px;color:var(--ink-soft);">(da newsletter)</span>${scLinha(rp, {fmt: v => f2(v) + '%', h: 130, cor: v => v >= 85 ? '#1F7A33' : v >= 70 ? '#C77F12' : '#B4231A'})}</div>`;
+  return h;
+}
 async function valGuardarScoreDados(d){
   const ano = d.atualizacao ? (d.mes.toLowerCase() === 'dezembro' && d.atualizacao.slice(5, 7) === '01' ? Number(d.atualizacao.slice(0, 4)) - 1 : Number(d.atualizacao.slice(0, 4))) : new Date().getFullYear();
   let ant = {}; try{ const r = await sb(`loja_validades_score?ano=eq.${ano}&mes=eq.${encodeURIComponent(d.mes)}&select=dados`); ant = (r && r[0] && r[0].dados) || {}; }catch(e){}
@@ -4252,6 +4319,7 @@ async function valGuardarScoreDados(d){
   ['area', 'top3', 'bottom3', 'secoes', 'artigos'].forEach(k => { if(!final[k]) final[k] = []; });
   const a747 = (final.area || []).find(x => String(x.loja) === IMP_LOJA); if(a747){ if(d.score != null) a747.score = d.score; if(d.posicao != null) a747.posicao = d.posicao; }
   await sb('loja_validades_score?on_conflict=ano,mes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({ano, mes: d.mes, data_atualizacao: d.atualizacao, dados: final})});
+  await valGuardarHist(final);
   return final;
 }
 // janela para confirmar/corrigir o que foi lido da imagem antes de guardar
@@ -4312,6 +4380,7 @@ async function valGuardarScore(texto){
     const d = lerScoreValidades(texto);
     const ano = d.atualizacao ? (d.mes.toLowerCase() === 'dezembro' && d.atualizacao.slice(5,7) === '01' ? Number(d.atualizacao.slice(0,4)) - 1 : Number(d.atualizacao.slice(0,4))) : new Date().getFullYear();
     await sb('loja_validades_score?on_conflict=ano,mes', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates'}, body: JSON.stringify({ano, mes: d.mes, data_atualizacao: d.atualizacao, dados: d})});
+    await valGuardarHist(d);
     msg(`✓ Score de ${d.mes} guardado.`);
     renderArea('validades');
   }catch(e){ msg('✕ ' + (e && e.message || e)); }
@@ -16636,6 +16705,7 @@ async function renderMelhoriaContinua(){
       if(esp && !mcColSel && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
     html += blocoEquipaRanking(RD); try{ html += await blocoSemanasReposicao(); }catch(e){ console.error('semanas', e); } html += blocoResumoReposicao(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
 
+  try{ html += `<div class="section-title">🏅 Score da rotina de validades</div>` + await blocoScoreMC(); }catch(e){ console.error('score', e); }
   try{ html += `<div class="section-title">📰 Newsletter semanal</div>` + await blocoNewsletter(); }catch(e){ console.error('newsletter', e); }
   content.innerHTML = html; mcOrganizarSeparadores(content);
 }
@@ -17036,8 +17106,9 @@ let mcMesSel = 'atual';
 let mcSep = 'resumo';
 // horário das listas automáticas: das 5h às 23h (a última hora começa às 22h)
 const MC_H_INI = 5, MC_H_FIM = 23;
-const MC_SEPS = [['resumo', '📊', 'Resumo'], ['newsletter', '📰', 'Newsletter'], ['equipa', '🏆', 'Quem repõe'], ['auto', '🔁', 'Automáticas'], ['massiva', '🚚', 'Paletes'], ['visivel', '👀', 'Visível'], ['ruturas', '🔗', 'Ruturas']];
+const MC_SEPS = [['resumo', '📊', 'Resumo'], ['score', '🏅', 'Score'], ['newsletter', '📰', 'Newsletter'], ['equipa', '🏆', 'Quem repõe'], ['auto', '🔁', 'Automáticas'], ['massiva', '🚚', 'Paletes'], ['visivel', '👀', 'Visível'], ['ruturas', '🔗', 'Ruturas']];
 const MC_SEP_AJUDA = {
+  score: 'O score da rotina diária de validades: quanto vale, em que lugar está a loja e como evoluiu de semana para semana.',
   resumo: 'Os números do período escolhido: quantos artigos se repuseram, quantos ficaram em rutura e o peso de cada tipo de lista.',
   equipa: 'Quem repôs mais artigos. Verde = automática, azul = massiva (paletes), laranja = visível.',
   auto: 'Listas automáticas: quantos artigos se repõem por dia e por hora, e quem fez as listas. Barras vermelhas = horas sem reposição.',
@@ -17053,7 +17124,7 @@ function mcOrganizarSeparadores(content){
   const nos = [...content.childNodes]; if(!nos.length) return;
   const titulos = nos.filter(n => n.nodeType === 1 && n.classList.contains('section-title'));
   if(titulos.length < 2) return;
-  const tipo = t => /Newsletter/i.test(t) ? 'newsletter' : /trabalha mais/i.test(t) ? 'equipa' : /Massiva/i.test(t) ? 'massiva' : /Vis[ií]vel/i.test(t) ? 'visivel' : /Rutura/i.test(t) ? 'ruturas' : 'auto';
+  const tipo = t => /Score da rotina/i.test(t) ? 'score' : /Newsletter/i.test(t) ? 'newsletter' : /trabalha mais/i.test(t) ? 'equipa' : /Massiva/i.test(t) ? 'massiva' : /Vis[ií]vel/i.test(t) ? 'visivel' : /Rutura/i.test(t) ? 'ruturas' : 'auto';
   const topo = document.createElement('div'), barra = document.createElement('div'), paineis = {};
   MC_SEPS.forEach(([k]) => { const d = document.createElement('div'); d.className = 'mc-sep-painel'; d.dataset.sep = k; paineis[k] = d; });
   // antes do 1.º título: avisos e filtros (ficam sempre à vista); 1.º título + 1.º cartão: separador «Resumo»
