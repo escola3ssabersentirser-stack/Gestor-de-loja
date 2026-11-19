@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-18-1950';
+const APP_V='2026-11-19-1200';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -3390,7 +3390,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {convocatorias:'Convocatórias da Escola de Formação JM → Formação', economato:'Consumo de economato da semana → Custos', rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {newsletter:'Newsletter semanal Melhoria Contínua → Melhoria Contínua', convocatorias:'Convocatórias da Escola de Formação JM → Formação', economato:'Consumo de economato da semana → Custos', rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3413,6 +3413,7 @@ function impTipoExtra(wb, nome){
 function impTipoTexto(texto, nome){
   const tx = String(texto || '');
   const tv = (typeof vocLimparEmail === 'function') ? vocLimparEmail(tx) : tx;
+  if(/Melhoria\s*Cont[íi]nua/i.test(tx) && /Quebra MTD|Boletim da|Mapas de\s*Produ|Reposi[çc][ãa]o\s*Seletiva/i.test(tx)) return 'newsletter';
   if(/correu\s+(bem|mal)|muito\s+bem[\s\S]{0,200}muito\s+mal/i.test(tv) || (/voz do cliente/i.test(nome + ' ' + tx.slice(0, 1500)) && /avalia/i.test(tx))) return 'vozcliente';
   if(/controlo\s+de\s+picagens/i.test(tx)) return 'picagens';
   if(/score mensal/i.test(tx) && /validades/i.test(tx)) return 'scorevalidades';
@@ -3456,6 +3457,7 @@ async function impExtraCorrer(tipo, f){
     auditoria: ['aud-auto-estado', () => audCarregarAuto(falso)],
     scorevalidades: ['val-score-estado', () => valCarregarFicheiro(falso)],
     infoneg: ['info-neg-estado', () => infoNegCarregar(falso)],
+    newsletter: ['nl-estado', async () => { const m = await nlImportar(f); document.getElementById('nl-estado').textContent = m; }],
     vozcliente: ['voc-email-estado', () => vocCarregarFicheiro(falso)],
     picagens: ['pic-estado', async () => { const t = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f); const l = picLerTexto(t); if(!l.length) throw new Error('não encontrei picagens no documento'); picRevisao(l); document.getElementById('pic-estado').textContent = `${l.length} linhas lidas — confirme na janela que abriu`; }],
     dadospessoais: ['dp-estado', async () => { const wb = XLSX.read(await f.arrayBuffer(), {type:'array'}); fim = await dpGuardar(dpLerExcel(wb)); }]
@@ -3471,7 +3473,7 @@ async function impExtraCorrer(tipo, f){
 let impResHTML = '';
 // depois de carregar, cada ficheiro tem um botão para abrir a área onde ficou (e enviar as mensagens dessa área)
 const _RH = ['formacoes', 'Banco de Horas, Horários e Formação', 'Recursos Humanos'];
-const IMP_DESTINO = {convocatorias: _RH, economato: ['painel-custos', 'Custos', 'Custos'], rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
+const IMP_DESTINO = {newsletter: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], convocatorias: _RH, economato: ['painel-custos', 'Custos', 'Custos'], rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
   automaticas: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], reposicao: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], ruturas: ['markdown', 'Ruturas', 'Ruturas'],
   mapasproducao: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'], validades: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'],
   categorias: ['painel-vendas', 'Vendas', 'Vendas'], bomdia: ['painel-vendas', 'Vendas', 'Vendas'], resumo: ['painel-vendas', 'Vendas', 'Vendas'],
@@ -16324,6 +16326,263 @@ async function listasGuardar(){
     showToast(); renderMelhoriaContinua();
   }catch(e){ alert('Não consegui guardar. Tente novamente.'); }
 }
+// ===== Newsletter Semanal Melhoria Contínua (PDF da semana): a app lê cada página pela posição dos números =====
+function nlNum(s){ if(s == null) return null; const t = String(s).replace(/[−–]/g, '-').replace(/€|%|un\.|p\.p\.|\s/g, '').replace(',', '.'); const m = t.match(/^[-+]?\d+(\.\d+)?/); return m ? Number(m[0]) : null; }
+async function nlLerPaginas(f){
+  await infoCarregarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+  const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await lib.getDocument({data: await f.arrayBuffer()}).promise; const pags = [];
+  for(let i = 1; i <= pdf.numPages; i++){ const c = await (await pdf.getPage(i)).getTextContent();
+    pags.push(nlJuntar(c.items.filter(it => it.str && it.str.trim()).map(it => ({x: it.transform[4], y: it.transform[5], w: it.width || 0, s: it.str.trim()})))); }
+  return pags;
+}
+// junta os números partidos pelo PDF («305» + «636 €» → «305 636 €»)
+function nlJuntar(P){
+  const r = P.slice().sort((a, b) => b.y - a.y || a.x - b.x), fora = new Set();
+  r.forEach(p => { if(fora.has(p) || !/^[-−+]?\d{1,3}$/.test(p.s)) return;
+    const a = r.find(q => q !== p && !fora.has(q) && Math.abs(q.y - p.y) <= 1.5 && q.x > p.x && q.x - (p.x + p.w) < 9 && /^\d{3}(\D|$)/.test(q.s));
+    if(a){ p.s += ' ' + a.s; p.w = a.x + a.w - p.x; fora.add(a); } });
+  return r.filter(p => !fora.has(p));
+}
+const nlT = (P, s) => P.find(i => i.s === s);
+const nlAbaixo = (P, lb, dx, dy) => lb ? P.filter(i => i !== lb && Math.abs(i.x - lb.x) <= dx && i.y < lb.y - 0.5 && lb.y - i.y <= dy).sort((a, b) => b.y - a.y) : [];
+const nlDireita = (P, lb, dx) => lb ? P.filter(i => i !== lb && Math.abs(i.y - lb.y) <= 3 && i.x > lb.x + 1 && i.x - lb.x <= dx).sort((a, b) => a.x - b.x) : [];
+// Boletim da Quebra
+function nlQuebra(P){
+  const sob = (lb, n) => { const a = nlAbaixo(P, lb, 40, 40); return a[n || 0] ? a[n || 0].s : null; };
+  const qp = nlT(P, 'Quebra %'), qv = nlT(P, 'Quebra Valor'), ve = nlT(P, 'Vendas'), lfl = ve && P.find(i => i.s === 'LFL' && Math.abs(i.x - ve.x) < 5);
+  const R = {vendas: nlNum(sob(ve)), quebra_pct: nlNum(sob(qp)), quebra_pp_aa: nlNum(sob(qp, 1)), quebra_valor: nlNum(sob(qv)), quebra_delta_aa: nlNum(sob(qv, 1)), lfl: nlNum(sob(lfl)), secoes: []};
+  const LB = {'QB %': 'qb', 'DIF PP': 'pp', 'Δ QUEBRA': 'dq', 'VENDAS': 'vendas', 'LFL': 'lfl', 'QUEBRA': 'quebra'};
+  const qbs = P.filter(i => i.s === 'QB %');
+  const cards = qbs.map(q => { const tit = P.filter(i => i.y > q.y && i.y - q.y <= 30 && i.x >= q.x - 10 && i.x <= q.x + 160 && !LB[i.s] && !/\d/.test(i.s) && /[A-ZÁÉÍÓÚÇÃÕ]{3}/.test(i.s)).sort((a, b) => a.y - b.y)[0];
+    const col = qbs.filter(o => Math.abs(o.x - q.x) <= 2 && o.y < q.y).sort((a, b) => b.y - a.y)[0]; const lo = col ? col.y + 25 : -1;
+    const c = {nome: tit ? tit.s : '?', x: q.x, y: q.y};
+    const labs = P.filter(i => LB[i.s] && Math.abs(i.x - q.x) <= 2 && i.y <= q.y + 1 && i.y > lo);
+    labs.forEach(l => { const v = nlDireita(P, l, 125).filter(i => !LB[i.s]); c[LB[l.s]] = nlNum(v.map(i => i.s).join(' ')); });
+    const ql = labs.find(l => l.s === 'QUEBRA');
+    if(ql) c.motivos = P.filter(i => Math.abs(i.x - q.x) <= 2 && i.y < ql.y - 3 && i.y > lo && !LB[i.s]).sort((a, b) => b.y - a.y).map(i => i.s).join(' ').replace(/\s*\|\s*$/, '').replace(/\s+/g, ' ');
+    return c; });
+  const topo = Math.max(...cards.map(c => c.y));
+  cards.filter(c => c.y >= topo - 3).sort((a, b) => a.x - b.x).forEach(c => R.secoes.push(Object.assign(c, {cats: []})));
+  cards.filter(c => c.y < topo - 3).sort((a, b) => b.y - a.y).forEach(c => { const s = R.secoes.slice().sort((a, b) => Math.abs(a.x - c.x) - Math.abs(b.x - c.x))[0]; if(s) s.cats.push(c); });
+  const limpa = c => { delete c.x; delete c.y; return c; }; R.secoes.forEach(s => { limpa(s); s.cats.forEach(limpa); });
+  return R;
+}
+// Gestão de validades: 4 listas de artigos
+function nlValidades(P){
+  const R = {}; const T = [['cobertura', 'Cobertura Supera Validade'], ['sem_vendas', 'Última entrada sem vendas'], ['escoamento', 'Escoamento s/vendas'], ['ultimas', 'Últimas Oportunidades']];
+  const cats = P.filter(i => i.s === 'Categoria');
+  T.forEach(([k, nome]) => { const t = nlT(P, nome); if(!t) return;
+    const h = cats.find(c => Math.abs(c.x - t.x) <= 10 && c.y < t.y && t.y - c.y < 60); if(!h) return;
+    const naLinha = s => P.find(i => i.s === s && Math.abs(i.y - h.y) <= 2 && i.x > h.x);
+    const art = naLinha('Artigo'), qt = naLinha('Qtd'), st = naLinha('Stock €'); if(!art || !qt || !st) return;
+    const prox = cats.filter(c => Math.abs(c.x - h.x) <= 3 && c.y < h.y).sort((a, b) => b.y - a.y)[0]; const lo = prox ? prox.y + 30 : 0;
+    R[k] = P.filter(i => Math.abs(i.x - art.x) <= 3 && i.y < h.y && i.y > lo && /^\d{4,}\s/.test(i.s)).sort((a, b) => b.y - a.y).map(r => {
+      const cont = P.find(i => Math.abs(i.x - art.x) <= 3 && i.y < r.y && r.y - i.y <= 16 && !/^\d{4,}\s/.test(i.s));
+      const cat = P.filter(i => Math.abs(i.x - h.x) <= 3 && i.y <= r.y + 2 && r.y - i.y <= 16).sort((a, b) => b.y - a.y).map(i => i.s).join(' ');
+      const q = P.find(i => Math.abs(i.y - r.y) <= 2 && i.x >= qt.x - 10 && i.x < st.x + 10 && /^\d/.test(i.s));
+      const v = P.find(i => Math.abs(i.y - r.y) <= 2 && i.x >= st.x + 10 && i.x < st.x + 90 && /^\d/.test(i.s));
+      const m = (r.s + (cont ? ' ' + cont.s : '')).match(/^(\d+)\s+(.*)$/);
+      return {codigo: m[1], artigo: m[2], categoria: cat.replace(/_/g, ' '), qtd: q ? nlNum(q.s) : null, stock: v ? nlNum(v.s) : null}; });
+  });
+  return R;
+}
+// Score de markdown do mês
+function nlMarkdown(P){
+  const sob = (s, dx, dy) => { const a = nlAbaixo(P, nlT(P, s), dx || 40, dy || 50); return a[0] ? nlNum(a[0].s) : null; };
+  const pos = nlAbaixo(P, nlT(P, 'A loja ocupa a posição:'), 80, 30).find(i => /^\d+$/.test(i.s));
+  const mnr = P.filter(i => i.s === 'Markdown Não Realizado').sort((a, b) => b.y - a.y);
+  const fin = lb => { const v = nlDireita(P, lb, 1000).filter(i => /€/.test(i.s)); return v.length ? nlNum(v[v.length - 1].s) : null; };
+  const R = {score: sob('SCORE', 45, 60), posicao: pos ? Number(pos.s) : null, execucao: sob('Execução Rotina Diária'), aceitacao: sob('Taxa de Aceitação'), nao_realizado: mnr[0] ? nlNum((nlAbaixo(P, mnr[0], 40, 50)[0] || {}).s) : null,
+    nr_eur: fin(mnr[1]), quebrado_eur: fin(nlT(P, 'Markdown Quebrado')), evitada_eur: fin(P.find(i => i.s === 'Quebra Evitada' && i.x < 400)), secoes: []};
+  const h = nlT(P, 'Secção');
+  if(h){ const K = {'Execução': 'exec', 'Aceitação': 'acei', 'Não Realizado': 'nr', 'Quebra Evitada': 'evitada', 'Não Realizado €': 'nr_eur', 'Quebrado': 'quebrado'};
+    const cab = P.filter(i => Math.abs(i.y - h.y) <= 2 && K[i.s]).sort((a, b) => a.x - b.x);
+    P.filter(i => Math.abs(i.x - h.x) <= 3 && i.y < h.y - 5 && h.y - i.y < 400).sort((a, b) => b.y - a.y).forEach(r => { const o = {nome: r.s};
+      P.filter(i => Math.abs(i.y - r.y) <= 2 && i.x > h.x + 100).forEach(c => { const col = cab.filter(k => k.x <= c.x + 5).pop(); if(col) o[K[col.s]] = nlNum(c.s); });
+      R.secoes.push(o); }); }
+  return R;
+}
+// tabela simples: coluna «ARTIGO» e colunas com cabeçalho na mesma linha
+function nlTabela(P, hdr, yMin, cabs){
+  if(!hdr) return [];
+  const H = P.filter(i => Math.abs(i.y - hdr.y) <= 2 && cabs.includes(i.s));
+  return P.filter(i => Math.abs(i.x - hdr.x) <= 3 && i.y < hdr.y - 3 && i.y > yMin).sort((a, b) => b.y - a.y).map(r => { const o = {artigo: r.s};
+    const cs = P.filter(i => Math.abs(i.y - r.y) <= 2 && i.x > hdr.x + 200).sort((a, b) => a.x - b.x), HS = H.slice().sort((a, b) => a.x - b.x), chave = k => k.s.replace('.', '').toLowerCase();
+    if(cs.length === HS.length) cs.forEach((c, j) => o[chave(HS[j])] = nlNum(c.s));
+    else cs.forEach(c => { const k = H.slice().sort((a, b) => Math.abs(a.x - c.x) - Math.abs(b.x - c.x))[0]; if(k) o[chave(k)] = nlNum(c.s); });
+    return o; });
+}
+// Mapas de produção: página de resumo de cada área (Padaria, Salgados, Sandes, Churrascaria…)
+function nlProducao(P){
+  const area = P.slice().sort((a, b) => b.y - a.y)[0].s;
+  const ab = s => nlAbaixo(P, nlT(P, s), 45, 45);
+  const R = {area, vendas: nlNum((ab('VENDAS')[0] || {}).s), vendas_vh: nlNum((ab('VENDAS').find(i => /%/.test(i.s)) || {}).s), quebra: nlNum((ab('QUEBRA')[0] || {}).s),
+    qv: nlNum((ab('QUEBRA ÷ VENDAS')[0] || {}).s), qv_pp: nlNum((ab('QUEBRA ÷ VENDAS').find(i => /p\.p\./.test(i.s)) || {}).s)};
+  const ind = (s, k) => { const lb = nlT(P, s); if(!lb) return; const a = nlAbaixo(P, lb, 3, 60); const v = a.find(i => /%$/.test(i.s)); R[k] = v ? nlNum(v.s) : null;
+    const e = a.find(i => /semana S\d+:/.test(i.s)); if(e){ R[k + '_estado'] = e.s.split('·')[0].trim(); const d = nlDireita(P, e, 140); R[k + '_semana'] = d[0] ? nlNum(d[0].s) : null; R[k + '_tend'] = d[1] ? d[1].s : ''; } };
+  ind('MÉDIA DO RÁCIO DE CADA ARTIGO', 'servico'); ind('ARTIGOS-DIA DENTRO DA REGRA', 'cumprimento');
+  [['Unidades recebidas', 'recebidas'], ['Unidades em falta', 'em_falta'], ['Encomendas completas', 'completas'], ['Cumpridos', 'cumpridos'], ['Produziu a menos', 'menos'], ['Produziu a mais', 'mais']].forEach(([s, k]) => { const d = nlDireita(P, nlT(P, s), 260).filter(i => /%$/.test(i.s)); if(d.length) R[k] = nlNum(d[d.length - 1].s); });
+  const sd = nlDireita(P, nlT(P, 'Saúde dos dados'), 120).find(i => /%$/.test(i.s)); if(sd) R.saude = nlNum(sd.s);
+  const cg = nlDireita(P, nlT(P, 'CUMPRIMENTO GLOBAL'), 220).filter(i => /%$/.test(i.s)); if(cg.length){ R.global_janela = nlNum(cg[0].s); R.global_semana = cg[1] ? nlNum(cg[1].s) : null; }
+  const ac = nlT(P, 'PRODUZ ACIMA DO MAPA'), bx = nlT(P, 'PRODUZ ABAIXO DO MAPA');
+  const hd = lb => lb && P.find(i => i.s === 'ARTIGO' && i.y < lb.y && lb.y - i.y < 25 && Math.abs(i.x - lb.x) < 10);
+  R.acima = nlTabela(P, hd(ac), bx ? bx.y : 0, ['SUG.', 'PROD.', 'VENDAS', 'QUEBRA']);
+  const hb = hd(bx); R.abaixo = hb ? nlTabela(P, hb, hb.y - 60, ['ABAIXO', 'RUTURA']) : [];
+  const me = nlT(P, 'MENOR % DE ENTREGA'), mf = nlT(P, 'MAIOR FALTA EM UNIDADES');
+  const lista = (lb, ate, re) => lb ? P.filter(i => i.x > lb.x + 5 && i.x < lb.x + 30 && i.y < lb.y - 3 && i.y > ate && !/^\d+$/.test(i.s)).sort((a, b) => b.y - a.y).map(r => { const v = P.find(i => Math.abs(i.y - r.y) <= 2 && i.x > lb.x + 300 && i.x < lb.x + 450 && re.test(i.s)); return {artigo: r.s, valor: v ? nlNum(v.s) : null}; }) : [];
+  R.menor_entrega = lista(me, mf ? mf.y : 0, /%$/); R.maior_falta = lista(mf, mf ? mf.y - 60 : 0, /un\.$/);
+  return R;
+}
+function nlFV(P){
+  const vals = P.filter(i => /^\d+,\d$/.test(i.s));
+  return P.filter(i => /^\d{2}\/\d{2}$/.test(i.s)).sort((a, b) => a.x - b.x).map(d => { const v = vals.find(o => Math.abs(o.x - d.x - 6) <= 10); return {dia: d.s, n: v ? nlNum(v.s) : null}; });
+}
+function nlFL(P){
+  const R = {};
+  [['balanca', /Balança da Fruta$/], ['etiquetadora', /Etiquetadora de Padaria$/], ['segundos', /^Performance FL$/], ['sco', /Utilização de Self-Checkout$/]].forEach(([k, re]) => {
+    const T = P.find(i => re.test(i.s)); if(!T) return;
+    const reg = P.filter(i => i.x >= T.x + 540 && i.x <= T.x + 640 && i.y < T.y + 5 && i.y > T.y - 330).sort((a, b) => b.y - a.y);
+    const ix = reg.findIndex(i => /PORTUZELO/.test(i.s)); if(ix < 0) return;
+    const o = {}, num = i => /^\d+,\d+%?$/.test(i.s); let lab = null, n = 0;
+    reg.slice(ix).forEach(i => { if(!num(i)){ lab = i.s; return; } if(lab){ o[['loja', 'pd', 'regiao', 'da'][n] || ('v' + n)] = nlNum(i.s); if(n === 3) o.da_nome = lab; n++; lab = null; } });
+    const area = P.filter(i => i.x > T.x + 40 && i.x < T.x + 530 && i.y < T.y - 20 && i.y > T.y - 330 && num(i));
+    const cont = {}; area.forEach(i => cont[i.s] = (cont[i.s] || 0) + 1); const obj = Object.entries(cont).filter(e => e[1] >= 5).sort((a, b) => b[1] - a[1])[0];
+    if(obj) o.objetivo = nlNum(obj[0]);
+    const sem = P.filter(i => /^20\d{4}$/.test(i.s) && i.x > T.x && i.x < T.x + 530 && i.y < T.y && T.y - i.y < 340);
+    o.semanas = sem.sort((a, b) => a.x - b.x).map(w => { const vs = area.filter(i => Math.abs(i.x - w.x - 4) <= 9); const v = vs.find(i => !obj || i.s !== obj[0]) || vs[0]; return {semana: Number(w.s), v: v ? nlNum(v.s) : null}; });
+    R[k] = o; });
+  return R;
+}
+function nlNaoSortido(P){
+  const h = P.find(i => i.s === 'Descricao Area' && i.x < 100); const R = {areas: []};
+  if(h){ const K = {'Valor Total €': 'valor', 'Variação €': 'var_eur', 'Variação %': 'var_pct'}; const cab = P.filter(i => Math.abs(i.y - h.y) <= 2 && K[i.s]).sort((a, b) => a.x - b.x);
+    P.filter(i => Math.abs(i.x - h.x) <= 3 && i.y < h.y - 5).sort((a, b) => b.y - a.y).forEach(r => { const o = {area: r.s};
+      P.filter(i => Math.abs(i.y - r.y) <= 2 && i.x > h.x + 150 && i.x < 540).forEach(c => { const col = cab.filter(k => k.x <= c.x + 5).pop(); if(col) o[K[col.s]] = nlNum(c.s); }); R.areas.push(o); }); }
+  const ti = R.areas.findIndex(a => /^total$/i.test(a.area)); if(ti >= 0) R.total = R.areas.splice(ti, 1)[0];
+  const per = P.find(i => /^20\d{4} vs 20\d{4}$/.test(i.s)); if(per) R.periodo = per.s;
+  const wk = P.filter(i => /^20\d{4}$/.test(i.s) && i.x < 540);
+  R.evolucao = wk.sort((a, b) => a.x - b.x).map(w => { const v = P.find(i => Math.abs(i.x - w.x) <= 6 && i.y > w.y + 20 && /^\d{1,3} \d{3}$/.test(i.s)); return {semana: Number(w.s), valor: v ? nlNum(v.s.replace(' ', '')) : null}; });
+  const tot = nlDireita(P, P.find(i => i.s === 'Total' && i.x > 900), 400); if(tot.length) R.qtd_total = nlNum(tot[0].s);
+  return R;
+}
+function nlVendaSugestiva(P){
+  const lb = nlT(P, 'Operador SAP'); if(!lb) return null;
+  const art = P.find(i => i.y > lb.y + 20 && i.y < 700 && i.x > 700);
+  const H = P.filter(i => Math.abs(i.y - lb.y) <= 2 && i.x > lb.x + 50);
+  const ops = P.filter(i => /^\d{5,9}$/.test(i.s) && Math.abs(i.x - lb.x - 12) <= 15 && i.y < lb.y).sort((a, b) => b.y - a.y).map(r => { const o = {sap: r.s.replace(/^0+/, ''), semanas: {}};
+    P.filter(i => Math.abs(i.y - r.y) <= 2 && i.x > lb.x + 80 && i.x < 800 && /%$/.test(i.s)).forEach(c => { const k = H.slice().sort((a, b) => Math.abs(a.x - c.x) - Math.abs(b.x - c.x))[0]; if(!k) return; if(k.s === 'Total') o.total = nlNum(c.s); else o.semanas[k.s] = nlNum(c.s); });
+    return o; });
+  const sob = s => { const a = nlAbaixo(P, nlT(P, s), 35, 70); return a[0] ? nlNum(a[0].s) : null; };
+  return {artigo: art ? art.s : '', operadores: ops, vendas_un: sob('Vendas UN'), valor: sob('Valor Total'), vs_melhor: sob('vs Melhor Semana'), vs_objetivo: sob('vs Objetivo'), semana_cols: H.map(h => h.s).filter(s => s !== 'Total')};
+}
+function nlAnalisar(pags){
+  const txt = pags.map(P => P.map(i => i.s).join(' '));
+  if(!/PORTUZELO/i.test(txt.join(' '))) throw new Error('esta newsletter não é da loja de Portuzelo');
+  let semana = null; for(const P of pags){ const s = P.find(i => /^20\d{4}$/.test(i.s) && i.y > 700); if(s){ semana = Number(s.s); break; } }
+  if(!semana){ const m = txt.join(' ').match(/Semana\s+(\d{1,2})/); if(m) semana = new Date().getFullYear() * 100 + Number(m[1]); }
+  if(!semana) throw new Error('não encontrei a semana da newsletter');
+  const D = {semana, producao: []}; const tem = (i, re) => re.test(txt[i]);
+  pags.forEach((P, i) => {
+    try{
+      if(tem(i, /Quebra MTD/)) D.quebra = nlQuebra(P);
+      else if(tem(i, /Cobertura Supera Validade/)) D.validades = nlValidades(P);
+      else if(tem(i, /A loja ocupa a posição/)) D.markdown = nlMarkdown(P);
+      else if(tem(i, /CUMPRIMENTO GLOBAL|ARTIGOS-DIA DENTRO DA REGRA/)) D.producao.push(nlProducao(P));
+      else if(tem(i, /Listas de Reposição F&V/)) D.fv = nlFV(P);
+      else if(tem(i, /Score Loja/)){ const v = P.find(o => /^\d+,\d+%$/.test(o.s)); D.reposicao = {score: v ? nlNum(v.s) : null}; }
+      else if(tem(i, /Balança da Fruta/)) D.fl = nlFL(P);
+      else if(tem(i, /STOCKS EM VALOR/)) D.nao_sortido = nlNaoSortido(P);
+      else if(tem(i, /Atingimento Operador/)) D.venda_sugestiva = nlVendaSugestiva(P);
+    }catch(e){ console.warn('newsletter página ' + (i + 1), e); }
+  });
+  return D;
+}
+async function nlImportar(f){
+  const D = nlAnalisar(await nlLerPaginas(f));
+  await sb('loja_newsletter_mc?on_conflict=semana', {method: 'POST', body: JSON.stringify({semana: D.semana, dados: D, carregado_em: new Date().toISOString()}), prefer: 'resolution=merge-duplicates,return=minimal'});
+  mcSep = 'newsletter';
+  const partes = [D.quebra && 'quebra', D.producao.length && D.producao.length + ' mapas de produção', D.validades && 'validades', D.markdown && 'markdown', D.fv && 'listas F&V', D.reposicao && 'reposição', D.fl && 'frente de loja', D.nao_sortido && 'não sortido', D.venda_sugestiva && 'venda sugestiva'].filter(Boolean);
+  return `Semana ${D.semana % 100} gravada: ${partes.join(', ')}`;
+}
+async function nlCarregarInput(input){
+  if(!soDona('carregar a newsletter')){ input.value = ''; return; }
+  const f = input.files && input.files[0]; input.value = ''; if(!f) return;
+  const est = document.getElementById('nl-estado-card'); if(est) est.textContent = 'A ler a newsletter…';
+  try{ const m = await nlImportar(f); if(est) est.textContent = '✓ ' + m; renderMelhoriaContinua(); }catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
+}
+// ---------- mostrar a newsletter na Melhoria Contínua ----------
+let nlSemSel = null;
+const nlPct = (v, d) => v == null ? '–' : v.toLocaleString('pt-PT', {minimumFractionDigits: d == null ? 1 : d, maximumFractionDigits: d == null ? 2 : d}) + '%';
+const nlSin = (v, suf) => v == null ? '–' : (v > 0 ? '+' : '') + v.toLocaleString('pt-PT', {maximumFractionDigits: 2}) + (suf || '');
+const nlCor = bom => bom == null ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
+function nlBarra(v, max, cor){ const p = Math.max(0, Math.min(100, (v || 0) / (max || 1) * 100)); return `<div style="height:8px;background:#EEF1F4;border-radius:6px;overflow:hidden;"><div style="width:${p}%;height:100%;background:${cor};"></div></div>`; }
+function nlLinhaKpi(rot, val, sub, cor){ return `<div style="flex:1;min-width:120px;background:#F6F8FA;border-radius:12px;padding:10px;"><div style="font-size:11.5px;color:var(--ink-soft);">${rot}</div><div style="font-size:20px;font-weight:800;color:${cor || 'var(--navy)'};">${val}</div>${sub ? `<div style="font-size:11.5px;color:var(--ink-soft);">${sub}</div>` : ''}</div>`; }
+function nlAcoes(D, nomes){
+  const A = [];
+  const Q = D.quebra; if(Q && Q.secoes) Q.secoes.filter(s => s.pp != null && s.pp < 0).sort((a, b) => a.pp - b.pp).forEach(s => {
+    const c = (s.cats || []).slice().sort((a, b) => (a.pp || 0) - (b.pp || 0))[0];
+    A.push(`🔴 <b>${rpEsc(s.nome)}</b>: quebra ${nlPct(s.qb)} (${nlSin(s.pp, ' p.p.')} vs ano anterior, ${nlSin(s.dq, ' €')}).${c ? ` Pior categoria: <b>${rpEsc(c.nome)}</b> ${nlPct(c.qb)}${c.motivos ? ' — ' + rpEsc(c.motivos) : ''}.` : ''}${s.motivos ? ` Causas: ${rpEsc(s.motivos)}.` : ''}`); });
+  (D.producao || []).forEach(p => {
+    if(p.acima && p.acima.length) A.push(`🟠 <b>${rpEsc(p.area)}</b> produz acima do mapa: ${p.acima.map(a => `${rpEsc(a.artigo)} (sug. ${a.sug}, prod. ${a.prod}, quebra ${a.quebra})`).join('; ')}. Produzir só o que o mapa pede.`);
+    if(p.saude != null && p.saude < 90) A.push(`🟠 <b>${rpEsc(p.area)}</b>: só ${nlPct(p.saude)} da produção registada no Kiwi bate certo com vendas + quebras (objetivo 90%). Registar a produção toda.`);
+    if(p.servico_estado && /não conforme/i.test(p.servico_estado)) A.push(`🔴 <b>${rpEsc(p.area)}</b>: nível de serviço ${nlPct(p.servico)} — não conforme. Ver encomendas que não chegaram completas.`);
+  });
+  const V = D.validades; if(V && V.cobertura && V.cobertura.length) A.push(`🟡 Validades: ${V.cobertura.length} artigos com stock acima da validade (${rpEur(V.cobertura.reduce((a, x) => a + (x.stock || 0), 0))}). Garantir exposição e escoar.`);
+  if(V && V.sem_vendas && V.sem_vendas.length) A.push(`🟡 ${V.sem_vendas.length} artigos sem vendas desde a última entrada (${rpEur(V.sem_vendas.reduce((a, x) => a + (x.stock || 0), 0))}). Ver se estão expostos.`);
+  const M = D.markdown; if(M && M.secoes) M.secoes.filter(s => s.acei != null && s.acei < 80).forEach(s => A.push(`🟡 Markdown <b>${rpEsc(s.nome)}</b>: só ${nlPct(s.acei)} de aceitação.`));
+  if(D.fv){ const f = D.fv.filter(x => x.n != null && x.n < 7); if(f.length) A.push(`🟠 Listas de reposição F&V abaixo de 7 por dia: ${f.map(x => `${x.dia} (${x.n.toLocaleString('pt-PT')})`).join(', ')}.`); }
+  const F = D.fl; if(F){ [['balanca', 'Balança da fruta', '%'], ['etiquetadora', 'Etiquetadora da padaria', '%'], ['sco', 'Self-checkout', '%']].forEach(([k, n]) => { const o = F[k]; if(o && o.loja != null && o.objetivo != null && o.loja < o.objetivo) A.push(`🟠 ${n}: ${nlPct(o.loja)} (objetivo ${nlPct(o.objetivo, 0)}; Pingo Doce ${nlPct(o.pd)}).`); }); }
+  const S = D.venda_sugestiva; if(S && S.operadores){ const fr = S.operadores.filter(o => o.total != null && o.total < 50); if(fr.length) A.push(`🟡 Venda sugestiva (${rpEsc(S.artigo)}): abaixo de 50% do objetivo — ${fr.map(o => rpEsc(nomes[o.sap] || o.sap) + ' ' + nlPct(o.total)).join(', ')}.`); }
+  return A;
+}
+async function blocoNewsletter(){
+  const L = await sb('loja_newsletter_mc?select=semana,dados,carregado_em&order=semana.desc&limit=8') || [];
+  const dona = currentUser && souDona();
+  const up = dona ? `<input type="file" id="nl-fich" class="hidden" accept=".pdf" onchange="nlCarregarInput(this)"><button class="btn-primary" style="margin:6px 0 0;background:#1F7A33;" onclick="document.getElementById('nl-fich').click()">📥 Carregar a newsletter da semana (PDF)</button><div id="nl-estado-card" style="font-size:12px;color:var(--ink-soft);margin-top:4px;"></div>` : '';
+  if(!L.length) return `<div class="card"><b>📰 Newsletter semanal</b><div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">Ainda não foi carregada nenhuma newsletter. Carregue o PDF que chega todas as semanas.</div>${up}</div>`;
+  const R = L.find(x => x.semana === nlSemSel) || L[0], D = R.dados, ant = L.find(x => x.semana < R.semana);
+  let nomes = {}; try{ (await sb('loja_colaboradores?select=numero_pessoal,nome') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
+  let h = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><b style="font-size:15px;color:var(--navy);">📰 Newsletter da semana ${D.semana % 100}</b>
+    ${L.length > 1 ? `<select onchange="nlSemSel=Number(this.value);renderMelhoriaContinua()" style="width:auto;">${L.map(x => `<option value="${x.semana}" ${x.semana === R.semana ? 'selected' : ''}>Semana ${x.semana % 100}</option>`).join('')}</select>` : ''}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);">Carregada a ${new Date(R.carregado_em).toLocaleDateString('pt-PT')}</div>${up}</div>`;
+  const A = nlAcoes(D, nomes);
+  if(A.length) h += `<div class="card" style="border-left:4px solid var(--red);"><b>🎯 O que fazer esta semana</b><ul style="margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.45;">${A.map(a => `<li style="margin-bottom:5px;">${a}</li>`).join('')}</ul></div>`;
+  const Q = D.quebra;
+  if(Q){ const mx = Math.max(...Q.secoes.map(s => Math.abs(s.qb || 0)), 1);
+    h += `<div class="card"><b>🗑️ Boletim da quebra (mês até agora)</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">${nlLinhaKpi('Vendas', rpEur(Q.vendas), 'LFL ' + nlSin(Q.lfl, '%'), nlCor(Q.lfl >= 0))}${nlLinhaKpi('Quebra', nlPct(Q.quebra_pct, 2), nlSin(Q.quebra_pp_aa, ' p.p.') + ' vs ano anterior', nlCor(Q.quebra_pp_aa >= 0))}${nlLinhaKpi('Quebra €', rpEur(Q.quebra_valor), nlSin(Q.quebra_delta_aa, ' €') + ' vs ano anterior', nlCor(Q.quebra_delta_aa >= 0))}</div>
+      ${Q.secoes.map(s => `<details style="margin-top:6px;"><summary style="cursor:pointer;"><div style="display:inline-flex;width:calc(100% - 20px);flex-direction:column;"><div style="display:flex;justify-content:space-between;font-size:13px;"><b>${rpEsc(s.nome)}</b><span>${nlPct(s.qb, 2)} · <b style="color:${nlCor(s.pp >= 0)}">${nlSin(s.pp, ' p.p.')}</b></span></div>${nlBarra(Math.abs(s.qb || 0), mx, s.pp >= 0 ? '#1F7A33' : '#C62828')}</div></summary>
+        <div style="font-size:12.5px;padding:6px 0 0 4px;">Vendas ${rpEur(s.vendas)} (LFL ${nlSin(s.lfl, '%')}) · Quebra ${rpEur(s.quebra)} (${nlSin(s.dq, ' €')} vs AA)${s.motivos ? `<br>Causas: ${rpEsc(s.motivos)}` : ''}
+        ${(s.cats || []).map(c => `<div style="margin-top:5px;padding:6px 8px;background:#F6F8FA;border-radius:8px;"><b>${rpEsc(c.nome)}</b>: ${nlPct(c.qb, 2)} (<span style="color:${nlCor(c.pp >= 0)}">${nlSin(c.pp, ' p.p.')}</span>) · quebra ${rpEur(c.quebra)} · vendas ${rpEur(c.vendas)}${c.motivos ? `<br><span style="color:var(--ink-soft);">${rpEsc(c.motivos)}</span>` : ''}</div>`).join('')}</div></details>`).join('')}</div>`; }
+  if(D.producao && D.producao.length){
+    h += `<div class="card"><b>🥖 Mapas de produção (4 semanas)</b><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Cumprimento = artigos-dia dentro da regra do mapa. Saúde dos dados = produção registada no Kiwi que bate certo com vendas + quebras (objetivo 90%).</div>
+      <div style="overflow-x:auto;"><table class="rp-tab" style="width:100%;font-size:12.5px;"><tr><th style="text-align:left;">Área</th><th>Vendas</th><th>Quebra ÷ vendas</th><th>Nível de serviço</th><th>Cumprimento</th><th>Prod. a mais</th><th>Saúde dados</th></tr>
+      ${D.producao.map(p => `<tr><td><b>${rpEsc(p.area)}</b></td><td>${rpEur(p.vendas)}</td><td style="color:${nlCor(p.qv_pp >= 0)}">${nlPct(p.qv)} <small>(${nlSin(p.qv_pp, ' p.p.')})</small></td><td>${nlPct(p.servico)}<br><small>${rpEsc(p.servico_estado || '')}</small></td><td>${nlPct(p.cumprimento)}<br><small>S: ${nlPct(p.cumprimento_semana)} ${rpEsc(p.cumprimento_tend || '')}</small></td><td>${nlPct(p.mais)}</td><td style="color:${nlCor(p.saude == null ? null : p.saude >= 90)}">${nlPct(p.saude)}</td></tr>`).join('')}</table></div>
+      ${D.producao.map(p => (p.acima.length || p.abaixo.length || (p.menor_entrega || []).length) ? `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:13px;"><b>${rpEsc(p.area)}</b> — artigos a ver</summary><div style="font-size:12.5px;padding:4px 0 0 6px;">
+        ${p.acima.length ? `<div style="margin-top:4px;"><b style="color:#C62828;">Produz acima do mapa</b> (sug./prod./vendas/quebra, 4 semanas)${p.acima.map(a => `<br>• ${rpEsc(a.artigo)}: ${a.sug} / ${a.prod} / ${a.vendas} / <b>${a.quebra}</b>`).join('')}</div>` : ''}
+        ${p.abaixo.length ? `<div style="margin-top:4px;"><b style="color:#E65100;">Produz abaixo do mapa</b> (dias abaixo / dias em rutura)${p.abaixo.map(a => `<br>• ${rpEsc(a.artigo)}: ${a.abaixo} / ${a.rutura}`).join('')}</div>` : ''}
+        ${(p.menor_entrega || []).length ? `<div style="margin-top:4px;"><b>Menor % de entrega</b>${p.menor_entrega.map(a => `<br>• ${rpEsc(a.artigo)}: ${nlPct(a.valor)}`).join('')}</div>` : ''}
+        ${(p.maior_falta || []).length ? `<div style="margin-top:4px;"><b>Maior falta</b>${p.maior_falta.map(a => `<br>• ${rpEsc(a.artigo)}: ${a.valor} un.`).join('')}</div>` : ''}</div></details>` : '').join('')}</div>`; }
+  const M = D.markdown;
+  if(M) h += `<div class="card"><b>🏷️ Score de markdown (mês)</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">${nlLinhaKpi('Score', M.score == null ? '–' : M.score.toLocaleString('pt-PT'), M.posicao ? M.posicao + 'ª posição' : '')}${nlLinhaKpi('Execução', nlPct(M.execucao))}${nlLinhaKpi('Aceitação', nlPct(M.aceitacao))}${nlLinhaKpi('Quebra evitada', rpEur(M.evitada_eur), 'não realizado ' + rpEur(M.nr_eur) + ' · quebrado ' + rpEur(M.quebrado_eur), '#1F7A33')}</div>
+    <table class="rp-tab" style="width:100%;font-size:12.5px;"><tr><th style="text-align:left;">Secção</th><th>Aceitação</th><th>Não realizado</th><th>Quebra evitada</th></tr>${M.secoes.filter(s => s.acei != null).map(s => `<tr><td>${rpEsc(s.nome)}</td><td style="color:${nlCor(s.acei >= 80)}">${nlPct(s.acei)}</td><td>${nlPct(s.nr)}</td><td>${rpEur(s.evitada)}</td></tr>`).join('')}</table></div>`;
+  const V = D.validades;
+  if(V){ const T = [['cobertura', '⏳ Stock acima da validade', 'Garantir exposição; validar escoamento'], ['sem_vendas', '🚫 Sem vendas desde a última entrada', 'Verificar porque não vende'], ['escoamento', '📉 Escoamento sem vendas', ''], ['ultimas', '⚠️ Últimas oportunidades', '']];
+    h += `<div class="card"><b>📦 Validades e stock parado</b>${T.filter(([k]) => V[k] && V[k].length).map(([k, t, ajuda]) => `<div style="margin-top:8px;"><b style="font-size:13px;">${t}</b>${ajuda ? ` <span style="font-size:11.5px;color:var(--ink-soft);">— ${ajuda}</span>` : ''}${V[k].map(a => `<div style="font-size:12.5px;display:flex;justify-content:space-between;gap:6px;border-bottom:1px solid #EEF1F4;padding:3px 0;"><span>${rpEsc(a.artigo)} <small style="color:var(--ink-soft);">${rpEsc(a.categoria)}</small></span><span style="white-space:nowrap;">${a.qtd != null ? a.qtd + ' un · ' : ''}<b>${rpEur(a.stock)}</b></span></div>`).join('')}</div>`).join('')}</div>`; }
+  if(D.fv && D.fv.length){ h += `<div class="card"><b>🍎 Listas de reposição F&V por dia</b> <span style="font-size:11.5px;color:var(--ink-soft);">(objetivo: 7 ou mais)</span><div style="display:flex;gap:6px;align-items:flex-end;height:110px;margin-top:8px;">${D.fv.map(x => `<div style="flex:1;text-align:center;font-size:11px;"><div style="font-weight:700;">${x.n == null ? '–' : x.n.toLocaleString('pt-PT')}</div><div style="height:${Math.min(80, (x.n || 0) / 8 * 80)}px;background:${x.n >= 7 ? '#1F7A33' : x.n >= 3 ? '#E6A23C' : '#C62828'};border-radius:4px 4px 0 0;"></div><div>${x.dia}</div></div>`).join('')}</div></div>`; }
+  const F = D.fl;
+  if(F || D.reposicao){ const lin = (n, o, suf, menorMelhor) => o ? `<tr><td>${n}</td><td style="color:${nlCor(o.objetivo == null ? null : menorMelhor ? o.loja <= o.objetivo : o.loja >= o.objetivo)}"><b>${suf === 's' ? (o.loja == null ? '–' : o.loja.toLocaleString('pt-PT') + ' s') : nlPct(o.loja)}</b></td><td>${o.objetivo == null ? '–' : suf === 's' ? o.objetivo.toLocaleString('pt-PT') + ' s' : nlPct(o.objetivo, 0)}</td><td>${suf === 's' ? (o.pd == null ? '–' : o.pd.toLocaleString('pt-PT') + ' s') : nlPct(o.pd)}</td><td>${suf === 's' ? (o.regiao == null ? '–' : o.regiao.toLocaleString('pt-PT') + ' s') : nlPct(o.regiao)}</td></tr>` : '';
+    h += `<div class="card"><b>🛒 Frente de loja e reposição</b>${D.reposicao && D.reposicao.score != null ? `<div style="margin:6px 0;font-size:13px;">Score de reposição seletiva da semana: <b>${nlPct(D.reposicao.score)}</b></div>` : ''}
+      ${F ? `<table class="rp-tab" style="width:100%;font-size:12.5px;margin-top:6px;"><tr><th style="text-align:left;">Indicador</th><th>Loja</th><th>Objetivo</th><th>Pingo Doce</th><th>Norte</th></tr>${lin('Balança da fruta', F.balanca)}${lin('Etiquetadora padaria', F.etiquetadora)}${lin('Self-checkout (transações)', F.sco)}${lin('Segundos por artigo (caixas)', F.segundos, 's', true)}</table>` : ''}</div>`; }
+  const S = D.venda_sugestiva;
+  if(S && S.operadores && S.operadores.length){ h += `<div class="card"><b>💬 Venda sugestiva</b> <span style="font-size:12px;color:var(--ink-soft);">${rpEsc(S.artigo)}${S.vs_objetivo != null ? ' · ' + nlPct(S.vs_objetivo) + ' do objetivo na semana' : ''}${S.vendas_un != null ? ' · ' + S.vendas_un + ' un' : ''}</span>
+    ${S.operadores.slice().sort((a, b) => (b.total || 0) - (a.total || 0)).map(o => `<div style="margin-top:6px;font-size:12.5px;"><div style="display:flex;justify-content:space-between;"><span>${rpEsc(nomes[o.sap] || o.sap)}</span><b style="color:${nlCor(o.total >= 100 ? true : o.total < 50 ? false : null)}">${nlPct(o.total)}</b></div>${nlBarra(o.total, 150, o.total >= 100 ? '#1F7A33' : o.total >= 50 ? '#E6A23C' : '#C62828')}</div>`).join('')}</div>`; }
+  const N = D.nao_sortido;
+  if(N && N.areas && N.areas.length){ const ev = (N.evolucao || []).filter(x => x.valor != null); const ult = ev[ev.length - 1];
+    h += `<div class="card"><b>📚 Não sortido — stock em valor</b>${ult ? `<div style="font-size:13px;margin:6px 0;">Total: <b>${rpEur(ult.valor)}</b> (semana ${ult.semana % 100})${ev.length > 1 ? ` · semana ${ev[0].semana % 100}: ${rpEur(ev[0].valor)}` : ''}</div>` : ''}
+      <table class="rp-tab" style="width:100%;font-size:12.5px;"><tr><th style="text-align:left;">Área</th><th>Valor</th><th>Variação</th></tr>${N.areas.map(a => `<tr><td>${rpEsc(a.area)}</td><td>${rpEur(a.valor)}</td><td style="color:${nlCor(a.var_eur <= 0)}">${nlSin(a.var_eur, ' €')} (${nlSin(a.var_pct, '%')})</td></tr>`).join('')}</table>${N.periodo ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">${rpEsc(N.periodo.replace(/20(\d{2})(\d{2})/g, 'S$2'))}</div>` : ''}</div>`; }
+  return h;
+}
 async function renderMelhoriaContinua(){
   const content = document.getElementById('melhoria-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
@@ -16336,6 +16595,7 @@ async function renderMelhoriaContinua(){
       if(esp && !mcColSel && RD.l.length < esp * 0.98) html = `<div class="card" style="border:2px solid var(--red);background:#FBEAEA;"><b style="color:var(--red);">⚠️ Dados de ${M.nome} incompletos</b><div style="font-size:12.5px;margin-top:4px;">Só ficaram gravadas <b>${RD.l.length.toLocaleString('pt-PT')}</b> de <b>${esp.toLocaleString('pt-PT')}</b> linhas de reposição, por isso os números por dia, hora, colaborador e ruturas estão abaixo do real. Carregue outra vez o ficheiro do mês em «📥 Carregar relatórios» (com boa rede e sem sair da app até aparecer ✓).</div></div>` + html; }catch(e){}
     html += blocoEquipaRanking(RD); try{ html += await blocoSemanasReposicao(); }catch(e){ console.error('semanas', e); } html += blocoResumoReposicao(RD); html += await blocoReposicaoDia(RD); html += await blocoRuturasReposicao(RD); }catch(e){ console.error('reposição', e); }
 
+  try{ html += `<div class="section-title">📰 Newsletter semanal</div>` + await blocoNewsletter(); }catch(e){ console.error('newsletter', e); }
   content.innerHTML = html; mcOrganizarSeparadores(content);
 }
 
@@ -16735,13 +16995,14 @@ let mcMesSel = 'atual';
 let mcSep = 'resumo';
 // horário das listas automáticas: das 5h às 23h (a última hora começa às 22h)
 const MC_H_INI = 5, MC_H_FIM = 23;
-const MC_SEPS = [['resumo', '📊', 'Resumo'], ['equipa', '🏆', 'Quem repõe'], ['auto', '🔁', 'Automáticas'], ['massiva', '🚚', 'Paletes'], ['visivel', '👀', 'Visível'], ['ruturas', '🔗', 'Ruturas']];
+const MC_SEPS = [['resumo', '📊', 'Resumo'], ['newsletter', '📰', 'Newsletter'], ['equipa', '🏆', 'Quem repõe'], ['auto', '🔁', 'Automáticas'], ['massiva', '🚚', 'Paletes'], ['visivel', '👀', 'Visível'], ['ruturas', '🔗', 'Ruturas']];
 const MC_SEP_AJUDA = {
   resumo: 'Os números do período escolhido: quantos artigos se repuseram, quantos ficaram em rutura e o peso de cada tipo de lista.',
   equipa: 'Quem repôs mais artigos. Verde = automática, azul = massiva (paletes), laranja = visível.',
   auto: 'Listas automáticas: quantos artigos se repõem por dia e por hora, e quem fez as listas. Barras vermelhas = horas sem reposição.',
   massiva: 'Paletes repostas por dia e por pessoa.',
   visivel: 'Listas da visível: o que foi picado e por quem.',
+  newsletter: 'A newsletter semanal da Melhoria Contínua: o que fazer esta semana, quebra por secção, mapas de produção, validades, markdown, frente de loja e venda sugestiva.',
   ruturas: 'Artigos em rutura cruzados com as listas: se chegou mercadoria, se foi picado e o que fazer.'
 };
 // fecha um bloco dentro de «Ver mais» para o separador ficar curto e fácil de ler
@@ -16751,7 +17012,7 @@ function mcOrganizarSeparadores(content){
   const nos = [...content.childNodes]; if(!nos.length) return;
   const titulos = nos.filter(n => n.nodeType === 1 && n.classList.contains('section-title'));
   if(titulos.length < 2) return;
-  const tipo = t => /trabalha mais/i.test(t) ? 'equipa' : /Massiva/i.test(t) ? 'massiva' : /Vis[ií]vel/i.test(t) ? 'visivel' : /Rutura/i.test(t) ? 'ruturas' : 'auto';
+  const tipo = t => /Newsletter/i.test(t) ? 'newsletter' : /trabalha mais/i.test(t) ? 'equipa' : /Massiva/i.test(t) ? 'massiva' : /Vis[ií]vel/i.test(t) ? 'visivel' : /Rutura/i.test(t) ? 'ruturas' : 'auto';
   const topo = document.createElement('div'), barra = document.createElement('div'), paineis = {};
   MC_SEPS.forEach(([k]) => { const d = document.createElement('div'); d.className = 'mc-sep-painel'; d.dataset.sep = k; paineis[k] = d; });
   // antes do 1.º título: avisos e filtros (ficam sempre à vista); 1.º título + 1.º cartão: separador «Resumo»
