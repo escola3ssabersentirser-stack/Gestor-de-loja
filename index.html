@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-19-1200';
+const APP_V='2026-11-19-1215';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -16354,7 +16354,7 @@ function nlQuebra(P){
   const R = {vendas: nlNum(sob(ve)), quebra_pct: nlNum(sob(qp)), quebra_pp_aa: nlNum(sob(qp, 1)), quebra_valor: nlNum(sob(qv)), quebra_delta_aa: nlNum(sob(qv, 1)), lfl: nlNum(sob(lfl)), secoes: []};
   const LB = {'QB %': 'qb', 'DIF PP': 'pp', 'Δ QUEBRA': 'dq', 'VENDAS': 'vendas', 'LFL': 'lfl', 'QUEBRA': 'quebra'};
   const qbs = P.filter(i => i.s === 'QB %');
-  const cards = qbs.map(q => { const tit = P.filter(i => i.y > q.y && i.y - q.y <= 30 && i.x >= q.x - 10 && i.x <= q.x + 160 && !LB[i.s] && !/\d/.test(i.s) && /[A-ZÁÉÍÓÚÇÃÕ]{3}/.test(i.s)).sort((a, b) => a.y - b.y)[0];
+  const cards = qbs.map(q => { const tit = P.filter(i => i.y > q.y && i.y - q.y <= 30 && i.x >= q.x - 10 && i.x <= q.x + 160 && !LB[i.s] && !/\d/.test(i.s) && /[A-ZÁÉÍÓÚÇÃÕ]{3}/.test(i.s)).sort((a, b) => Math.abs(a.x - q.x) - Math.abs(b.x - q.x) || a.y - b.y)[0];
     const col = qbs.filter(o => Math.abs(o.x - q.x) <= 2 && o.y < q.y).sort((a, b) => b.y - a.y)[0]; const lo = col ? col.y + 25 : -1;
     const c = {nome: tit ? tit.s : '?', x: q.x, y: q.y};
     const labs = P.filter(i => LB[i.s] && Math.abs(i.x - q.x) <= 2 && i.y <= q.y + 1 && i.y > lo);
