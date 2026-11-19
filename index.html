@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-19-1730';
+const APP_V='2026-11-19-1940';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -16628,69 +16628,79 @@ const nlSin = (v, suf) => v == null ? '–' : (v > 0 ? '+' : '') + v.toLocaleStr
 const nlCor = bom => bom == null ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
 function nlBarra(v, max, cor){ const p = Math.max(0, Math.min(100, (v || 0) / (max || 1) * 100)); return `<div style="height:8px;background:#EEF1F4;border-radius:6px;overflow:hidden;"><div style="width:${p}%;height:100%;background:${cor};"></div></div>`; }
 function nlLinhaKpi(rot, val, sub, cor){ return `<div style="flex:1;min-width:120px;background:#F6F8FA;border-radius:12px;padding:10px;"><div style="font-size:11.5px;color:var(--ink-soft);">${rot}</div><div style="font-size:20px;font-weight:800;color:${cor || 'var(--navy)'};">${val}</div>${sub ? `<div style="font-size:11.5px;color:var(--ink-soft);">${sub}</div>` : ''}</div>`; }
+// lista curta: [cor, título, valor]
 function nlAcoes(D, nomes){
-  const A = [];
-  const Q = D.quebra; if(Q && Q.secoes) Q.secoes.filter(s => s.pp != null && s.pp < 0).sort((a, b) => a.pp - b.pp).forEach(s => {
-    const c = (s.cats || []).slice().sort((a, b) => (a.pp || 0) - (b.pp || 0))[0];
-    A.push(`🔴 <b>${rpEsc(s.nome)}</b>: quebra ${nlPct(s.qb)} (${nlSin(s.pp, ' p.p.')} vs ano anterior, ${nlSin(s.dq, ' €')}).${c ? ` Pior categoria: <b>${rpEsc(c.nome)}</b> ${nlPct(c.qb)}${c.motivos ? ' — ' + rpEsc(c.motivos) : ''}.` : ''}${s.motivos ? ` Causas: ${rpEsc(s.motivos)}.` : ''}`); });
+  const A = [], V = 'v', L = 'l', R = 'r';
+  const Q = D.quebra; if(Q && Q.secoes) Q.secoes.filter(s => s.pp != null && s.pp < 0).sort((a, b) => a.pp - b.pp).forEach(s => A.push([V, 'Quebra ' + s.nome.toLowerCase(), `${nlPct(s.qb, 2)} · ${nlSin(s.pp, ' pp')}`]));
   (D.producao || []).forEach(p => {
-    if(p.acima && p.acima.length) A.push(`🟠 <b>${rpEsc(p.area)}</b> produz acima do mapa: ${p.acima.map(a => `${rpEsc(a.artigo)} (sug. ${a.sug}, prod. ${a.prod}, quebra ${a.quebra})`).join('; ')}. Produzir só o que o mapa pede.`);
-    if(p.saude != null && p.saude < 90) A.push(`🟠 <b>${rpEsc(p.area)}</b>: só ${nlPct(p.saude)} da produção registada no Kiwi bate certo com vendas + quebras (objetivo 90%). Registar a produção toda.`);
-    if(p.servico_estado && /não conforme/i.test(p.servico_estado)) A.push(`🔴 <b>${rpEsc(p.area)}</b>: nível de serviço ${nlPct(p.servico)} — não conforme. Ver encomendas que não chegaram completas.`);
+    if(p.servico_estado && /não conforme/i.test(p.servico_estado)) A.push([V, p.area + ' · nível de serviço', nlPct(p.servico)]);
+    if(p.saude != null && p.saude < 90) A.push([L, p.area + ' · registo no Kiwi', nlPct(p.saude, 0) + ' (obj. 90%)']);
+    const ac = (p.acima || []).filter(a => (a.prod || 0) > (a.sug || 0)).length; if(ac) A.push([L, p.area + ' · produz a mais', ac + (ac === 1 ? ' artigo' : ' artigos')]);
   });
-  const V = D.validades; if(V && V.cobertura && V.cobertura.length) A.push(`🟡 Validades: ${V.cobertura.length} artigos com stock acima da validade (${rpEur(V.cobertura.reduce((a, x) => a + (x.stock || 0), 0))}). Garantir exposição e escoar.`);
-  if(V && V.sem_vendas && V.sem_vendas.length) A.push(`🟡 ${V.sem_vendas.length} artigos sem vendas desde a última entrada (${rpEur(V.sem_vendas.reduce((a, x) => a + (x.stock || 0), 0))}). Ver se estão expostos.`);
-  const M = D.markdown; if(M && M.secoes) M.secoes.filter(s => s.acei != null && s.acei < 80).forEach(s => A.push(`🟡 Markdown <b>${rpEsc(s.nome)}</b>: só ${nlPct(s.acei)} de aceitação.`));
-  if(D.fv){ const f = D.fv.filter(x => x.n != null && x.n < 7); if(f.length) A.push(`🟠 Listas de reposição F&V abaixo de 7 por dia: ${f.map(x => `${x.dia} (${x.n.toLocaleString('pt-PT')})`).join(', ')}.`); }
-  const F = D.fl; if(F){ [['balanca', 'Balança da fruta', '%'], ['etiquetadora', 'Etiquetadora da padaria', '%'], ['sco', 'Self-checkout', '%']].forEach(([k, n]) => { const o = F[k]; if(o && o.loja != null && o.objetivo != null && o.loja < o.objetivo) A.push(`🟠 ${n}: ${nlPct(o.loja)} (objetivo ${nlPct(o.objetivo, 0)}; Pingo Doce ${nlPct(o.pd)}).`); }); }
-  const S = D.venda_sugestiva; if(S && S.operadores){ const fr = S.operadores.filter(o => o.total != null && o.total < 50); if(fr.length) A.push(`🟡 Venda sugestiva (${rpEsc(S.artigo)}): abaixo de 50% do objetivo — ${fr.map(o => rpEsc(nomes[o.sap] || o.sap) + ' ' + nlPct(o.total)).join(', ')}.`); }
+  if(D.fv){ const f = D.fv.filter(x => x.n != null && x.n < 7); if(f.length) A.push([L, 'Listas F&V abaixo de 7', f.map(x => x.dia).join(', ')]); }
+  const F = D.fl; if(F) [['sco', 'Self-checkout'], ['etiquetadora', 'Etiquetadora padaria'], ['balanca', 'Balança da fruta']].forEach(([k, n]) => { const o = F[k]; if(o && o.loja != null && o.objetivo != null && o.loja < o.objetivo) A.push([L, n, `${nlPct(o.loja, 0)} (obj. ${nlPct(o.objetivo, 0)})`]); });
+  const Vd = D.validades, soma = l => rpEur(l.reduce((a, x) => a + (x.stock || 0), 0));
+  if(Vd && Vd.cobertura && Vd.cobertura.length) A.push([R, 'Stock acima da validade', `${Vd.cobertura.length} art. · ${soma(Vd.cobertura)}`]);
+  if(Vd && Vd.sem_vendas && Vd.sem_vendas.length) A.push([R, 'Artigos sem vendas', `${Vd.sem_vendas.length} art. · ${soma(Vd.sem_vendas)}`]);
+  const M = D.markdown; if(M && M.secoes) M.secoes.filter(s => s.acei != null && s.acei < 70).forEach(s => A.push([R, 'Aceitação markdown ' + s.nome.toLowerCase(), nlPct(s.acei, 0)]));
+  const S = D.venda_sugestiva; if(S && S.operadores){ const n = S.operadores.filter(o => o.total != null && o.total < 50).length; if(n) A.push([R, 'Venda sugestiva abaixo de 50%', n + ' operadores']); }
   return A;
 }
 async function blocoNewsletter(){
   const L = await sb('loja_newsletter_mc?select=semana,dados,carregado_em&order=semana.desc&limit=8') || [];
   const dona = currentUser && souDona();
-  const up = dona ? `<input type="file" id="nl-fich" class="hidden" accept=".pdf" onchange="nlCarregarInput(this)"><button class="btn-primary" style="margin:6px 0 0;background:#1F7A33;" onclick="document.getElementById('nl-fich').click()">📥 Carregar a newsletter da semana (PDF)</button><div id="nl-estado-card" style="font-size:12px;color:var(--ink-soft);margin-top:4px;"></div>` : '';
-  if(!L.length) return `<div class="card"><b>📰 Newsletter semanal</b><div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">Ainda não foi carregada nenhuma newsletter. Carregue o PDF que chega todas as semanas.</div>${up}</div>`;
-  const R = L.find(x => x.semana === nlSemSel) || L[0], D = R.dados, ant = L.find(x => x.semana < R.semana);
+  const up = dona ? `<input type="file" id="nl-fich" class="hidden" accept=".pdf" onchange="nlCarregarInput(this)"><button class="econ-btn" style="margin-top:6px;" onclick="document.getElementById('nl-fich').click()">📥 Carregar PDF</button><span id="nl-estado-card" style="font-size:12px;color:var(--ink-soft);margin-left:6px;"></span>` : '';
+  if(!L.length) return `<div class="card"><b>📰 Newsletter</b><div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">Ainda sem newsletter.</div>${up}</div>`;
+  const R = L.find(x => x.semana === nlSemSel) || L[0], D = R.dados;
   let nomes = {}; try{ (await sb('loja_colaboradores?select=numero_pessoal,nome') || []).forEach(c => { nomes[String(c.numero_pessoal || '').replace(/^0+/, '')] = c.nome; }); }catch(e){}
-  let h = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><b style="font-size:15px;color:var(--navy);">📰 Newsletter da semana ${D.semana % 100}</b>
-    ${L.length > 1 ? `<select onchange="nlSemSel=Number(this.value);renderMelhoriaContinua()" style="width:auto;">${L.map(x => `<option value="${x.semana}" ${x.semana === R.semana ? 'selected' : ''}>Semana ${x.semana % 100}</option>`).join('')}</select>` : ''}</div>
-    <div style="font-size:11.5px;color:var(--ink-soft);">Carregada a ${new Date(R.carregado_em).toLocaleDateString('pt-PT')}</div>${up}</div>`;
-  const A = nlAcoes(D, nomes);
-  if(A.length) h += `<div class="card" style="border-left:4px solid var(--red);"><b>🎯 O que fazer esta semana</b><ul style="margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.45;">${A.map(a => `<li style="margin-bottom:5px;">${a}</li>`).join('')}</ul></div>`;
+  const VERM = '#B4231A', LAR = '#C77F12', VERDE = '#1F7A33';
+  const pill = (txt, cor) => `<span style="display:inline-block;background:${cor}1A;color:${cor};border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800;white-space:nowrap;">${txt}</span>`;
+  const linha = (esq, dir, cor) => `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #EEF1F4;font-size:13px;"><span>${esq}</span>${dir ? pill(dir, cor || 'var(--navy)') : ''}</div>`;
+  const kpi = (rot, val, sub, cor) => `<div style="flex:1;min-width:92px;text-align:center;background:#F6F8FA;border-radius:12px;padding:8px 4px;"><div style="font-size:11px;color:var(--ink-soft);font-weight:700;">${rot}</div><div style="font-size:19px;font-weight:900;color:${cor || 'var(--navy)'};">${val}</div>${sub ? `<div style="font-size:11px;font-weight:700;color:${cor || 'var(--ink-soft)'};">${sub}</div>` : ''}</div>`;
+  const mais = (tit, corpo) => `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--navy);font-weight:700;">${tit}</summary>${corpo}</details>`;
+  let h = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><b style="font-size:15px;color:var(--navy);">📰 Semana ${D.semana % 100}</b>
+    ${L.length > 1 ? `<select onchange="nlSemSel=Number(this.value);renderMelhoriaContinua()" style="width:auto;">${L.map(x => `<option value="${x.semana}" ${x.semana === R.semana ? 'selected' : ''}>Semana ${x.semana % 100}</option>`).join('')}</select>` : ''}<div style="width:100%;">${up}</div></div>`;
+  // 1. o que fazer
+  const A = nlAcoes(D, nomes), corA = {v: VERM, l: LAR, r: '#5B6B7F'};
+  if(A.length) h += `<div class="card" style="border-left:5px solid ${VERM};"><b>🎯 A atacar esta semana</b>${(() => { const l = ([c, t, v]) => linha(`<span style="color:${corA[c]};">●</span> ${rpEsc(t)}`, rpEsc(v), corA[c]); return A.slice(0, 7).map(l).join('') + (A.length > 7 ? mais(`Ver mais ${A.length - 7}`, A.slice(7).map(l).join('')) : ''); })()}</div>`;
+  // 2. quebra
   const Q = D.quebra;
   if(Q){ const mx = Math.max(...Q.secoes.map(s => Math.abs(s.qb || 0)), 1);
-    h += `<div class="card"><b>🗑️ Boletim da quebra (mês até agora)</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">${nlLinhaKpi('Vendas', rpEur(Q.vendas), 'LFL ' + nlSin(Q.lfl, '%'), nlCor(Q.lfl >= 0))}${nlLinhaKpi('Quebra', nlPct(Q.quebra_pct, 2), nlSin(Q.quebra_pp_aa, ' p.p.') + ' vs ano anterior', nlCor(Q.quebra_pp_aa >= 0))}${nlLinhaKpi('Quebra €', rpEur(Q.quebra_valor), nlSin(Q.quebra_delta_aa, ' €') + ' vs ano anterior', nlCor(Q.quebra_delta_aa >= 0))}</div>
-      ${Q.secoes.map(s => `<details style="margin-top:6px;"><summary style="cursor:pointer;"><div style="display:inline-flex;width:calc(100% - 20px);flex-direction:column;"><div style="display:flex;justify-content:space-between;font-size:13px;"><b>${rpEsc(s.nome)}</b><span>${nlPct(s.qb, 2)} · <b style="color:${nlCor(s.pp >= 0)}">${nlSin(s.pp, ' p.p.')}</b></span></div>${nlBarra(Math.abs(s.qb || 0), mx, s.pp >= 0 ? '#1F7A33' : '#C62828')}</div></summary>
-        <div style="font-size:12.5px;padding:6px 0 0 4px;">Vendas ${rpEur(s.vendas)} (LFL ${nlSin(s.lfl, '%')}) · Quebra ${rpEur(s.quebra)} (${nlSin(s.dq, ' €')} vs AA)${s.motivos ? `<br>Causas: ${rpEsc(s.motivos)}` : ''}
-        ${(s.cats || []).map(c => `<div style="margin-top:5px;padding:6px 8px;background:#F6F8FA;border-radius:8px;"><b>${rpEsc(c.nome)}</b>: ${nlPct(c.qb, 2)} (<span style="color:${nlCor(c.pp >= 0)}">${nlSin(c.pp, ' p.p.')}</span>) · quebra ${rpEur(c.quebra)} · vendas ${rpEur(c.vendas)}${c.motivos ? `<br><span style="color:var(--ink-soft);">${rpEsc(c.motivos)}</span>` : ''}</div>`).join('')}</div></details>`).join('')}</div>`; }
+    h += `<div class="card"><b>🗑️ Quebra do mês</b><div style="display:flex;gap:6px;margin:8px 0;">${kpi('Quebra', nlPct(Q.quebra_pct, 2), nlSin(Q.quebra_pp_aa, ' pp'), Q.quebra_pp_aa >= 0 ? VERDE : VERM)}${kpi('Vendas', rpEur(Q.vendas), 'LFL ' + nlSin(Q.lfl, '%'), Q.lfl >= 0 ? VERDE : VERM)}</div>
+      ${Q.secoes.map(s => { const c = s.pp >= 0 ? VERDE : VERM; return `<div style="margin-top:7px;font-size:12.5px;"><div style="display:flex;justify-content:space-between;"><b>${rpEsc(s.nome)}</b><span>${nlPct(s.qb, 2)} ${pill(nlSin(s.pp, ' pp'), c)}</span></div>${nlBarra(Math.abs(s.qb || 0), mx, c)}</div>`; }).join('')}
+      ${mais('Ver categorias e causas', Q.secoes.map(s => `<div style="font-size:12px;margin-top:6px;"><b>${rpEsc(s.nome)}</b>${s.motivos ? ` <span style="color:var(--ink-soft);">${rpEsc(s.motivos)}</span>` : ''}${(s.cats || []).map(c => `<div style="padding-left:10px;">${rpEsc(c.nome)}: ${nlPct(c.qb, 2)} <span style="color:${c.pp >= 0 ? VERDE : VERM};">${nlSin(c.pp, ' pp')}</span></div>`).join('')}</div>`).join(''))}</div>`; }
+  // 3. mapas de produção
   if(D.producao && D.producao.length){
-    h += `<div class="card"><b>🥖 Mapas de produção (4 semanas)</b><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Cumprimento = artigos-dia dentro da regra do mapa. Saúde dos dados = produção registada no Kiwi que bate certo com vendas + quebras (objetivo 90%).</div>
-      <div style="overflow-x:auto;"><table class="rp-tab" style="width:100%;font-size:12.5px;"><tr><th style="text-align:left;">Área</th><th>Vendas</th><th>Quebra ÷ vendas</th><th>Nível de serviço</th><th>Cumprimento</th><th>Prod. a mais</th><th>Saúde dados</th></tr>
-      ${D.producao.map(p => `<tr><td><b>${rpEsc(p.area)}</b></td><td>${rpEur(p.vendas)}</td><td style="color:${nlCor(p.qv_pp >= 0)}">${nlPct(p.qv)} <small>(${nlSin(p.qv_pp, ' p.p.')})</small></td><td>${nlPct(p.servico)}<br><small>${rpEsc(p.servico_estado || '')}</small></td><td>${nlPct(p.cumprimento)}<br><small>S: ${nlPct(p.cumprimento_semana)} ${rpEsc(p.cumprimento_tend || '')}</small></td><td>${nlPct(p.mais)}</td><td style="color:${nlCor(p.saude == null ? null : p.saude >= 90)}">${nlPct(p.saude)}</td></tr>`).join('')}</table></div>
-      ${D.producao.map(p => (p.acima.length || p.abaixo.length || (p.menor_entrega || []).length) ? `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:13px;"><b>${rpEsc(p.area)}</b> — artigos a ver</summary><div style="font-size:12.5px;padding:4px 0 0 6px;">
-        ${p.acima.length ? `<div style="margin-top:4px;"><b style="color:#C62828;">Produz acima do mapa</b> (sug./prod./vendas/quebra, 4 semanas)${p.acima.map(a => `<br>• ${rpEsc(a.artigo)}: ${a.sug} / ${a.prod} / ${a.vendas} / <b>${a.quebra}</b>`).join('')}</div>` : ''}
-        ${p.abaixo.length ? `<div style="margin-top:4px;"><b style="color:#E65100;">Produz abaixo do mapa</b> (dias abaixo / dias em rutura)${p.abaixo.map(a => `<br>• ${rpEsc(a.artigo)}: ${a.abaixo} / ${a.rutura}`).join('')}</div>` : ''}
-        ${(p.menor_entrega || []).length ? `<div style="margin-top:4px;"><b>Menor % de entrega</b>${p.menor_entrega.map(a => `<br>• ${rpEsc(a.artigo)}: ${nlPct(a.valor)}`).join('')}</div>` : ''}
-        ${(p.maior_falta || []).length ? `<div style="margin-top:4px;"><b>Maior falta</b>${p.maior_falta.map(a => `<br>• ${rpEsc(a.artigo)}: ${a.valor} un.`).join('')}</div>` : ''}</div></details>` : '').join('')}</div>`; }
-  const M = D.markdown;
-  if(M) h += `<div class="card"><b>🏷️ Score de markdown (mês)</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">${nlLinhaKpi('Score', M.score == null ? '–' : M.score.toLocaleString('pt-PT'), M.posicao ? M.posicao + 'ª posição' : '')}${nlLinhaKpi('Execução', nlPct(M.execucao))}${nlLinhaKpi('Aceitação', nlPct(M.aceitacao))}${nlLinhaKpi('Quebra evitada', rpEur(M.evitada_eur), 'não realizado ' + rpEur(M.nr_eur) + ' · quebrado ' + rpEur(M.quebrado_eur), '#1F7A33')}</div>
-    <table class="rp-tab" style="width:100%;font-size:12.5px;"><tr><th style="text-align:left;">Secção</th><th>Aceitação</th><th>Não realizado</th><th>Quebra evitada</th></tr>${M.secoes.filter(s => s.acei != null).map(s => `<tr><td>${rpEsc(s.nome)}</td><td style="color:${nlCor(s.acei >= 80)}">${nlPct(s.acei)}</td><td>${nlPct(s.nr)}</td><td>${rpEur(s.evitada)}</td></tr>`).join('')}</table></div>`;
-  const V = D.validades;
-  if(V){ const T = [['cobertura', '⏳ Stock acima da validade', 'Garantir exposição; validar escoamento'], ['sem_vendas', '🚫 Sem vendas desde a última entrada', 'Verificar porque não vende'], ['escoamento', '📉 Escoamento sem vendas', ''], ['ultimas', '⚠️ Últimas oportunidades', '']];
-    h += `<div class="card"><b>📦 Validades e stock parado</b>${T.filter(([k]) => V[k] && V[k].length).map(([k, t, ajuda]) => `<div style="margin-top:8px;"><b style="font-size:13px;">${t}</b>${ajuda ? ` <span style="font-size:11.5px;color:var(--ink-soft);">— ${ajuda}</span>` : ''}${V[k].map(a => `<div style="font-size:12.5px;display:flex;justify-content:space-between;gap:6px;border-bottom:1px solid #EEF1F4;padding:3px 0;"><span>${rpEsc(a.artigo)} <small style="color:var(--ink-soft);">${rpEsc(a.categoria)}</small></span><span style="white-space:nowrap;">${a.qtd != null ? a.qtd + ' un · ' : ''}<b>${rpEur(a.stock)}</b></span></div>`).join('')}</div>`).join('')}</div>`; }
-  if(D.fv && D.fv.length){ h += `<div class="card"><b>🍎 Listas de reposição F&V por dia</b> <span style="font-size:11.5px;color:var(--ink-soft);">(objetivo: 7 ou mais)</span><div style="display:flex;gap:6px;align-items:flex-end;height:110px;margin-top:8px;">${D.fv.map(x => `<div style="flex:1;text-align:center;font-size:11px;"><div style="font-weight:700;">${x.n == null ? '–' : x.n.toLocaleString('pt-PT')}</div><div style="height:${Math.min(80, (x.n || 0) / 8 * 80)}px;background:${x.n >= 7 ? '#1F7A33' : x.n >= 3 ? '#E6A23C' : '#C62828'};border-radius:4px 4px 0 0;"></div><div>${x.dia}</div></div>`).join('')}</div></div>`; }
+    const cP = (v, b, m) => v == null ? 'var(--ink-soft)' : v >= b ? VERDE : v >= m ? LAR : VERM;
+    h += `<div class="card"><b>🥖 Mapas de produção</b>${D.producao.map(p => `<div style="padding:8px 0;border-top:1px solid #EEF1F4;"><b style="font-size:13px;">${rpEsc(p.area)}</b>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${pill('Cumpre ' + nlPct(p.cumprimento, 0), cP(p.cumprimento, 90, 80))}${p.servico != null ? pill('Serviço ' + nlPct(p.servico, 0), cP(p.servico, 90, 80)) : ''}${p.saude != null ? pill('Kiwi ' + nlPct(p.saude, 0), cP(p.saude, 90, 70)) : ''}${pill('Quebra ' + nlPct(Math.abs(p.qv || 0), 1), VERM)}</div>
+      ${p.acima.filter(a => (a.prod || 0) > (a.sug || 0)).length ? `<div style="font-size:12px;margin-top:4px;color:${VERM};">A mais: ${p.acima.filter(a => (a.prod || 0) > (a.sug || 0)).map(a => `${rpEsc(a.artigo.toLowerCase())} (+${(a.prod || 0) - (a.sug || 0)})`).join(', ')}</div>` : ''}</div>`).join('')}</div>`; }
+  // 4. markdown + validades
+  const M = D.markdown, Vd = D.validades;
+  if(M || Vd){ h += `<div class="card"><b>🏷️ Markdown e validades</b>`;
+    if(M) h += `<div style="display:flex;gap:6px;margin:8px 0;">${kpi('Score', M.score == null ? '—' : M.score.toLocaleString('pt-PT'), M.posicao ? M.posicao + '.º' : '')}${kpi('Aceitação', nlPct(M.aceitacao, 1), '', M.aceitacao >= 85 ? VERDE : LAR)}${kpi('Evitada', rpEur(M.evitada_eur), '', VERDE)}</div>`;
+    if(Vd){ const T = [['cobertura', 'Acima da validade'], ['sem_vendas', 'Sem vendas'], ['escoamento', 'Escoamento'], ['ultimas', 'Últimas oportunidades']].filter(([k]) => Vd[k] && Vd[k].length);
+      h += T.map(([k, t]) => mais(`${t} · ${Vd[k].length} art. · ${rpEur(Vd[k].reduce((a, x) => a + (x.stock || 0), 0))}`, Vd[k].map(a => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${rpEsc(a.artigo.toLowerCase())}</span><b>${rpEur(a.stock)}</b></div>`).join(''))).join(''); }
+    h += `</div>`; }
+  // 5. frente de loja e F&V
   const F = D.fl;
-  if(F || D.reposicao){ const lin = (n, o, suf, menorMelhor) => o ? `<tr><td>${n}</td><td style="color:${nlCor(o.objetivo == null ? null : menorMelhor ? o.loja <= o.objetivo : o.loja >= o.objetivo)}"><b>${suf === 's' ? (o.loja == null ? '–' : o.loja.toLocaleString('pt-PT') + ' s') : nlPct(o.loja)}</b></td><td>${o.objetivo == null ? '–' : suf === 's' ? o.objetivo.toLocaleString('pt-PT') + ' s' : nlPct(o.objetivo, 0)}</td><td>${suf === 's' ? (o.pd == null ? '–' : o.pd.toLocaleString('pt-PT') + ' s') : nlPct(o.pd)}</td><td>${suf === 's' ? (o.regiao == null ? '–' : o.regiao.toLocaleString('pt-PT') + ' s') : nlPct(o.regiao)}</td></tr>` : '';
-    h += `<div class="card"><b>🛒 Frente de loja e reposição</b>${D.reposicao && D.reposicao.score != null ? `<div style="margin:6px 0;font-size:13px;">Score de reposição seletiva da semana: <b>${nlPct(D.reposicao.score)}</b></div>` : ''}
-      ${F ? `<table class="rp-tab" style="width:100%;font-size:12.5px;margin-top:6px;"><tr><th style="text-align:left;">Indicador</th><th>Loja</th><th>Objetivo</th><th>Pingo Doce</th><th>Norte</th></tr>${lin('Balança da fruta', F.balanca)}${lin('Etiquetadora padaria', F.etiquetadora)}${lin('Self-checkout (transações)', F.sco)}${lin('Segundos por artigo (caixas)', F.segundos, 's', true)}</table>` : ''}</div>`; }
+  if(F || D.fv || D.reposicao){ h += `<div class="card"><b>🛒 Frente de loja e reposição</b><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">`;
+    const k2 = (rot, o, seg) => o ? kpi(rot, seg ? (o.loja == null ? '—' : o.loja.toLocaleString('pt-PT') + ' s') : nlPct(o.loja, 0), o.objetivo != null ? 'obj. ' + (seg ? o.objetivo.toLocaleString('pt-PT') + ' s' : nlPct(o.objetivo, 0)) : '', o.objetivo == null ? null : (seg ? o.loja <= o.objetivo : o.loja >= o.objetivo) ? VERDE : VERM) : '';
+    if(F) h += k2('Self-checkout', F.sco) + k2('Balança fruta', F.balanca) + k2('Etiq. padaria', F.etiquetadora) + k2('Seg./artigo', F.segundos, true);
+    if(D.reposicao && D.reposicao.score != null) h += kpi('Reposição', nlPct(D.reposicao.score, 1), '', D.reposicao.score >= 85 ? VERDE : LAR);
+    h += `</div>`;
+    if(D.fv && D.fv.length) h += `<div style="font-size:12px;font-weight:700;margin-top:10px;">Listas F&V por dia (obj. 7)</div><div style="display:flex;gap:5px;align-items:flex-end;height:80px;margin-top:4px;">${D.fv.map(x => `<div style="flex:1;text-align:center;font-size:10.5px;"><div style="font-weight:800;">${x.n == null ? '–' : x.n.toLocaleString('pt-PT')}</div><div style="height:${Math.min(50, (x.n || 0) / 8 * 50)}px;background:${x.n >= 7 ? VERDE : x.n >= 3 ? LAR : VERM};border-radius:4px 4px 0 0;"></div><div>${x.dia.slice(0, 5)}</div></div>`).join('')}</div>`;
+    h += `</div>`; }
+  // 6. venda sugestiva
   const S = D.venda_sugestiva;
-  if(S && S.operadores && S.operadores.length){ h += `<div class="card"><b>💬 Venda sugestiva</b> <span style="font-size:12px;color:var(--ink-soft);">${rpEsc(S.artigo)}${S.vs_objetivo != null ? ' · ' + nlPct(S.vs_objetivo) + ' do objetivo na semana' : ''}${S.vendas_un != null ? ' · ' + S.vendas_un + ' un' : ''}</span>
-    ${S.operadores.slice().sort((a, b) => (b.total || 0) - (a.total || 0)).map(o => `<div style="margin-top:6px;font-size:12.5px;"><div style="display:flex;justify-content:space-between;"><span>${rpEsc(nomes[o.sap] || o.sap)}</span><b style="color:${nlCor(o.total >= 100 ? true : o.total < 50 ? false : null)}">${nlPct(o.total)}</b></div>${nlBarra(o.total, 150, o.total >= 100 ? '#1F7A33' : o.total >= 50 ? '#E6A23C' : '#C62828')}</div>`).join('')}</div>`; }
+  if(S && S.operadores && S.operadores.length){ const O = S.operadores.slice().sort((a, b) => (b.total || 0) - (a.total || 0)); const cO = v => v >= 100 ? VERDE : v >= 50 ? LAR : VERM;
+    const lin = o => `<div style="margin-top:5px;font-size:12.5px;"><div style="display:flex;justify-content:space-between;"><span>${rpEsc(nomes[o.sap] || o.sap)}</span><b style="color:${cO(o.total)}">${nlPct(o.total, 0)}</b></div>${nlBarra(o.total, 150, cO(o.total))}</div>`;
+    h += `<div class="card"><b>💬 Venda sugestiva</b> <span style="font-size:12px;color:var(--ink-soft);">${rpEsc((S.artigo || '').toLowerCase())}</span>${O.slice(0, 5).map(lin).join('')}${O.length > 5 ? mais(`Ver os outros ${O.length - 5}`, O.slice(5).map(lin).join('')) : ''}</div>`; }
+  // 7. não sortido
   const N = D.nao_sortido;
-  if(N && N.areas && N.areas.length){ const ev = (N.evolucao || []).filter(x => x.valor != null); const ult = ev[ev.length - 1];
-    h += `<div class="card"><b>📚 Não sortido — stock em valor</b>${ult ? `<div style="font-size:13px;margin:6px 0;">Total: <b>${rpEur(ult.valor)}</b> (semana ${ult.semana % 100})${ev.length > 1 ? ` · semana ${ev[0].semana % 100}: ${rpEur(ev[0].valor)}` : ''}</div>` : ''}
-      <table class="rp-tab" style="width:100%;font-size:12.5px;"><tr><th style="text-align:left;">Área</th><th>Valor</th><th>Variação</th></tr>${N.areas.map(a => `<tr><td>${rpEsc(a.area)}</td><td>${rpEur(a.valor)}</td><td style="color:${nlCor(a.var_eur <= 0)}">${nlSin(a.var_eur, ' €')} (${nlSin(a.var_pct, '%')})</td></tr>`).join('')}</table>${N.periodo ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">${rpEsc(N.periodo.replace(/20(\d{2})(\d{2})/g, 'S$2'))}</div>` : ''}</div>`; }
+  if(N && N.areas && N.areas.length){ const ev = (N.evolucao || []).filter(x => x.valor != null), ult = ev[ev.length - 1], sobe = N.areas.slice().sort((a, b) => (b.var_eur || 0) - (a.var_eur || 0))[0];
+    h += `<div class="card"><b>📚 Não sortido</b><div style="display:flex;gap:6px;margin-top:8px;">${ult ? kpi('Stock', rpEur(ult.valor), N.total ? nlSin(N.total.var_pct, '%') : '', N.total && N.total.var_eur > 0 ? VERM : VERDE) : ''}${sobe && sobe.var_eur > 0 ? kpi('Sobe mais', rpEsc(sobe.area.split(' ')[0].toLowerCase()), nlSin(sobe.var_eur, ' €'), VERM) : ''}</div>
+      ${mais('Ver por área', N.areas.map(a => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${rpEsc(a.area)}</span><span>${rpEur(a.valor)} <b style="color:${a.var_eur > 0 ? VERM : VERDE}">${nlSin(a.var_eur, ' €')}</b></span></div>`).join(''))}</div>`; }
   return h;
 }
 async function renderMelhoriaContinua(){
@@ -17114,7 +17124,7 @@ const MC_SEP_AJUDA = {
   auto: 'Listas automáticas: quantos artigos se repõem por dia e por hora, e quem fez as listas. Barras vermelhas = horas sem reposição.',
   massiva: 'Paletes repostas por dia e por pessoa.',
   visivel: 'Listas da visível: o que foi picado e por quem.',
-  newsletter: 'A newsletter semanal da Melhoria Contínua: o que fazer esta semana, quebra por secção, mapas de produção, validades, markdown, frente de loja e venda sugestiva.',
+  newsletter: 'O resumo da newsletter da semana.',
   ruturas: 'Artigos em rutura cruzados com as listas: se chegou mercadoria, se foi picado e o que fazer.'
 };
 // fecha um bloco dentro de «Ver mais» para o separador ficar curto e fácil de ler
