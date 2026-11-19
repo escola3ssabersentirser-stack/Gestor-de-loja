@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-19-1240';
+const APP_V='2026-11-19-1710';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2747,6 +2747,7 @@ function impTipo(wb){
     if(impCabecalho(R, ['ARTIGO','DESCRIÇÃO ARTIGO','PRODUÇÃO','QUEBRAS UN','QUEBRA SUGESTÃO'])) return 'mapasproducao';
     if(impCabecalho(R, ['TxtBreveMaterial','Quebra Total Valor EUR'])) return 'economato';
     if(impCabecalho(R, ['SAP ID','Curso','Data Fim'])) return 'convocatorias';
+    if(impCabecalho(R, ['Number','Object Type','Classification'])) return 'controloanalitico';
     if(impCabecalho(R, ['Codigo do Artigo','Descricao Artigo','PA'])) return 'ruturas';
     if(impCabecalho(R, ['Txt.brv.material','Atrasos']) && R.slice(0, 8).some(r => (r || []).some(c => /niv\.? ?serv/i.test(String(c || ''))))) return 'rutcausas';
     if(impCabecalho(R, ['Hora','Txt.brv.material','Tipo Repos','Data'])) return 'automaticas';
@@ -3390,7 +3391,7 @@ async function impResumo(wb, nomeFicheiro){
   return `painel atualizado${dataAte ? ' · dados até ' + impDDMM(dataAte) : ''}`;
 }
 
-const IMP_NOMES = {newsletter:'Newsletter semanal Melhoria Contínua → Melhoria Contínua', convocatorias:'Convocatórias da Escola de Formação JM → Formação', economato:'Consumo de economato da semana → Custos', rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
+const IMP_NOMES = {controloanalitico:'Controlo analítico do ano (análises não satisfatórias) → Auditoria HACCP', newsletter:'Newsletter semanal Melhoria Contínua → Melhoria Contínua', convocatorias:'Convocatórias da Escola de Formação JM → Formação', economato:'Consumo de economato da semana → Custos', rutcausas:'Detalhes das ruturas (causas) → Ruturas', descanso11:'Incumprimento de 11 horas de descanso → Recursos Humanos (alertas)', compliance:'Formação Compliance (colaboradores a formar) → Recursos Humanos (alertas)', trocas:'Trocas de horário do mês → Recursos Humanos (alertas)', picagens:'Mapa de controlo de picagens → Recursos Humanos', automaticas:'Reposição do mês (automática, massiva, visível) → Melhoria Contínua', ruturas:'Ruturas de stock teórico → Ruturas', vozcliente:'Resultado do atendimento (email) → Voz do Cliente', lflarea:'Vendas LFL e Quebra (todas as lojas) → Loja vs Área', mapasproducao:'Mapa de produção → Quebras', resumo:'Resumo da loja',bomdia:'Bom Dia', markdown:'Markdown', categorias:'Vendas e Quebras (categorias)', notascredito:'Notas de crédito', vendasugestiva:'Venda sugestiva', validades:'Gestão de Validades',
   indrh:'Indicadores RH → Recursos Humanos', gozo:'Mapa de absentismo (gozo do banco de horas) → Recursos Humanos', horarios:'Assinaturas pendentes do Hello → Recursos Humanos', reposicao:'Reposição por colaborador → Melhoria Contínua',
   aqui:'Observações AQUI para o Cliente → Melhoria Contínua', fundacao:'Inscrições Fundação Jerónimo Martins → Recursos Humanos', bancohoras:'Banco de horas → Recursos Humanos', formacoes:'Formações → Recursos Humanos',
   contactos:'Contactos da equipa → Recursos Humanos', dadospessoais:'Dados dos colaboradores (telefone, aniversário, email) → Recursos Humanos', auditoria:'Relatório de auditoria → Auditorias', scorevalidades:'Score mensal de validades → Quebras', infoneg:'Informação de Negócio → Comunicação'};
@@ -3473,7 +3474,7 @@ async function impExtraCorrer(tipo, f){
 let impResHTML = '';
 // depois de carregar, cada ficheiro tem um botão para abrir a área onde ficou (e enviar as mensagens dessa área)
 const _RH = ['formacoes', 'Banco de Horas, Horários e Formação', 'Recursos Humanos'];
-const IMP_DESTINO = {newsletter: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], convocatorias: _RH, economato: ['painel-custos', 'Custos', 'Custos'], rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
+const IMP_DESTINO = {controloanalitico: ['auditoria:HACCP', 'Auditoria HACCP', 'Auditoria HACCP'], newsletter: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], convocatorias: _RH, economato: ['painel-custos', 'Custos', 'Custos'], rutcausas: ['markdown', 'Ruturas', 'Ruturas'], descanso11: _RH, compliance: _RH, trocas: _RH, picagens: _RH, indrh: _RH, gozo: _RH, horarios: _RH, bancohoras: _RH, formacoes: _RH, dadospessoais: _RH, contactos: _RH,
   automaticas: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], reposicao: ['melhoria', 'Melhoria Contínua', 'Melhoria Contínua'], ruturas: ['markdown', 'Ruturas', 'Ruturas'],
   mapasproducao: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'], validades: ['controlo-quebra', 'Controlo de Quebra', 'Quebras'],
   categorias: ['painel-vendas', 'Vendas', 'Vendas'], bomdia: ['painel-vendas', 'Vendas', 'Vendas'], resumo: ['painel-vendas', 'Vendas', 'Vendas'],
@@ -3553,7 +3554,7 @@ async function importarFicheirosDia(input){
     try{
       x.l.msg = 'a gravar…'; mostrar(false);
       if(x.extra){ x.l.msg = await impExtraCorrer(x.extra, x.f); x.l.ok = true; mostrar(false); continue; }
-      const fn = {convocatorias: impConvocatorias, economato: impEconomatoSemana, rutcausas: impRutCausas, descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
+      const fn = {controloanalitico: impControloAnalitico, convocatorias: impConvocatorias, economato: impEconomatoSemana, rutcausas: impRutCausas, descanso11: impDescanso11, compliance: impCompliance, trocas: impTrocas, automaticas: impAutomaticas, ruturas: impRuturas, mapasproducao: impMapasProducao, bomdia: impBomDia,markdown: impMarkdown, categorias: impCategorias, notascredito: async () => 'Notas de crédito já não são usadas na app (ficheiro ignorado)', vendasugestiva: impVendaSugestiva, validades: impValidades, resumo: impResumo, lflarea: impLflArea}[x.tipo];
       x.l.msg = await fn(x.wb, x.nome, x.data); x.l.ok = true;
       if(x.wb && x.wb.__linhasOutrasLojas) x.l.msg += ` · só loja ${IMP_LOJA} (${x.wb.__linhasOutrasLojas} linhas de outras lojas ignoradas)`;
     }catch(e){ x.l.ok = false; x.l.msg = 'Não gravou: ' + String(e && e.message || e).slice(0,200); }
@@ -5021,13 +5022,14 @@ function abrirSubHome(qual){
     html += `<button class="h3s-tile" style="min-height:70px;" onclick="selectMenu('auditoria:${nomeJs}', 'Auditoria ${nomeJs}')">
       <span class="h3s-tile-tit">${a.name}</span>
       <span class="h3s-tile-num">${semDados ? '—' : a.pct + '%'}</span>
-      <span class="h3s-tile-sub">${semDados ? 'sem dados' : (a.pct >= 90 ? 'dentro do objetivo' : 'abaixo de 90%')}</span>
+      <span class="h3s-tile-sub">${semDados ? 'sem dados' : (a.pct >= 90 ? 'dentro do objetivo' : 'abaixo de 90%')}</span>${/haccp/i.test(a.name) ? '<span class="aud-ca-selo" style="display:none;margin-top:4px;background:#B4231A;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800;"></span>' : ''}
     </button>`;
   });
   if(!audits.length) html += `<div style="color:var(--ink-soft);font-size:13px;">Ainda não há auditorias registadas.</div>`;
   html += `</div>`;
   box.innerHTML = html;
   box.style.display = 'block';
+  sb(`loja_controlo_analitico?select=id&classificacao=ilike.*n*o satisf*&data_recolha=gte.${new Date().getFullYear()}-01-01`).then(r => { const n = (r || []).length; if(!n) return; box.querySelectorAll('.aud-ca-selo').forEach(e => { e.textContent = `🧪 ${n} análises não satisfatórias`; e.style.display = 'inline-block'; }); }).catch(() => {});
   setTimeout(()=> box.scrollIntoView({behavior:'smooth', block:'start'}), 50);
 }
 
@@ -9464,6 +9466,24 @@ async function zarResolver(id){
   if(!soDona('registar zaragatoas') || !confirm('Marcar a zaragatoa como resolvida?')) return;
   try{ await sb(`loja_controlo_analitico?id=eq.${id}`, {method:'PATCH', body: JSON.stringify({resolvido: true})}); showToast(); abrirDetalheAuditoria('HACCP'); }catch(e){ alert('Não consegui guardar.'); }
 }
+// cartão bem visível no topo da auditoria HACCP: análises não satisfatórias do ano
+async function blocoAnalisesAlerta(){
+  let L = []; try{ L = await sb(`loja_controlo_analitico?select=id,numero,data_recolha,secao,objeto,referencia,parametro,classificacao,resolvido,acao_corretiva&classificacao=ilike.*n*o satisf*&data_recolha=gte.${new Date().getFullYear()}-01-01&order=data_recolha.desc`) || []; }catch(e){}
+  if(!L.length) return `<div class="card" style="border-left:5px solid #1F7A33;"><b style="color:#1F7A33;">🧪 Análises do laboratório: sem análises não satisfatórias este ano</b></div>`;
+  const abertas = L.filter(x => !x.resolvido).length, fmt = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—';
+  const porSec = {}; L.forEach(x => { const k = x.secao || 'Sem secção'; porSec[k] = (porSec[k] || 0) + 1; });
+  const curto = x => (x.referencia || x.objeto || 'Análise').replace(/^\d{6,}\s*-?\s*/, '');
+  const micro = x => [...new Set(String(x.parametro || '').split('\n').map(l => (l.match(/(Enterobact\w*|Staphylococcus[\w ]*?positiva|Staphylococcus|Escherichia coli|Listeria\w*|Salmonella|Bolores|Leveduras|Coliformes|Mes[óo]filos|Bacillus\w*|Clostridi\w*)/i) || [])[1]).filter(Boolean))].join(', ');
+  return `<div class="card" style="border:2px solid #B4231A;background:#FFF5F4;">
+    <div style="display:flex;align-items:center;gap:12px;"><div style="font-size:38px;font-weight:800;color:#B4231A;line-height:1;">${L.length}</div>
+      <div><b style="font-size:15px;color:#B4231A;">🧪 Análises NÃO satisfatórias em ${new Date().getFullYear()}</b><div style="font-size:12.5px;">${abertas ? `<b>${abertas} sem ação corretiva fechada</b> · ` : ''}pesam na taxa de conformidade analítica e na nota HACCP</div></div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px;">${Object.entries(porSec).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span style="background:#B4231A;color:#fff;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;">${rpEsc(k)} · ${n}</span>`).join('')}</div>
+    ${L.map(x => `<div style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px solid #F1C9C5;font-size:12.5px;">
+      <div style="min-width:42px;font-weight:800;color:#B4231A;">${fmt(x.data_recolha)}</div>
+      <div style="flex:1;"><b>${rpEsc(curto(x))}</b> <span style="color:var(--ink-soft);">· ${rpEsc(x.secao || '')}${x.objeto && !/^\(/.test(x.objeto) ? ' · ' + rpEsc(x.objeto) : ''}</span>${micro(x) ? `<div style="color:#B4231A;">${rpEsc(micro(x))}</div>` : ''}
+        <div style="font-size:11.5px;">${x.resolvido ? '<span style="color:#1F7A33;font-weight:700;">✓ resolvido</span>' : `<b>Ação:</b> ${rpEsc(x.acao_corretiva || 'por definir')}`}</div></div></div>`).join('')}
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">Registe a ação corretiva de cada uma no «Controlo analítico» mais abaixo.</div></div>`;
+}
 async function blocoControloAnalitico(){
   try{ caLista = await sb('loja_controlo_analitico?select=*&or=(parametro.is.null,parametro.neq.Zaragatoa)&order=data_recolha.desc.nullslast,id.desc&limit=50') || []; }catch(e){ caLista = []; }
   const pode = souDona();
@@ -9763,7 +9783,7 @@ async function abrirDetalheAuditoria(nome){
 
     try{ html += audMediaHtml(await audMediaAno(nome)); }catch(e){}
     html += `<div class="section-title">📄 Relatórios da auditoria</div><div id="aud-relatorios" class="card"><div style="font-size:13px;color:var(--ink-soft);">A carregar…</div></div>`;
-    if(nome === 'HACCP'){ html += await blocoHaccpQuadro(); html += await blocoZaragatoas(); html += await blocoControloAnalitico(); }
+    if(nome === 'HACCP'){ html += await blocoAnalisesAlerta(); html += await blocoHaccpQuadro(); html += await blocoZaragatoas(); html += await blocoControloAnalitico(); }
 
     if(!auditorias || !auditorias.length){
       html += `<div class="card"><div style="font-size:13px;color:var(--ink-soft);">Ainda não há relatório detalhado guardado para esta auditoria.</div></div>`;
@@ -17744,6 +17764,31 @@ function rutLerExcel(wb){
   return out;
 }
 // ---------- CONVOCATÓRIAS da Escola de Formação JM (Power Apps → Excel): entram nos percursos/formações em falta ----------
+// ---------- CONTROLO ANALÍTICO do ano (CA_YTD): uma linha por parâmetro → uma análise por número CA ----------
+async function impControloAnalitico(wb){
+  const M = {};
+  for(const n of wb.SheetNames){
+    const R = impLinhas(wb.Sheets[n]); const h = impCabecalho(R, ['Number','Object Type','Classification']); if(!h) continue;
+    const H = (R[h.i] || []).map(c => impNorm(c)); const ci = re => H.findIndex(x => re.test(x));
+    const c = {num: ci(/^number$/), obj: ci(/^object type$/), sec: ci(/^section$/), loja: ci(/^store code$/), data: ci(/^pickup date$/), ean: ci(/^ean$/), par: ci(/^parameter$/), cls: ci(/^classification$/)};
+    R.slice(h.i + 1).forEach(r => { const num = impTxt(r && r[c.num]); if(!/^CA/i.test(num)) return; if(c.loja >= 0 && impTxt(r[c.loja]) && !impEhNossaLoja(r[c.loja])) return;
+      const t = k => c[k] >= 0 ? impTxt(r[c[k]]) : '';
+      const x = M[num] || (M[num] = {numero: num, objeto: t('obj'), secao: t('sec'), data_recolha: horIso(r[c.data]) || (t('data').slice(0, 10) || null), referencia: t('ean'), par: [], cls: []});
+      if(t('par')) x.par.push(t('par') + ' — ' + t('cls')); x.cls.push(t('cls')); });
+  }
+  const L = Object.values(M); if(!L.length) throw new Error('não encontrei análises da loja neste ficheiro');
+  const atuais = await sb('loja_controlo_analitico?select=id,numero,parametro,referencia,objeto&numero=not.is.null') || [];
+  let novas = 0, atual = 0;
+  for(const x of L){
+    const classificacao = x.cls.some(v => /n[ãa]o satisf/i.test(v)) ? 'Não satisfatório' : x.cls.some(v => /aceit/i.test(v)) ? 'Aceitável' : 'Satisfatório';
+    const dados = {data_recolha: x.data_recolha, secao: x.secao || null, classificacao, parametro: x.par.join('\n') || null};
+    const e = atuais.find(a => a.numero === x.numero);
+    if(e){ if(e.parametro) delete dados.parametro; if(!e.referencia) dados.referencia = x.referencia; if(!e.objeto) dados.objeto = x.objeto; await sb(`loja_controlo_analitico?id=eq.${e.id}`, {method: 'PATCH', body: JSON.stringify(dados)}); atual++; }
+    else { await sb('loja_controlo_analitico', {method: 'POST', body: JSON.stringify({numero: x.numero, objeto: x.objeto || null, referencia: x.referencia || null, resolvido: false, registado_por: currentUser ? currentUser.name : null, ...dados})}); novas++; }
+  }
+  const nao = L.filter(x => x.cls.some(v => /n[ãa]o satisf/i.test(v))).length;
+  return `${L.length} análises (${nao} não satisfatórias) · ${novas} novas, ${atual} atualizadas`;
+}
 async function impConvocatorias(wb){
   let linhas = [];
   for(const n of wb.SheetNames){
