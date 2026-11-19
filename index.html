@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-19-1940';
+const APP_V='2026-11-19-1950';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -16626,12 +16626,15 @@ let nlSemSel = null;
 const nlPct = (v, d) => v == null ? '–' : v.toLocaleString('pt-PT', {minimumFractionDigits: d == null ? 1 : d, maximumFractionDigits: d == null ? 2 : d}) + '%';
 const nlSin = (v, suf) => v == null ? '–' : (v > 0 ? '+' : '') + v.toLocaleString('pt-PT', {maximumFractionDigits: 2}) + (suf || '');
 const nlCor = bom => bom == null ? 'var(--ink-soft)' : bom ? '#1F7A33' : 'var(--red)';
+const nlQAbs = (v, d) => v == null ? '–' : nlPct(Math.abs(v), d);
+// variação da quebra: no PDF, pp negativo = a quebra aumentou (mau) → ▲ vermelho; positivo = desceu (bom) → ▼ verde
+const nlQVar = pp => pp == null ? '–' : pp < 0 ? '▲ +' + Math.abs(pp).toLocaleString('pt-PT', {maximumFractionDigits: 2}) + ' pp' : '▼ ' + Math.abs(pp).toLocaleString('pt-PT', {maximumFractionDigits: 2}) + ' pp';
 function nlBarra(v, max, cor){ const p = Math.max(0, Math.min(100, (v || 0) / (max || 1) * 100)); return `<div style="height:8px;background:#EEF1F4;border-radius:6px;overflow:hidden;"><div style="width:${p}%;height:100%;background:${cor};"></div></div>`; }
 function nlLinhaKpi(rot, val, sub, cor){ return `<div style="flex:1;min-width:120px;background:#F6F8FA;border-radius:12px;padding:10px;"><div style="font-size:11.5px;color:var(--ink-soft);">${rot}</div><div style="font-size:20px;font-weight:800;color:${cor || 'var(--navy)'};">${val}</div>${sub ? `<div style="font-size:11.5px;color:var(--ink-soft);">${sub}</div>` : ''}</div>`; }
 // lista curta: [cor, título, valor]
 function nlAcoes(D, nomes){
   const A = [], V = 'v', L = 'l', R = 'r';
-  const Q = D.quebra; if(Q && Q.secoes) Q.secoes.filter(s => s.pp != null && s.pp < 0).sort((a, b) => a.pp - b.pp).forEach(s => A.push([V, 'Quebra ' + s.nome.toLowerCase(), `${nlPct(s.qb, 2)} · ${nlSin(s.pp, ' pp')}`]));
+  const Q = D.quebra; if(Q && Q.secoes) Q.secoes.filter(s => s.pp != null && s.pp < 0).sort((a, b) => a.pp - b.pp).forEach(s => A.push([V, 'Quebra ' + s.nome.toLowerCase(), `${nlQAbs(s.qb, 2)} · ${nlQVar(s.pp)}`]));
   (D.producao || []).forEach(p => {
     if(p.servico_estado && /não conforme/i.test(p.servico_estado)) A.push([V, p.area + ' · nível de serviço', nlPct(p.servico)]);
     if(p.saude != null && p.saude < 90) A.push([L, p.area + ' · registo no Kiwi', nlPct(p.saude, 0) + ' (obj. 90%)']);
@@ -16666,14 +16669,14 @@ async function blocoNewsletter(){
   // 2. quebra
   const Q = D.quebra;
   if(Q){ const mx = Math.max(...Q.secoes.map(s => Math.abs(s.qb || 0)), 1);
-    h += `<div class="card"><b>🗑️ Quebra do mês</b><div style="display:flex;gap:6px;margin:8px 0;">${kpi('Quebra', nlPct(Q.quebra_pct, 2), nlSin(Q.quebra_pp_aa, ' pp'), Q.quebra_pp_aa >= 0 ? VERDE : VERM)}${kpi('Vendas', rpEur(Q.vendas), 'LFL ' + nlSin(Q.lfl, '%'), Q.lfl >= 0 ? VERDE : VERM)}</div>
-      ${Q.secoes.map(s => { const c = s.pp >= 0 ? VERDE : VERM; return `<div style="margin-top:7px;font-size:12.5px;"><div style="display:flex;justify-content:space-between;"><b>${rpEsc(s.nome)}</b><span>${nlPct(s.qb, 2)} ${pill(nlSin(s.pp, ' pp'), c)}</span></div>${nlBarra(Math.abs(s.qb || 0), mx, c)}</div>`; }).join('')}
-      ${mais('Ver categorias e causas', Q.secoes.map(s => `<div style="font-size:12px;margin-top:6px;"><b>${rpEsc(s.nome)}</b>${s.motivos ? ` <span style="color:var(--ink-soft);">${rpEsc(s.motivos)}</span>` : ''}${(s.cats || []).map(c => `<div style="padding-left:10px;">${rpEsc(c.nome)}: ${nlPct(c.qb, 2)} <span style="color:${c.pp >= 0 ? VERDE : VERM};">${nlSin(c.pp, ' pp')}</span></div>`).join('')}</div>`).join(''))}</div>`; }
+    h += `<div class="card"><b>🗑️ Quebra do mês</b><div style="display:flex;gap:6px;margin:8px 0;">${kpi('Quebra', nlQAbs(Q.quebra_pct, 2), nlQVar(Q.quebra_pp_aa) + ' vs 2025', Q.quebra_pp_aa >= 0 ? VERDE : VERM)}${kpi('Vendas', rpEur(Q.vendas), 'LFL ' + nlSin(Q.lfl, '%'), Q.lfl >= 0 ? VERDE : VERM)}</div>
+      ${Q.secoes.map(s => { const c = s.pp >= 0 ? VERDE : VERM; return `<div style="margin-top:7px;font-size:12.5px;"><div style="display:flex;justify-content:space-between;"><b>${rpEsc(s.nome)}</b><span>${nlQAbs(s.qb, 2)} ${pill(nlQVar(s.pp), c)}</span></div>${nlBarra(Math.abs(s.qb || 0), mx, c)}</div>`; }).join('')}
+      ${mais('Ver categorias e causas', Q.secoes.map(s => `<div style="font-size:12px;margin-top:6px;"><b>${rpEsc(s.nome)}</b>${s.motivos ? ` <span style="color:var(--ink-soft);">${rpEsc(s.motivos)}</span>` : ''}${(s.cats || []).map(c => `<div style="padding-left:10px;">${rpEsc(c.nome)}: ${nlQAbs(c.qb, 2)} <span style="color:${c.pp >= 0 ? VERDE : VERM};font-weight:700;">${nlQVar(c.pp)}</span></div>`).join('')}</div>`).join(''))}</div>`; }
   // 3. mapas de produção
   if(D.producao && D.producao.length){
     const cP = (v, b, m) => v == null ? 'var(--ink-soft)' : v >= b ? VERDE : v >= m ? LAR : VERM;
     h += `<div class="card"><b>🥖 Mapas de produção</b>${D.producao.map(p => `<div style="padding:8px 0;border-top:1px solid #EEF1F4;"><b style="font-size:13px;">${rpEsc(p.area)}</b>
-      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${pill('Cumpre ' + nlPct(p.cumprimento, 0), cP(p.cumprimento, 90, 80))}${p.servico != null ? pill('Serviço ' + nlPct(p.servico, 0), cP(p.servico, 90, 80)) : ''}${p.saude != null ? pill('Kiwi ' + nlPct(p.saude, 0), cP(p.saude, 90, 70)) : ''}${pill('Quebra ' + nlPct(Math.abs(p.qv || 0), 1), VERM)}</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${pill('Cumpre ' + nlPct(p.cumprimento, 0), cP(p.cumprimento, 90, 80))}${p.servico != null ? pill('Serviço ' + nlPct(p.servico, 0), cP(p.servico, 90, 80)) : ''}${p.saude != null ? pill('Kiwi ' + nlPct(p.saude, 0), cP(p.saude, 90, 70)) : ''}${pill('Quebra ' + nlQAbs(p.qv, 1) + (p.qv_pp != null ? ' ' + (p.qv_pp >= 0 ? '▼' : '▲') : ''), p.qv_pp == null ? 'var(--ink-soft)' : p.qv_pp >= 0 ? VERDE : VERM)}</div>
       ${p.acima.filter(a => (a.prod || 0) > (a.sug || 0)).length ? `<div style="font-size:12px;margin-top:4px;color:${VERM};">A mais: ${p.acima.filter(a => (a.prod || 0) > (a.sug || 0)).map(a => `${rpEsc(a.artigo.toLowerCase())} (+${(a.prod || 0) - (a.sug || 0)})`).join(', ')}</div>` : ''}</div>`).join('')}</div>`; }
   // 4. markdown + validades
   const M = D.markdown, Vd = D.validades;
