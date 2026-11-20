@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-19-1950';
+const APP_V='2026-11-20-0840';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -2235,9 +2235,8 @@ function lerResumoExcel(wb){
   if(bd){
     const B = lerDesdeA1(bd);
     for(const row of B.slice(0,5)) for(const v of row||[]){
-      const m = txt(v).match(/Relat[óo]rio de dia\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
-      // o relatório vem em formato americano (mês/dia/ano)
-      if(m){ const a = m[3].length===2 ? '20'+m[3] : m[3]; out.data_relatorio = `${m[2].padStart(2,'0')}/${m[1].padStart(2,'0')}/${a}`; }
+      const iso = bdDataRelatorio(txt(v));
+      if(iso) out.data_relatorio = `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
     }
   }
   if(!out.mes_curso.length && !out.meses.length) throw new Error('Não encontrei os quadros do Resumo neste ficheiro.');
@@ -2731,6 +2730,18 @@ async function impTodos(caminho){
   return out;
 }
 
+// data do «Relatório de dia …»: o Bom Dia já veio como mês/dia/ano (11/19/2026) e agora vem como ano/mês/dia (26/11/20) → fica a leitura válida mais perto de hoje
+function bdDataRelatorio(s){
+  const m = String(s || '').match(/Relat[óo]rio de dia\s+(\d{1,4})[\/.-](\d{1,2})[\/.-](\d{1,4})/i); if(!m) return null;
+  const [a, b, c] = [m[1], m[2], m[3]], ano = x => x.length <= 2 ? 2000 + Number(x) : Number(x), cand = [];
+  const ok = (y, mo, d) => { const dt = new Date(Date.UTC(y, mo - 1, d)); if(y >= 2020 && y <= 2100 && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d) cand.push(dt); };
+  if(a.length === 4) ok(Number(a), Number(b), Number(c));
+  else if(c.length === 4){ ok(Number(c), Number(a), Number(b)); ok(Number(c), Number(b), Number(a)); }
+  else { ok(ano(a), Number(b), Number(c)); ok(ano(c), Number(a), Number(b)); ok(ano(c), Number(b), Number(a)); }
+  if(!cand.length) return null;
+  const hoje = Date.now(); cand.sort((x, y) => Math.abs(x - hoje) - Math.abs(y - hoje));
+  return cand[0].toISOString().slice(0, 10);
+}
 function impTipo(wb){
   const nomes = wb.SheetNames;
   if(nomes.includes('Resumo') && nomes.includes('Dados_Mensais')) return 'resumo';
@@ -2850,7 +2861,7 @@ async function impBomDia(wb){
 
   // data do relatório (vem como mês/dia/ano) → os dados são de ontem
   let dataOntem = null;
-  for(const r of R.slice(0,6)) for(const v of r||[]){ const m = impTxt(v).match(/Relat[óo]rio de dia\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i); if(m){ const a = m[3].length===2?'20'+m[3]:m[3]; dataOntem = impMenosUmDia(`${a}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`); } }
+  for(const r of R.slice(0,6)) for(const v of r||[]){ const iso = bdDataRelatorio(impTxt(v)); if(iso) dataOntem = impMenosUmDia(iso); }
   if(!dataOntem) dataOntem = impMenosUmDia(impISO(new Date()));
   await impVerificarData('bomdia', dataOntem);
   const mesNome = impTitulo(IMP_MESES[Number(dataOntem.slice(5,7))-1]);
