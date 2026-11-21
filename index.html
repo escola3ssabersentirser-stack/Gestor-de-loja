@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-20-0840';
+const APP_V='2026-11-21-1620';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -3531,7 +3531,10 @@ async function importarFicheirosDia(input){
         l.tipo = 'Imagem';
         try{ const av = t => { l.msg = t; mostrar(false); };
           const texto = await valOcrImagem(f, av);
-          if(/picage/i.test(texto) || picLerTexto(texto).length >= 2){ l.tipo = 'Mapa de controlo de picagens → Recursos Humanos'; l.k = 'picagens'; const lp = picLerTexto(texto); if(!lp.length) throw new Error('não consegui ler as linhas do mapa de picagens'); picRevisao(lp); l.msg = `${lp.length} linhas lidas — confirme na janela que abriu`; }
+          const ehScore = /SCORE|Rotina\s+Di[áa]ria|M[êe]s:\s*[A-Za-zÀ-ÿ]+|Quebra\s+Evitada/i.test(texto);
+          let lp = ehScore ? [] : picLerTexto(texto);
+          if(!ehScore && lp.length < 2){ const t2 = await valOcrImagem(f, av, true); const l2 = picLerTexto(t2); if(l2.length > lp.length) lp = l2; if(/picage|N[ºo°]\s*SAP|Entrada|Sa[íi]da/i.test(t2)) l.__pic = true; }
+          if(!ehScore && (/picage/i.test(texto) || lp.length >= 1 || l.__pic)){ l.tipo = 'Mapa de controlo de picagens → Recursos Humanos'; l.k = 'picagens'; picManual(f, lp); l.msg = lp.length ? `${lp.length} linhas lidas — confirme ao lado da foto` : 'não deu para ler sozinha — preencha as linhas ao lado da foto'; }
           else { l.tipo = 'Imagem do Score Mensal de Validades'; l.k = 'scorevalidades'; l.msg = 'lida — a juntar com as outras imagens…'; scoreImgs.push({f, texto, l}); continue; }
           l.ok = true; }catch(e){ l.ok = false; l.msg = String(e && e.message || e); }
         continue;
@@ -4174,7 +4177,7 @@ function lerScoreValidades(texto){
 }
 // ---------- SCORE MENSAL DE VALIDADES A PARTIR DE UMA IMAGEM (captura do email) ----------
 const VAL_SCORE_SECOES = ['Talho','Meal Solutions','Fruta','OPLS','Padaria','Não Perecíveis','Peixaria','Flores','Frente Loja','Bem Estar'];
-async function valOcrImagem(f, aviso){
+async function valOcrImagem(f, aviso, ecra){
   if(aviso) aviso('A preparar a leitura da imagem…');
   await infoCarregarScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js');
   // aumentar e passar a cinzento: o texto pequeno das tabelas lê-se muito melhor
@@ -4185,8 +4188,16 @@ async function valOcrImagem(f, aviso){
   const id = g.getImageData(0, 0, cv.width, cv.height), p = id.data;
   for(let i = 0; i < p.length; i += 4){ const y = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; p[i] = p[i + 1] = p[i + 2] = y; }
   g.putImageData(id, 0, 0);
+  if(ecra){
+    // fotografia tirada ao ecrã: desfocar um pouco (tira as riscas do monitor) e igualar a luz (divide pelo fundo muito desfocado)
+    const W = cv.width, Hh = cv.height, c1 = document.createElement('canvas'), c2 = document.createElement('canvas'); c1.width = c2.width = W; c1.height = c2.height = Hh;
+    const g1 = c1.getContext('2d'), g2 = c2.getContext('2d'); g1.filter = 'blur(' + (1.2 * k) + 'px)'; g1.drawImage(cv, 0, 0); g2.filter = 'blur(' + (30 * k) + 'px)'; g2.drawImage(cv, 0, 0);
+    const a = g1.getImageData(0, 0, W, Hh), bg = g2.getImageData(0, 0, W, Hh).data, q = a.data;
+    for(let i = 0; i < q.length; i += 4){ const v = Math.min(255, q[i] / Math.max(1, bg[i]) * 235); q[i] = q[i + 1] = q[i + 2] = v; }
+    g.putImageData(a, 0, 0);
+  }
   if(aviso) aviso('A ler a imagem… (pode demorar 20 a 40 segundos)');
-  const r = await window.Tesseract.recognize(cv, 'por');
+  const r = await window.Tesseract.recognize(cv, 'por', ecra ? {tessedit_pageseg_mode: '6'} : undefined);
   return (r && r.data && r.data.text) || '';
 }
 // número lido por OCR: "1,120" → 1120 · "89.2" → 89.2 · "o" → 0
@@ -14899,13 +14910,14 @@ function picLerTexto(texto){
     seg = seg.replace(/\s*:\s*/g, ':'); for(let z = 0; z < 3; z++) seg = seg.replace(/(\d) (?=\d)/g, '$1');
     const horas = []; seg = seg.replace(/([0-2]\d):([0-5]\d)(?::[0-5]\d)?/g, (x, h, mi) => { horas.push(h + ':' + mi); return ' '; });
     const num = (seg.match(/\b0\d{7}\b/) || seg.match(/\b\d{8}\b/) || [''])[0];
-    if(!num || !horas.length) return;
-    let resto = seg.slice(seg.indexOf(num) + num.length);
+    if(!num && !/[A-Za-zÀ-ÿ]{4,}/.test(seg)) return;
+    if(num && !horas.length && !/[A-Za-zÀ-ÿ]{4,}/.test(seg)) return;
+    let resto = num ? seg.slice(seg.indexOf(num) + num.length) : seg.replace(/^\s*\S+/, '');
     const sm = resto.match(secRe); let nome = resto, secao = '';
     if(sm){ secao = sm[1].replace(/\s+/g, ' '); const iS = resto.indexOf(sm[0]); nome = resto.slice(0, iS) + ' ' + resto.slice(iS + sm[0].length); }
     nome = nome.replace(/\b0?324\b/g, ' ').replace(/[^A-Za-zÀ-ÿ' ]/g, ' ').replace(/\b(Assinatura|Colaborador|Respons[aá]vel|Observa[çc][õo]es|Entrada|Sa[íi]da)\b/gi, ' ').replace(/\s+/g, ' ').trim();
     secao = PIC_SECOES.find(x => impNorm(x) === impNorm(secao)) || secao;
-    out.push({data: p.d, numero: num.padStart(8, '0'), nome, secao: secao.replace(/^Direção Loja$/, 'Direcção Loja'), horas: horas.join(' · '), n: horas.length});
+    out.push({data: p.d, numero: num ? num.padStart(8, '0') : '', nome, secao: secao.replace(/^Direção Loja$/, 'Direcção Loja'), horas: horas.join(' · '), n: Math.max(1, horas.length)});
   });
   return out;
 }
@@ -14940,11 +14952,11 @@ async function picGuardarRevisao(btn){
 async function picCarregarFicheiro(input){
   const fs = Array.from(input.files || []); input.value = ''; if(!fs.length || !soDona('carregar ficheiros')) return;
   // fotografia tirada na hora ao ecrã: a leitura automática não funciona bem, por isso abre logo a foto com as linhas para preencher
-  if(input.id === 'pic-foto'){ picManual(fs[0], []); return; }
   const est = document.getElementById('pic-estado'); const msg = t => { if(est) est.textContent = t; };
+  if(input.id === 'pic-foto'){ let l = []; try{ l = picLerTexto(await valOcrImagem(fs[0], msg, true)); }catch(e){ console.warn(e); } msg(l.length ? `${l.length} linhas lidas — confirme ao lado da foto.` : 'Não deu para ler — preencha as linhas ao lado da foto.'); picManual(fs[0], l); return; }
   try{ let todas = [];
     for(const f of fs){ let texto = '';
-      if(/^image\//.test(f.type) || /\.(png|jpe?g|webp|heic)$/i.test(f.name)) texto = await valOcrImagem(f, msg);
+      if(/^image\//.test(f.type) || /\.(png|jpe?g|webp|heic)$/i.test(f.name)){ texto = await valOcrImagem(f, msg); let l = picLerTexto(texto); const l2 = picLerTexto(await valOcrImagem(f, msg, true)); if(l2.length > l.length) l = l2; todas = todas.concat(l); continue; }
       else texto = /\.(txt|eml)$/i.test(f.name) ? await f.text() : await infoLerTexto(f);
       todas = todas.concat(picLerTexto(texto)); }
     const foto = fs.find(f => /^image\//.test(f.type) || /\.(png|jpe?g|webp|heic)$/i.test(f.name));
@@ -14960,7 +14972,11 @@ async function picManual(foto, lidas){
   window.__picCols = cols;
   const k0 = n => String(n || '').replace(/\D/g, '').replace(/^0+/, '');
   const hoje = impISO(new Date());
-  window.__picMan = (lidas.length ? lidas : [{}]).map(x => { const c = cols.find(c => k0(c.numero_pessoal) === k0(x.numero)); return {data: x.data || hoje, numero: c ? c.numero_pessoal : '', n: x.n || 1, horas: x.horas || ''}; });
+  const tok = t => impNorm(t || '').split(/\s+/).filter(w => w.length >= 4);
+  const porNome = nome => { const T = tok(nome); if(!T.length) return null; let best = null, bs = 0;
+    cols.forEach(c => { const C = tok(c.nome); const sc = T.filter(w => C.some(x => x === w || (w.length >= 5 && (x.startsWith(w.slice(0, 5)) || w.startsWith(x.slice(0, 5)))))).length; if(sc > bs){ bs = sc; best = c; } });
+    return bs >= 2 || (bs === 1 && T.length === 1) ? best : null; };
+  window.__picMan = (lidas.length ? lidas : [{}]).map(x => { const c = cols.find(c => x.numero && k0(c.numero_pessoal) === k0(x.numero)) || porNome(x.nome); return {data: x.data || hoje, numero: c ? c.numero_pessoal : '', n: x.n || 1, horas: x.horas || ''}; });
   const url = URL.createObjectURL(foto);
   let ov = document.getElementById('pic-man'); if(ov) ov.remove();
   ov = document.createElement('div'); ov.id = 'pic-man';
