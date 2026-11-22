@@ -3509,12 +3509,70 @@ async function colarLer(){
 }
 function escolherFicheirosDia(){ if(!soDona('carregar ficheiros')) return; const i = document.getElementById('rp-input-ficheiro'); if(i) i.click(); }
 
+// ===== Emails (.eml): tirar os anexos (Excel, PDF…) para serem lidos como ficheiros normais =====
+function emlBytes(f){ return f.arrayBuffer().then(b => new Uint8Array(b)); }
+function emlLatin(u8){ let s = ''; for(let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return s; }
+function emlDecPalavras(s){
+  s = String(s || '').replace(/\?=\s+=\?/g, '?==?');
+  return s.replace(/=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/g, (m, cs, enc, txt) => {
+    try{
+      let bytes;
+      if(enc.toUpperCase() === 'B'){ const bin = atob(txt); bytes = Uint8Array.from(bin, c => c.charCodeAt(0)); }
+      else { const t = txt.replace(/_/g, ' '); const arr = []; for(let i = 0; i < t.length; i++){ if(t[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(t.substr(i + 1, 2))){ arr.push(parseInt(t.substr(i + 1, 2), 16)); i += 2; } else arr.push(t.charCodeAt(i) & 255); } bytes = new Uint8Array(arr); }
+      return new TextDecoder(/utf-?8/i.test(cs) ? 'utf-8' : (cs || 'utf-8')).decode(bytes);
+    }catch(e){ return m; }
+  });
+}
+function emlCabecalhos(txt){
+  const h = {}; const linhas = txt.replace(/\r?\n[ \t]+/g, ' ').split(/\r?\n/);
+  for(const l of linhas){ const i = l.indexOf(':'); if(i > 0){ const k = l.slice(0, i).trim().toLowerCase(); if(!(k in h)) h[k] = l.slice(i + 1).trim(); } }
+  return h;
+}
+function emlParam(v, nome){
+  v = String(v || '');
+  const r2231 = [...v.matchAll(new RegExp(nome + '\\*(\\d+)?\\*?=\\s*("?)([^";]*)\\2', 'gi'))];
+  if(r2231.length){ let s = r2231.map(m => m[3]).join(''); const m = s.match(/^([^']*)'[^']*'(.*)$/); if(m){ try{ return decodeURIComponent(m[2]); }catch(e){ return m[2]; } } try{ return decodeURIComponent(s); }catch(e){ return s; } }
+  const m = v.match(new RegExp('(?:^|;)\\s*' + nome + '\\s*=\\s*(?:"([^"]*)"|([^;]*))', 'i'));
+  return m ? emlDecPalavras((m[1] != null ? m[1] : m[2] || '').trim()) : '';
+}
+function emlPartes(bruto, saida){
+  const corte = bruto.search(/\r?\n\r?\n/);
+  const cabTxt = corte >= 0 ? bruto.slice(0, corte) : bruto;
+  const corpo = corte >= 0 ? bruto.slice(corte).replace(/^\r?\n\r?\n/, '') : '';
+  const h = emlCabecalhos(cabTxt); const ct = h['content-type'] || 'text/plain';
+  if(/^multipart\//i.test(ct)){
+    const b = emlParam(ct, 'boundary'); if(!b) return;
+    const partes = corpo.split(new RegExp('\\r?\\n?--' + b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:--)?[ \\t]*\\r?\\n?'));
+    partes.slice(1).forEach(p => { if(p.trim()) emlPartes(p, saida); });
+    return;
+  }
+  if(/^message\/rfc822/i.test(ct)){ emlPartes(corpo, saida); return; }
+  const nome = emlParam(h['content-disposition'], 'filename') || emlParam(ct, 'name');
+  if(!nome) return;
+  const enc = String(h['content-transfer-encoding'] || '').toLowerCase();
+  let bytes;
+  if(enc === 'base64'){ const bin = atob(corpo.replace(/[^A-Za-z0-9+/=]/g, '')); bytes = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); }
+  else if(enc === 'quoted-printable'){ const t = corpo.replace(/=\r?\n/g, ''); const arr = []; for(let i = 0; i < t.length; i++){ if(t[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(t.substr(i + 1, 2))){ arr.push(parseInt(t.substr(i + 1, 2), 16)); i += 2; } else arr.push(t.charCodeAt(i) & 255); } bytes = new Uint8Array(arr); }
+  else { bytes = Uint8Array.from(corpo, c => c.charCodeAt(0) & 255); }
+  saida.push({nome: nome.replace(/[\\/:*?"<>|]+/g, '_'), tipo: ct.split(';')[0].trim(), bytes});
+}
+async function emlAnexos(f){
+  const bruto = emlLatin(await emlBytes(f)); const saida = [];
+  emlPartes(bruto, saida);
+  return saida.filter(a => /\.(xlsx|xlsm|xls|csv|pdf|docx)$/i.test(a.nome))
+    .map(a => new File([a.bytes], a.nome, {type: /\.xlsx$/i.test(a.nome) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : /^application\/octet-stream$/i.test(a.tipo) ? '' : a.tipo, lastModified: f.lastModified}));
+}
+
 async function importarFicheirosDia(input){
   if(!soDona('carregar ficheiros')){ input.value = ''; return; }
   const ficheiros = Array.from(input.files || []);
   input.value = '';
   if(!ficheiros.length) return;
   if(typeof XLSX === 'undefined'){ alert('Não foi possível ler o Excel (sem ligação à internet?). Tente de novo.'); return; }
+  // emails (.eml) com anexos: os anexos (Excel, PDF…) entram no lugar do email
+  for(let i = ficheiros.length - 1; i >= 0; i--){
+    if(/\.eml$/i.test(ficheiros[i].name)){ try{ const an = await emlAnexos(ficheiros[i]); if(an.length) ficheiros.splice(i, 1, ...an); }catch(e){ console.warn('eml', e); } }
+  }
   const linhas = [];
   const mostrar = (fim) => {
     impResHTML = `<div class="rp-graf-tit">${fim ? 'Ficheiros carregados' : 'A carregar ficheiros…'}</div>` + linhas.map(l => `<div class="rp-imp-linha ${l.ok === true ? 'ok' : l.ok === false ? 'erro' : ''}"><span>${l.ok === true ? '✓' : l.ok === false ? '✕' : l.ok === 'skip' ? '–' : '…'}</span><div style="flex:1;min-width:0;"><b>${rpEsc(l.tipo)}</b> <span class="rp-mini-sub">${rpEsc(l.nome)}</span><div>${rpEsc(l.msg)}</div>${l.ok === true && IMP_DESTINO[l.k] ? `<button type="button" onclick="selectMenu('${IMP_DESTINO[l.k][0]}','${IMP_DESTINO[l.k][1]}')" style="margin-top:6px;border:0;background:#1F5C3A;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">Abrir ${rpEsc(IMP_DESTINO[l.k][2])} ›</button>` : ''}</div></div>`).join('');
@@ -18055,14 +18113,15 @@ async function renderRuturasScreen(){
   const content = document.getElementById('markdown-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
   const dona = currentUser && souDona();
-  let h = dona ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="rut-fich" class="hidden" accept=".xlsx,.xls,.xlsm" onchange="rutCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rut-fich').click()">📥 Carregar o KPI de Ruturas (stock teórico)</button><div id="rut-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></div>` : '';
+  let h = dona ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="rut-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.eml" onchange="rutCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rut-fich').click()">📥 Carregar o KPI de Ruturas (stock teórico)</button><div id="rut-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></div>` : '';
   try{ h += await blocoRuturas(); }catch(e){ console.error('ruturas', e); h += `<div class="card">Não consegui ler as ruturas.</div>`; }
   content.innerHTML = h;
 }
 async function rutCarregar(input){
   const f = input.files && input.files[0]; input.value = ''; if(!f || !soDona('carregar ficheiros')) return;
   const est = document.getElementById('rut-estado'); if(est) est.textContent = 'A ler…';
-  try{ const msg = await impRuturas(XLSX.read(await f.arrayBuffer(), {type:'array'}), f.name); if(est) est.textContent = '✓ ' + msg; setTimeout(renderRuturasScreen, 900); }
+  try{ let fx = f; if(/\.eml$/i.test(f.name)){ const an = (await emlAnexos(f)).filter(a => /\.(xlsx|xlsm|xls)$/i.test(a.name)); if(!an.length) throw new Error('este email não traz o Excel das ruturas em anexo'); fx = an[0]; }
+    const msg = await impRuturas(XLSX.read(await fx.arrayBuffer(), {type:'array'}), fx.name); if(est) est.textContent = '✓ ' + msg; setTimeout(renderRuturasScreen, 900); }
   catch(e){ if(est) est.textContent = '✕ ' + (e && e.message || e); }
 }
 async function blocoRuturas(){
