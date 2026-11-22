@@ -3634,7 +3634,41 @@ async function importarFicheirosDia(input){
   }
   mostrar(true);
   if(lidos.some(x => x.l.ok)){ try{ await rpAtualizarAnoResumo(); }catch(e){ console.warn('ano', e); } await atualizarTudo(false); const box = document.getElementById('rp-import-res'); if(box && !box.innerHTML){ box.innerHTML = impResHTML; box.style.display = 'block'; } }
+  return linhas;
 }
+
+// ===== Emails que chegam sozinhos (Hotmail → Resend → loja_emails_recebidos): a app lê-os quando a gestora a tem aberta =====
+let mailAutoOcupado = false;
+function mailAutoAviso(txt, fechar){
+  let el = document.getElementById('mail-auto-aviso');
+  if(!el){ el = document.createElement('div'); el.id = 'mail-auto-aviso'; el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:9999;background:#1B3355;color:#fff;border-radius:14px;padding:12px 14px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.25)'; document.body.appendChild(el); }
+  el.innerHTML = txt; el.style.display = 'block';
+  if(fechar){ clearTimeout(el.__t); el.__t = setTimeout(() => { el.style.display = 'none'; }, fechar); }
+}
+async function mailAutoVerificar(){
+  if(mailAutoOcupado || !currentUser || !souDona() || typeof modoDemo !== 'undefined' && modoDemo) return;
+  if(typeof XLSX === 'undefined') return;
+  mailAutoOcupado = true;
+  try{
+    let pend = [];
+    try{ pend = await sb('loja_emails_recebidos?estado=eq.pendente&select=id,assunto,ficheiros&order=id.asc&limit=10') || []; }catch(e){ pend = []; }
+    for(const m of pend){
+      await sb(`loja_emails_recebidos?id=eq.${m.id}`, {method:'PATCH', body: JSON.stringify({estado: 'a tratar'})});
+      mailAutoAviso(`📧 A ler o email «${rpEsc(m.assunto || 'sem assunto')}»…`);
+      const files = (m.ficheiros || []).map(f => { const bin = atob(f.b64 || ''); const u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new File([u], f.nome || 'anexo', {type: f.tipo || ''}); });
+      let linhas = [];
+      try{ linhas = await importarFicheirosDia({files, value: ''}) || []; }catch(e){ linhas = [{ok: false, tipo: 'Erro', msg: String(e && e.message || e)}]; }
+      const okN = linhas.filter(l => l.ok === true).length;
+      const resumo = linhas.map(l => `${l.ok === true ? '✓' : l.ok === 'skip' ? '–' : '✕'} ${l.tipo}: ${l.msg}`).join('\n').slice(0, 3000);
+      await sb(`loja_emails_recebidos?id=eq.${m.id}`, {method:'PATCH', body: JSON.stringify({estado: okN ? 'tratado' : 'erro', resultado: resumo, tratado: new Date().toISOString()})});
+      mailAutoAviso(okN ? `✅ Email «${rpEsc(m.assunto || 'sem assunto')}» lido: ${linhas.filter(l => l.ok === true).map(l => rpEsc(l.tipo)).join(', ')}.` : `⚠️ O email «${rpEsc(m.assunto || 'sem assunto')}» chegou, mas não reconheci o relatório.`, 9000);
+    }
+  }catch(e){ console.warn('mail auto', e); }
+  finally{ mailAutoOcupado = false; }
+}
+setTimeout(mailAutoVerificar, 6000);
+setInterval(mailAutoVerificar, 60000);
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') setTimeout(mailAutoVerificar, 1500); });
 
 
 function rpAbrirAuditorias(){
