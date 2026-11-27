@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-21-1610';
+const APP_V='2026-11-27-2330';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -3581,7 +3581,7 @@ async function importarFicheirosDia(input){
   };
   // o Resumo vai por último, para o painel ficar desenhado com tudo
   const ordem = {bomdia:1, markdown:2, categorias:3, notascredito:4, vendasugestiva:5, validades:6, resumo:9};
-  const lidos = [], scoreImgs = [];
+  const lidos = [], scoreImgs = [], vozImgs = [];
   for(const f of ficheiros){
     const l = {nome: f.name, tipo: '?', msg: 'a ler…', ok: null}; linhas.push(l);
     try{
@@ -3589,6 +3589,7 @@ async function importarFicheirosDia(input){
         l.tipo = 'Imagem';
         try{ const av = t => { l.msg = t; mostrar(false); };
           const texto = await valOcrImagem(f, av);
+          if(/Como correu a sua visita|Bem\s*\+\s*Muito bem|Correu\s+(bem|mal|normal)\s+\d+\s+respostas|pediram para melhorar|Compara[çc][ãa]o\s*[·.-]\s*(Tipologia|Regi)/i.test(texto)){ l.tipo = 'Voz do Cliente (imagem) → Operacional'; l.k = 'vozcliente'; l.msg = 'lida — a juntar com as outras imagens…'; vozImgs.push({texto, l}); continue; }
           const ehScore = /SCORE|Rotina\s+Di[áa]ria|M[êe]s:\s*[A-Za-zÀ-ÿ]+|Quebra\s+Evitada/i.test(texto);
           let lp = ehScore ? [] : picLerTexto(texto);
           if(!ehScore && lp.length < 2){ const t2 = await valOcrImagem(f, av, true); const l2 = picLerTexto(t2); if(l2.length > lp.length) lp = l2; if(/picage|N[ºo°]\s*SAP|Entrada|Sa[íi]da/i.test(t2)) l.__pic = true; }
@@ -3617,6 +3618,12 @@ async function importarFicheirosDia(input){
       l.tipo = IMP_NOMES[tipo]; l.k = tipo; lidos.push({l, wb, tipo, nome: f.name, data: f.lastModified});
     }catch(e){ l.ok = false; l.tipo = 'Erro a ler'; l.msg = String(e && e.message || e); }
   }
+  // as capturas da Voz do Cliente (Pingo Doce Reviews) são lidas juntas
+  if(vozImgs.length){ try{ const d = vocLerImagens(vozImgs.map(x => x.texto).join('\n'));
+      try{ const ja = await sb(`loja_voz_cliente?semana_inicio=eq.${d.semana_inicio}&select=comentarios`); if(ja && ja[0] && ja[0].comentarios) d.comentarios = null; }catch(e){} if(d.bem == null && d.mal == null) throw new Error('não encontrei a percentagem de «correu bem» nas imagens');
+      const g = await vocGuardarLido(d); const sx = g.semana_inicio ? ' (semana de ' + g.semana_inicio.slice(8, 10) + '/' + g.semana_inicio.slice(5, 7) + ')' : '';
+      vozImgs.forEach((x, i) => { x.l.ok = true; x.l.msg = i === 0 ? vocResumoLido(g) + sx : 'junta com a 1.ª imagem'; }); }
+    catch(e){ vozImgs.forEach(x => { x.l.ok = false; x.l.msg = String(e && e.message || e); }); } }
   // as várias imagens do Score de validades são lidas juntas (topo, tabelas, lojas da área)
   if(scoreImgs.length){ try{ const m = await valScoreDeImagens(scoreImgs, null); scoreImgs.forEach((x, i) => { x.l.ok = true; x.l.msg = i === 0 ? m : 'junta com a 1.ª imagem'; }); }
     catch(e){ scoreImgs.forEach(x => { x.l.ok = false; x.l.msg = String(e && e.message || e); }); } }
@@ -12918,6 +12925,26 @@ function vocLerTexto(bruto){
   out.fatores = bloco(/(?:o\s+que\s+mais\s+)?influenci|fatores|motivos(?:\s+de\s+insatisfa[çc][ãa]o)?/i, /coment[áa]rio|cumprimentos|obrigad/i, 10);
   out.comentarios = bloco(/coment[áa]rios?(?:\s+dos\s+clientes)?/i, /^(cumprimentos|melhores cumprimentos|obrigad|atentamente|--)/i, 25);
   if(/Reviews\s*&\s*Insights|Bem\s*\+\s*Muito bem/i.test(t)) vocLerPD(t, out);
+  return out;
+}
+// capturas do Pingo Doce Reviews: o texto lido da imagem vem em colunas misturadas, por isso só se tira o que é seguro
+function vocLerImagens(t){
+  t = String(t || '').replace(/[−–]/g, '-');
+  const num = x => { const n = parseFloat(String(x).replace(',', '.')); return isNaN(n) ? null : n; };
+  const out = {semana_inicio: vocSegunda(dataLocalISO(new Date(Date.now() - 7 * 864e5)))};
+  const vs = t.match(/([-+]\s?\d{1,2}[.,]\d)\s*p\.?\s?p\.?\s*vs\s*semana\s*anterior/i);
+  const i = t.search(/Bem\s*\+\s*Muito\s*bem/i);
+  if(i >= 0){ const resto = t.slice(i, i + 400).replace(/[-+]\s?\d{1,2}[.,]\d\s*p\.?\s?p\.?/gi, ' ').replace(/\d+\s*respostas/gi, ' ');
+    const n = (resto.match(/\b\d{1,3}[.,]\d\b/g) || []).map(num).filter(v => v != null && v <= 100);
+    if(n.length >= 1) out.bem = n[0]; if(n.length >= 2) out.mal = n[1]; }
+  const resp = [...t.matchAll(/(\d{1,5})\s*respostas/gi)].map(m => Number(m[1])); if(resp.length) out.avaliacoes = Math.max(...resp);
+  const com = [];
+  const mel = t.match(/pediram para melhorar[\s\S]{0,120}?respostas\s*\n?([^\n]+)/i);
+  if(mel){ const r = [...mel[1].matchAll(/([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ ]{2,30}?)\s+(\d{1,3}[.,]\d)\s*%\s*[-·.]\s*(\d+)/g)].map(m => `${m[1].trim()} ${m[2].replace('.', ',')}% (${m[3]})`); if(r.length) com.push('Pediram para melhorar: ' + r.join(' · ')); }
+  const cnt = k => { const m = t.match(new RegExp('Correu\\s+' + k + '\\s+(\\d+)\\s+respostas', 'i')); return m ? m[1] : null; };
+  if(cnt('bem') || cnt('mal')) com.push(`Respostas com motivo: correu bem ${cnt('bem') || '—'} · normal ${cnt('normal') || '—'} · mal ${cnt('mal') || '—'}`);
+  if(vs) com.push(vs[1].replace(/\s/g, '').replace('.', ',') + ' p.p. vs semana anterior');
+  if(com.length) out.comentarios = com.join('\n');
   return out;
 }
 async function vocGuardarLido(d){
