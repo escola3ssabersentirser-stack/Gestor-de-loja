@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-27-2330';
+const APP_V='2026-11-28-1000';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -18136,12 +18136,80 @@ async function rutDados(){
   const vezes = cod => rows.filter(r => r.artigo_cod === cod).length;
   return {rows, datas, hoje, ant, diasSeguidos, vezes};
 }
+// ---------- Seguimento das ruturas: dia, semana e mês (ruturas guardadas × linhas de reposição guardadas) ----------
+let segVista = 'dia', segDia = null;
+async function segDados(){
+  const hoje = new Date(), ini = impISO(new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1));
+  const [R, L] = await Promise.all([
+    impTodos(`loja_ruturas?data=gte.${ini}&select=data,artigo_cod,artigo,area`).catch(() => []),
+    impTodos(`loja_reposicao_linhas?data=gte.${ini}&tipo=in.(Massiva,Automática,Visível)&select=data,hora,material,artigo,tipo,reposicao,qtd_calc`).catch(() => [])]);
+  const k = c => String(c || '').replace(/^0+/, '');
+  const porData = {}; (R || []).forEach(r => { (porData[r.data] = porData[r.data] || new Map()).set(k(r.artigo_cod), r); });
+  const datas = Object.keys(porData).sort();
+  const porMat = {}; (L || []).forEach(x => { (porMat[k(x.material)] = porMat[k(x.material)] || []).push(x); });
+  const mais1 = d => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + 1); return impISO(x); };
+  // falta de descarga: reposição massiva e o mesmo artigo volta a ser picado na lista visível (mais tarde no mesmo dia ou no dia seguinte)
+  const fd = {}; Object.entries(porMat).forEach(([m, arr]) => {
+    arr.filter(x => x.tipo === 'Massiva' && Number(x.reposicao) > 0).forEach(a => {
+      const v = arr.find(v => v.tipo === 'Visível' && ((v.data === a.data && String(v.hora) > String(a.hora)) || v.data === mais1(a.data)));
+      if(v){ const l = fd[v.data] = fd[v.data] || []; if(!l.some(z => z.mat === m)) l.push({mat: m, artigo: a.artigo, massiva: a.data + ' ' + String(a.hora).slice(0, 5), rep: Number(a.reposicao), visivel: v.data + ' ' + String(v.hora).slice(0, 5), calc: Number(v.qtd_calc) || 0}); } }); });
+  const dias = datas.map((d, i) => {
+    const hoje = porData[d], prev = i ? porData[datas[i - 1]] : null, dPrev = i ? datas[i - 1] : null;
+    const linhasEntre = m => (porMat[m] || []).filter(x => dPrev && x.data >= dPrev && x.data <= d);
+    const repos = m => linhasEntre(m).filter(x => x.tipo !== 'Visível' && Number(x.reposicao) > 0);
+    const novas = prev ? [...hoje.keys()].filter(c => !prev.has(c)) : [];
+    const elim = prev ? [...prev.keys()].filter(c => !hoje.has(c)) : [];
+    const pers = prev ? [...hoje.keys()].filter(c => prev.has(c)) : [];
+    const elimInfo = elim.map(c => { const r = repos(c); return {cod: c, artigo: prev.get(c).artigo, area: prev.get(c).area, reposta: r.length > 0, como: r.map(x => `${x.tipo.toLowerCase()} ${impDDMM(x.data)} ${String(x.hora).slice(0, 5)}`).join(', ')}; });
+    const persInfo = pers.map(c => { const v = linhasEntre(c).filter(x => x.tipo === 'Visível'); return {cod: c, artigo: hoje.get(c).artigo, area: hoje.get(c).area, picada: v.length > 0}; });
+    const falta = (fd[d] || []).concat(dPrev && dPrev !== d ? [] : []);
+    return {data: d, total: hoje.size, temAnt: !!prev, novas: novas.map(c => hoje.get(c)), elim: elimInfo, pers: persInfo, falta: fd[d] || []};
+  });
+  return {dias, fd};
+}
+function segAgrupar(dias, chave){
+  const g = {}; dias.forEach(d => { const k = chave(d.data); const o = g[k] = g[k] || {k, n: 0, soma: 0, novas: 0, elim: 0, elimRep: 0, falta: 0, comAnt: 0};
+    o.n++; o.soma += d.total; if(d.temAnt){ o.comAnt++; o.novas += d.novas.length; o.elim += d.elim.length; o.elimRep += d.elim.filter(e => e.reposta).length; } o.falta += d.falta.length; });
+  return Object.values(g).sort((a, b) => a.k < b.k ? 1 : -1);
+}
+async function blocoSeguimentoRuturas(){
+  const {dias} = await segDados();
+  let h = `<div class="section-title">📈 Seguimento das ruturas</div>`;
+  if(dias.length < 2) return h + `<div class="card" style="font-size:13px;color:var(--ink-soft);">Precisa de pelo menos 2 dias de ruturas carregados.</div>`;
+  const tab = (id, t) => `<button type="button" class="econ-btn" style="margin:0;${segVista === id ? 'background:var(--navy);color:#fff;' : ''}" onclick="segVista='${id}';segRedesenhar()">${t}</button>`;
+  h += `<div class="card"><div style="display:flex;gap:6px;margin-bottom:10px;">${tab('dia', 'Dia')}${tab('semana', 'Semana')}${tab('mes', 'Mês')}</div>`;
+  const pill = (t, c) => `<span style="display:inline-block;background:${c}1A;color:${c};border-radius:999px;padding:2px 8px;font-size:11.5px;font-weight:800;">${t}</span>`;
+  const kpi = (rot, v, sub, c) => `<div style="flex:1;min-width:84px;text-align:center;background:#F6F8FA;border-radius:12px;padding:8px 4px;"><div style="font-size:11px;color:var(--ink-soft);font-weight:700;">${rot}</div><div style="font-size:22px;font-weight:900;color:${c || 'var(--navy)'};">${v}</div>${sub ? `<div style="font-size:11px;color:var(--ink-soft);">${sub}</div>` : ''}</div>`;
+  const VERM = '#B4231A', VERDE = '#1F7A33', LAR = '#C77F12';
+  if(segVista === 'dia'){
+    const comAnt = dias.filter(d => d.temAnt); const d = comAnt.find(x => x.data === segDia) || comAnt[comAnt.length - 1];
+    h += `<select onchange="segDia=this.value;segRedesenhar()" style="width:auto;margin-bottom:8px;">${comAnt.slice().reverse().map(x => `<option value="${x.data}" ${x.data === d.data ? 'selected' : ''}>${new Date(x.data + 'T12:00:00').toLocaleDateString('pt-PT', {weekday: 'short', day: '2-digit', month: '2-digit'})}</option>`).join('')}</select>`;
+    const rep = d.elim.filter(e => e.reposta).length, semStock = d.pers.filter(p => !p.picada).length;
+    h += `<div style="display:flex;gap:6px;flex-wrap:wrap;">${kpi('Ruturas', d.total, '', 'var(--navy)')}${kpi('Eliminadas', d.elim.length, rep + ' repostas', VERDE)}${kpi('Novas', d.novas.length, '', VERM)}${kpi('Continuam', d.pers.length, '', LAR)}${kpi('Falta descarga', d.falta.length, 'massiva → visível', d.falta.length ? VERM : VERDE)}</div>`;
+    const mais = (t, c) => `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy);">${t}</summary><div style="font-size:12px;">${c}</div></details>`;
+    const lin = (a, b) => `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid #EEF1F4;"><span>${a}</span><span style="white-space:nowrap;">${b}</span></div>`;
+    if(d.falta.length) h += mais(`🔴 Falta de descarga · ${d.falta.length}`, `<div style="color:var(--ink-soft);margin:4px 0;">Repostos na massiva e voltaram a ser picados na lista visível: o produto não chegou à prateleira.</div>` + d.falta.map(f => lin(rpEsc(f.artigo.toLowerCase()), `massiva ${impDDMM(f.massiva.slice(0, 10))} ${f.massiva.slice(11)} → visível ${impDDMM(f.visivel.slice(0, 10))} ${f.visivel.slice(11)}`)).join(''));
+    h += mais(`✅ Eliminadas · ${d.elim.length} (${rep} com reposição)`, d.elim.map(e => lin(rpEsc(String(e.artigo).toLowerCase()), e.reposta ? pill(rpEsc(e.como), VERDE) : pill('sem reposição registada', LAR))).join('') || 'nenhuma');
+    h += mais(`🟠 Continuam em rutura · ${d.pers.length} (${semStock} sem stock para repor)`, d.pers.map(p => lin(rpEsc(String(p.artigo).toLowerCase()), p.picada ? pill('picada na visível', VERM) : pill('sem entrada', 'var(--ink-soft)'))).join('') || 'nenhuma');
+    h += mais(`🆕 Novas · ${d.novas.length}`, d.novas.map(n => lin(rpEsc(String(n.artigo).toLowerCase()), rpEsc(n.area || ''))).join('') || 'nenhuma');
+  } else {
+    const chave = segVista === 'semana' ? (d => { const x = new Date(d + 'T12:00:00'); return x.getFullYear() + '-S' + String(numeroSemanaISO(x)).padStart(2, '0'); }) : (d => d.slice(0, 7));
+    const nomeK = k => segVista === 'semana' ? 'Semana ' + Number(k.split('-S')[1]) : new Date(k + '-15T12:00:00').toLocaleDateString('pt-PT', {month: 'long', year: 'numeric'});
+    const G = segAgrupar(dias, chave);
+    h += `<div style="overflow-x:auto;"><table class="rp-tab" style="width:100%;font-size:12.5px;"><tr><th style="text-align:left;">${segVista === 'semana' ? 'Semana' : 'Mês'}</th><th>Dias</th><th>Rut./dia</th><th>Elim.</th><th>Repost.</th><th>Novas</th><th>F. desc.</th></tr>
+      ${G.map(o => `<tr><td><b>${nomeK(o.k)}</b></td><td>${o.n}</td><td>${(o.soma / o.n).toLocaleString('pt-PT', {maximumFractionDigits: 0})}</td><td style="color:${VERDE};font-weight:700;">${o.elim}</td><td>${o.elim ? Math.round(o.elimRep / o.elim * 100) + '%' : '—'}</td><td style="color:${VERM};">${o.novas}</td><td style="color:${o.falta ? VERM : VERDE};font-weight:700;">${o.falta}</td></tr>`).join('')}</table></div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Só contam os dias com o KPI de ruturas carregado. Elim. = ruturas eliminadas · Repost. = eliminadas com reposição (massiva ou automática) entre um KPI e o seguinte · F. desc. = falta de descarga (reposto na massiva e picado outra vez na lista visível no mesmo dia ou no seguinte).</div>`;
+  }
+  return h + `</div>`;
+}
+async function segRedesenhar(){ const el = document.getElementById('seg-ruturas'); if(el) el.innerHTML = await blocoSeguimentoRuturas(); }
 async function renderRuturasScreen(){
   const content = document.getElementById('markdown-content');
   content.innerHTML = '<div class="placeholder-body"><p>A carregar...</p></div>';
   const dona = currentUser && souDona();
   let h = dona ? `<div class="card" style="margin-bottom:12px;"><input type="file" id="rut-fich" class="hidden" accept=".xlsx,.xls,.xlsm,.eml" onchange="rutCarregar(this)"><button class="btn-primary" style="margin:0;background:#1F7A33;" onclick="document.getElementById('rut-fich').click()">📥 Carregar o KPI de Ruturas (stock teórico)</button><div id="rut-estado" style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;"></div></div>` : '';
   try{ h += await blocoRuturas(); }catch(e){ console.error('ruturas', e); h += `<div class="card">Não consegui ler as ruturas.</div>`; }
+  try{ h += `<div id="seg-ruturas">${await blocoSeguimentoRuturas()}</div>`; }catch(e){ console.error('seguimento ruturas', e); }
   content.innerHTML = h;
 }
 async function rutCarregar(input){
