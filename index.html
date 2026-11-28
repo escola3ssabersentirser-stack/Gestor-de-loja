@@ -1698,7 +1698,7 @@ details.mc-tabela > summary{cursor:pointer;font-weight:700;color:var(--navy);fon
 
 <script>
 // versão da app: quando há uma versão nova no servidor, a app recarrega sozinha (sem precisar de fechar e abrir)
-const APP_V='2026-11-28-1000';
+const APP_V='2026-11-28-1100';
 async function verificarAtualizacao(){
   try{
     const r = await fetch(location.pathname + '?nv=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
@@ -3175,6 +3175,7 @@ async function impCategorias(wb, nomeFicheiro, dataFicheiro){
   const vistos = new Set(); const top = [...lista.slice(0,10), ...porEuro, ...lista].filter(x => { const k = x.divisao + '|' + x.categoria; if(vistos.has(k)) return false; vistos.add(k); return true; }).map(x => ({...x, data_referencia: dataRef}));
   // guarda o mês por secção (histórico para comparar com o ano anterior mês a mês e no ano)
   try{ await rpSecoesGuardarMes(lista, dataRef); }catch(e){ console.warn('secções do mês', e); }
+  try{ await sazGuardarHist(lista, dataRef); }catch(e){ console.warn('sazonalidade', e); }
   await sb('loja_categorias_perda_vendas?id=gt.0', {method:'DELETE'});
   for(let i = 0; i < top.length; i += 300) await sb('loja_categorias_perda_vendas', {method:'POST', body: JSON.stringify(top.slice(i, i + 300))});
   await impGuardarData('categorias', dataRef);
@@ -13697,6 +13698,103 @@ async function blocoVendasDiaMesAno(r){
     </div>`;
 }
 
+// ---------- SAZONALIDADE · Natal e Ano Novo (Padaria, Talho, Chocolates, Vinhos e conjuntos, Peixaria) ----------
+const SAZ_EPOCA = 'Natal 2026';
+const SAZ_AREAS = [
+  {k: 'Padaria', ic: '🥖', sec: /^Padaria/i, snap: ['Padaria/Pastelaria'], cat: c => c.divisao === 'Padaria/Pastelaria', dest: c => /^Sazonais$/i.test(c.categoria), destNome: 'Sazonais (bolo-rei, broas)', kw: /BOLO.?REI|RAINHA|BROA|FILH[ÓO]|SONHO|PANET+ONE|TRONCO|RABANAD/i},
+  {k: 'Talho', ic: '🥩', sec: /^Talho$/i, snap: ['Talho'], cat: c => c.divisao === 'Talho', dest: c => /\bOvino|Caprino|\bAves\b/i.test(c.categoria), destNome: 'Cabrito, borrego e aves', kw: /CABRITO|BORREGO|PERU|LEIT[ÃA]O|PERNIL|LOMBO|CAPÃO/i},
+  {k: 'Chocolates', ic: '🍫', cat: c => /Chocolates E Confeitaria/i.test(c.familia || ''), dest: c => /Sazonais Natal/i.test(c.categoria), destNome: 'Chocolates de Natal', kw: /BOMBON|CHOC|KINDER|FERRERO|LINDOR|MON CHERI|CAJA ROJA|TOBLERONE|NATAL/i},
+  {k: 'Vinhos e conjuntos', ic: '🍷', cat: c => /^(Vinho|Destilados)$/i.test(c.divisao), dest: c => /Espumant|Frisant/i.test(c.categoria), destNome: 'Espumantes', kw: /^V\.|VINHO|ESPUMANT|PORTO|MOSCATEL|WHISK|LICOR|CONJ|OFERTA|GIFT|COFRE/i},
+  {k: 'Peixaria', ic: '🐟', sec: /^(Peixaria|Bacalhau)$/i, snap: ['Peixaria'], cat: c => /^(Peixaria|Bacalhau)$/i.test(c.divisao), dest: c => /Bac Inteiro|Moluscos/i.test(c.categoria), destNome: 'Bacalhau e polvo', kw: /BACALH|POLVO|CAMAR|MARISCO|LAGOSTA|SAPATEIRA|SALM[ÃA]O FUMADO/i}];
+let sazAberta = null;
+async function sazGuardarHist(lista, dataRef){
+  const L = (lista || []).map(c => ({divisao: c.divisao, familia: c.familia, categoria: c.categoria, venda_ac: Number(c.venda_ac) || 0, venda_aa: Number(c.venda_aa) || 0, quebra_ac: Number(c.quebra_ac) || 0}));
+  const rows = SAZ_AREAS.map(a => { const c = L.filter(a.cat); return {data: dataRef, area: a.k, vendas: c.reduce((s, x) => s + x.venda_ac, 0), vendas_aa: c.reduce((s, x) => s + x.venda_aa, 0), quebra: c.reduce((s, x) => s + x.quebra_ac, 0)}; }).filter(r => r.vendas > 0);
+  if(rows.length) await sb('loja_sazonal_hist?on_conflict=data,area', {method: 'POST', headers: {'Prefer': 'resolution=merge-duplicates'}, body: JSON.stringify(rows)});
+}
+// vendas de cada dia a partir de valores acumulados do mês (diferença entre dias seguidos; no 1.º registo do mês fica o acumulado)
+function sazDiarias(pontos){
+  const o = pontos.slice().sort((a, b) => a.data < b.data ? -1 : 1), out = [];
+  o.forEach((p, i) => { const ant = o[i - 1]; const mesmoMes = ant && ant.data.slice(0, 7) === p.data.slice(0, 7); out.push({data: p.data, v: mesmoMes ? Math.max(0, p.v - ant.v) : p.v}); });
+  return out;
+}
+function sazSemanas(diarias, n){
+  const g = {}; diarias.forEach(d => { const x = new Date(d.data + 'T12:00:00'); const k = numeroSemanaISO(x); g[k] = (g[k] || 0) + d.v; });
+  return Object.entries(g).map(([k, v]) => ({s: Number(k), v})).sort((a, b) => a.s - b.s).slice(-n);
+}
+async function blocoSazonal(){
+  const hojeD = new Date(), natal = new Date(hojeD.getFullYear(), 11, 24), dias = Math.ceil((natal - hojeD) / 864e5);
+  let [cats, snaps, hist, objs, tar, nl, semV] = await Promise.all([
+    impTodos('loja_categorias_perda_vendas?select=divisao,familia,categoria,venda_ac,venda_aa,quebra_ac,data_referencia').catch(() => []),
+    impTodos(`loja_secao_snapshot?select=secao,vendas_mes,data&data=gte.${impISO(new Date(hojeD.getFullYear(), hojeD.getMonth() - 1, 1))}`).catch(() => []),
+    sb('loja_sazonal_hist?select=*&order=data.asc').catch(() => []),
+    sb(`loja_sazonal_obj?epoca=eq.${encodeURIComponent(SAZ_EPOCA)}&select=*`).catch(() => []),
+    sb(`loja_sazonal_tarefas?epoca=eq.${encodeURIComponent(SAZ_EPOCA)}&select=*&order=area.asc,ordem.asc,id.asc`).catch(() => []),
+    sb('loja_newsletter_mc?select=semana,dados&order=semana.desc&limit=1').catch(() => []),
+    sb('loja_artigos_sem_vendas?select=material,descricao,secao,dias_sem_venda').catch(() => [])]);
+  const dona = currentUser && souDona();
+  const P = (typeof resumoPainel !== 'undefined' && resumoPainel) || {}, S = P.secoes || [];
+  const dataCat = (cats[0] || {}).data_referencia;
+  // guarda o retrato das categorias de hoje para a evolução por semana
+  if(dona && dataCat && !(hist || []).some(h => h.data === dataCat)){ try{ await sazGuardarHist(cats, dataCat); hist = await sb('loja_sazonal_hist?select=*&order=data.asc') || hist; }catch(e){} }
+  const VERM = '#B4231A', VERDE = '#1F7A33', LAR = '#C77F12';
+  const pct = v => v == null || !isFinite(v) ? '—' : (v > 0 ? '+' : '') + (v * 100).toLocaleString('pt-PT', {maximumFractionDigits: 1}) + '%';
+  const eur = v => v == null ? '—' : rpEur(v);
+  const A = SAZ_AREAS.map(a => {
+    const c = cats.filter(x => a.cat(x)), d = c.filter(a.dest);
+    const soma = (l, k) => l.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+    let vendas, aa, qp = null, qpAA = null, fonte;
+    const ss = a.sec ? S.filter(x => a.sec.test(x.sec || '')) : [];
+    if(ss.length){ vendas = ss.reduce((s, x) => s + (x.real || 0), 0); aa = ss.reduce((s, x) => s + (x.vsaa != null ? (x.real || 0) / (1 + x.vsaa) : (x.real || 0)), 0); const q = ss.reduce((s, x) => s + (x.q || 0), 0); qp = vendas ? q / vendas : null; const qaa = ss.reduce((s, x) => s + (x.qp_aa != null && x.vsaa != null ? x.qp_aa * (x.real || 0) / (1 + x.vsaa) : 0), 0); qpAA = aa ? qaa / aa : null; fonte = 'Bom Dia ' + (P.dados_ate ? impDDMM(P.dados_ate) : ''); }
+    else { vendas = soma(c, 'venda_ac'); aa = soma(c, 'venda_aa'); const q = -soma(c, 'quebra_ac'); qp = vendas ? q / vendas : null; fonte = dataCat ? 'categorias ' + impDDMM(dataCat) : ''; }
+    const dv = soma(d, 'venda_ac'), daa = soma(d, 'venda_aa');
+    // semanas: secções pelo Bom Dia de cada dia; o resto pelos retratos das categorias
+    let pts = [];
+    if(a.snap){ const g = {}; snaps.filter(x => a.snap.includes(x.secao)).forEach(x => { g[x.data] = (g[x.data] || 0) + (Number(x.vendas_mes) || 0); }); pts = Object.entries(g).map(([data, v]) => ({data, v})); }
+    else pts = (hist || []).filter(h => h.area === a.k).map(h => ({data: h.data, v: Number(h.vendas) || 0}));
+    const sem = sazSemanas(sazDiarias(pts), 6);
+    const obj = (objs || []).find(o => o.area === a.k), dez = hojeD.getMonth() === 11 ? vendas : null;
+    const stock = []; const vd = (nl[0] && nl[0].dados && nl[0].dados.validades) || {};
+    ['cobertura', 'sem_vendas', 'escoamento', 'ultimas'].forEach(k => (vd[k] || []).forEach(x => { if(a.kw.test(x.artigo) || a.kw.test(x.categoria || '')) stock.push({artigo: x.artigo, info: (x.qtd != null ? x.qtd + ' un · ' : '') + eur(x.stock), tipo: k === 'cobertura' ? 'acima da validade' : k === 'sem_vendas' ? 'sem vendas' : k === 'escoamento' ? 'escoamento' : 'última oportunidade'}); }));
+    (semV || []).forEach(x => { if(a.kw.test(x.descricao || '') && stock.length < 25) stock.push({artigo: x.descricao, info: (x.dias_sem_venda || '?') + ' dias sem venda', tipo: 'sem vendas'}); });
+    return {...a, vendas, aa, var: aa ? vendas / aa - 1 : null, qp, qpAA, fonte, dv, daa, dvar: daa ? dv / daa - 1 : null, sem, obj: obj ? Number(obj.objetivo) : null, dez, stock, tar: (tar || []).filter(t => t.area === a.k)};
+  });
+  let h = `<div class="section-title">🎄 Sazonalidade · Natal e Ano Novo</div>
+  <div class="card" style="background:linear-gradient(135deg,#1F4E3D,#2E7D5B);color:#fff;"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div><div style="font-size:12px;opacity:.85;">${SAZ_EPOCA} · 1/12 a 6/1</div><div style="font-size:20px;font-weight:900;">${dias > 0 ? `Faltam ${dias} dias para a consoada` : dias === 0 ? 'Hoje é a consoada' : 'Época de Ano Novo'}</div></div><div style="font-size:34px;">🎄</div></div></div>`;
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;">${A.map((a, i) => { const c = a.var == null ? 'var(--ink-soft)' : a.var >= 0 ? VERDE : VERM; const mx = Math.max(...a.sem.map(s => s.v), 1);
+    const feitas = a.tar.filter(t => t.feito).length;
+    return `<button type="button" onclick="sazAberta=${sazAberta === i ? 'null' : i};sazRedesenhar()" style="text-align:left;background:#fff;border:2px solid ${sazAberta === i ? 'var(--navy)' : '#E4E9EE'};border-radius:14px;padding:10px;cursor:pointer;">
+      <div style="font-weight:800;font-size:13.5px;">${a.ic} ${rpEsc(a.k)}</div>
+      <div style="font-size:18px;font-weight:900;color:var(--navy);margin-top:2px;">${eur(a.vendas)}</div>
+      <div style="font-size:12px;font-weight:800;color:${c};">${a.var == null ? '' : (a.var >= 0 ? '▲ ' : '▼ ') + pct(a.var) + ' vs 2025'}</div>
+      ${a.qp != null ? `<div style="font-size:11.5px;color:${a.qpAA != null && a.qp > a.qpAA ? VERM : 'var(--ink-soft)'};">quebra ${(a.qp * 100).toLocaleString('pt-PT', {maximumFractionDigits: 1})}%${a.qpAA != null ? ` (2025: ${(a.qpAA * 100).toLocaleString('pt-PT', {maximumFractionDigits: 1})}%)` : ''}</div>` : ''}
+      ${a.sem.length ? `<div style="display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:6px;">${a.sem.map(s => `<div title="S${s.s}: ${eur(s.v)}" style="flex:1;height:${Math.max(3, s.v / mx * 34)}px;background:${c === 'var(--ink-soft)' ? '#9AA8B8' : c};opacity:.75;border-radius:3px 3px 0 0;"></div>`).join('')}</div><div style="display:flex;gap:3px;font-size:9.5px;color:var(--ink-soft);">${a.sem.map(s => `<div style="flex:1;text-align:center;">S${s.s}</div>`).join('')}</div>` : ''}
+      ${a.obj ? `<div style="margin-top:6px;font-size:11px;">Objetivo ${eur(a.obj)}${a.dez != null ? ` · ${Math.round(a.dez / a.obj * 100)}%` : ''}</div><div style="height:6px;background:#EEF1F4;border-radius:4px;overflow:hidden;"><div style="width:${a.dez != null ? Math.min(100, a.dez / a.obj * 100) : 0}%;height:100%;background:${VERDE};"></div></div>` : ''}
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:5px;">✔ ${feitas}/${a.tar.length} tarefas${a.stock.length ? ` · ⚠ ${a.stock.length} artigos a escoar` : ''}</div></button>`; }).join('')}</div>`;
+  if(sazAberta != null && A[sazAberta]){ const a = A[sazAberta];
+    h += `<div class="card" style="border-left:5px solid var(--navy);margin-top:8px;"><div style="display:flex;justify-content:space-between;align-items:center;"><b style="font-size:15px;">${a.ic} ${rpEsc(a.k)}</b><span style="font-size:11px;color:var(--ink-soft);">${rpEsc(a.fonte)}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+        <div style="flex:1;min-width:110px;background:#F6F8FA;border-radius:12px;padding:8px;"><div style="font-size:11px;color:var(--ink-soft);font-weight:700;">${rpEsc(a.destNome)}</div><div style="font-size:17px;font-weight:900;">${eur(a.dv)}</div><div style="font-size:11.5px;font-weight:800;color:${a.dvar == null ? 'var(--ink-soft)' : a.dvar >= 0 ? VERDE : VERM};">${pct(a.dvar)} vs 2025</div></div>
+        <div style="flex:1;min-width:110px;background:#F6F8FA;border-radius:12px;padding:8px;"><div style="font-size:11px;color:var(--ink-soft);font-weight:700;">Objetivo de dezembro</div><div style="font-size:17px;font-weight:900;">${a.obj ? eur(a.obj) : '—'}</div>${dona ? `<button class="econ-btn" style="margin-top:4px;" onclick="event.stopPropagation();sazObjetivo('${a.k}')">${a.obj ? 'Mudar' : 'Definir'}</button>` : ''}</div></div>
+      ${a.sem.length ? `<div style="font-size:12px;font-weight:800;margin-top:10px;">Vendas por semana</div>${a.sem.map(s => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid #EEF1F4;"><span>Semana ${s.s}</span><b>${eur(s.v)}</b></div>`).join('')}` : `<div style="font-size:12px;color:var(--ink-soft);margin-top:8px;">A evolução por semana enche-se com cada ficheiro «Vendas e Quebras» carregado.</div>`}
+      <div style="font-size:12px;font-weight:800;margin-top:10px;">📋 Plano e tarefas</div>
+      ${a.tar.map(t => `<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #EEF1F4;font-size:12.5px;">
+        <input type="checkbox" ${t.feito ? 'checked' : ''} ${dona ? `onclick="event.stopPropagation();sazFeito(${t.id},this.checked)"` : 'disabled'} style="margin-top:2px;width:18px;height:18px;">
+        <div style="flex:1;${t.feito ? 'text-decoration:line-through;color:var(--ink-soft);' : ''}">${rpEsc(t.tarefa)}<div style="font-size:11px;color:${!t.feito && t.data && t.data < impISO(hojeD) ? VERM : 'var(--ink-soft)'};">${t.data ? 'até ' + impDDMM(t.data) : ''}${t.responsavel ? ' · ' + rpEsc(t.responsavel) : ''}${dona ? ` · <a href="#" onclick="event.preventDefault();event.stopPropagation();sazResponsavel(${t.id})">${t.responsavel ? 'mudar' : 'pôr'} responsável</a>` : ''}</div></div></div>`).join('') || '<div style="font-size:12px;color:var(--ink-soft);">Sem tarefas.</div>'}
+      ${dona ? `<button class="econ-btn" style="margin-top:6px;" onclick="event.stopPropagation();sazNovaTarefa('${a.k}')">+ Nova tarefa</button>` : ''}
+      <div style="font-size:12px;font-weight:800;margin-top:10px;">⚠ Stock e quebra a vigiar</div>
+      ${a.stock.length ? a.stock.slice(0, 12).map(s => `<div style="display:flex;justify-content:space-between;gap:6px;font-size:12px;padding:3px 0;border-bottom:1px solid #EEF1F4;"><span>${rpEsc(String(s.artigo).toLowerCase())} <small style="color:var(--ink-soft);">${rpEsc(s.tipo)}</small></span><b style="white-space:nowrap;">${rpEsc(s.info)}</b></div>`).join('') : '<div style="font-size:12px;color:var(--ink-soft);">Nada nas listas de validades e artigos sem vendas.</div>'}
+    </div>`; }
+  else h += `<div style="font-size:11.5px;color:var(--ink-soft);margin:6px 2px 0;">Toque numa área para ver o plano, as tarefas, o objetivo e o stock a escoar.</div>`;
+  return h;
+}
+async function sazRedesenhar(){ const el = document.getElementById('saz-bloco'); if(el) el.innerHTML = await blocoSazonal(); }
+async function sazObjetivo(area){ if(!soDona('definir objetivos')) return; const v = prompt(`Objetivo de vendas de dezembro para ${area} (€):`, ''); if(v == null) return; const n = Number(String(v).replace(/\s|€/g, '').replace(',', '.')); if(!(n > 0)) return;
+  await sb('loja_sazonal_obj?on_conflict=epoca,area', {method: 'POST', headers: {'Prefer': 'resolution=merge-duplicates'}, body: JSON.stringify({epoca: SAZ_EPOCA, area, objetivo: n, atualizado_em: new Date().toISOString()})}); sazRedesenhar(); }
+async function sazFeito(id, v){ if(!soDona('marcar tarefas')){ sazRedesenhar(); return; } await sb(`loja_sazonal_tarefas?id=eq.${id}`, {method: 'PATCH', body: JSON.stringify({feito: !!v})}); sazRedesenhar(); }
+async function sazResponsavel(id){ if(!soDona('mudar o responsável')) return; const v = prompt('Responsável por esta tarefa:', ''); if(v == null) return; await sb(`loja_sazonal_tarefas?id=eq.${id}`, {method: 'PATCH', body: JSON.stringify({responsavel: v.trim() || null})}); sazRedesenhar(); }
+async function sazNovaTarefa(area){ if(!soDona('acrescentar tarefas')) return; const t = prompt(`Nova tarefa para ${area}:`, ''); if(!t || !t.trim()) return; const d = prompt('Até quando? (dd/mm, ou deixe vazio)', ''); let data = null; const m = String(d || '').match(/(\d{1,2})[\/.-](\d{1,2})/); if(m){ const mm = Number(m[2]); data = `${mm === 1 ? new Date().getFullYear() + 1 : new Date().getFullYear()}-${String(mm).padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  await sb('loja_sazonal_tarefas', {method: 'POST', body: JSON.stringify({epoca: SAZ_EPOCA, area, tarefa: t.trim(), data, ordem: 99})}); sazRedesenhar(); }
 async function renderPainelVendas(){
   const content = document.getElementById('painel-vendas-content');
   const [resumoRows, vendasSecoes, vendasDia, categoriasPerda] = await Promise.all([
@@ -13709,7 +13807,9 @@ async function renderPainelVendas(){
   const calc = await calcularVendasPorPeriodo();
   const vendasSemana = calc && calc.semana.vendas!==null ? calc.semana.vendas : null;
 
-  let html = await blocoVendasDiaMesAno(r);
+  let html = '';
+  try{ html += `<div id="saz-bloco">${await blocoSazonal()}</div>`; }catch(e){ console.error('sazonalidade', e); }
+  html += await blocoVendasDiaMesAno(r);
   try{ if(!resumoPainel) resumoPainel = RESUMO_PADRAO; html += rpTabelaSecoes(rpSincronizarMesAtual(resumoPainel)); }catch(e){ console.error('secções', e); }
   html += `<div class="sec-aa" data-tipo="v"></div>`; setTimeout(() => secAAPreencher(0, true).catch(() => {}), 80);
   html += `<div class="section-title">💶 Vendas</div>`;
